@@ -24,7 +24,7 @@ class DepartmentMember(models.Model):
         related_name='members'
     )
     staff = models.ForeignKey(
-        'core_services.authentication.Staff',
+        'authentication.Staff',
         on_delete=models.CASCADE,
         related_name='department_assignments'
     )
