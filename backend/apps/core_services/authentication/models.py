@@ -61,6 +61,14 @@ class Staff(models.Model):
     )
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='staff_profile')
     role = models.CharField(max_length=20, choices=StaffRole.choices)
+    department_link = models.ForeignKey(
+        'departments.Department',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='staff_members',
+        verbose_name="Thuộc khoa (Link)"
+    )
     department = models.CharField(max_length=100)
     hire_date = models.DateField()
 
