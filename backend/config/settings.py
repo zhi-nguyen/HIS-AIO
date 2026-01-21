@@ -39,6 +39,7 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'apps.ai_engine.agents',
+    'apps.core_services.core',
     'apps.commerce_ecosystem.delivery',
     'apps.commerce_ecosystem.inventory',
     'apps.commerce_ecosystem.sales',
@@ -51,7 +52,7 @@ INSTALLED_APPS = [
     'apps.medical_services.lis',
     'apps.medical_services.ris',
     'apps.core_services.departments',
-    
+    'apps.core_services.reception',
 ]
 
 MIDDLEWARE = [
