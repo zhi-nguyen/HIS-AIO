@@ -10,3 +10,39 @@ class UUIDModel(models.Model):
 
     class Meta:
         abstract = True
+
+class Province(models.Model):
+    code = models.CharField(max_length=10, unique=True, db_index=True)
+    name = models.CharField(max_length=100)
+
+    full_name = models.CharField(max_length=150, null=True, blank=True)
+
+    def __str__(self):
+        return self.name
+
+    class Meta:
+        ordering = ['code']
+        verbose_name = "Tỉnh/Thành phố"
+        verbose_name_plural = "Tỉnh/Thành phố"
+
+class Ward(models.Model):
+    province = models.ForeignKey(
+        Province,
+        on_delete=models.CASCADE,
+        related_name='wards'
+    )
+    
+    code = models.CharField(max_length=10, unique=True, db_index=True)
+    name = models.CharField(max_length=100)
+    full_name = models.CharField(max_length=150, null=True, blank=True)
+
+    def __str__(self):
+        return f"{self.name}, {self.province.name}"
+
+    class Meta:
+        ordering = ['code']
+        verbose_name = "Xã/Phường"
+        verbose_name_plural = "Xã/Phường"
+        indexes = [
+            models.Index(fields=['province', 'code']),
+        ]
