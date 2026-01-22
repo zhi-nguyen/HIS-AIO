@@ -21,18 +21,13 @@ class Visit(UUIDModel):
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.CHECK_IN)
     priority = models.CharField(max_length=20, choices=Priority.choices, default=Priority.NORMAL)
 
+    check_in_time = models.DateTimeField(null=True, blank=True)
+    check_out_time = models.DateTimeField(null=True, blank=True)
+
     patient = models.ForeignKey(
         'patients.Patient',
         on_delete=models.CASCADE,
         related_name='visits'
-    )
-
-    department = models.ForeignKey(
-        'departments.Department',
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name='active_visits'
     )
 
     assigned_staff = models.ForeignKey(
@@ -42,11 +37,6 @@ class Visit(UUIDModel):
         blank=True,
         related_name='assigned_visits'
     )
-    reason = models.TextField(max_length=500, null=True, blank=True)
-
-    ai_prediction = models.JSONField(null=True, blank=True)
-    
-    medical_summary = models.TextField(null=True, blank=True)
 
     queue_number = models.IntegerField()
 

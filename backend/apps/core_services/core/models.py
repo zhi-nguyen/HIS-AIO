@@ -46,3 +46,55 @@ class Ward(models.Model):
         indexes = [
             models.Index(fields=['province', 'code']),
         ]
+
+class ICD10Category(models.Model):
+    code = models.CharField(max_length=10, unique=True, db_index=True)
+    name = models.CharField(max_length=255)
+    include = models.TextField(null=True, blank=True)
+    exclude = models.TextField(null=True, blank=True)
+
+    def __str__(self):
+        return f"{self.code} - {self.name}"
+
+    class Meta:
+        ordering = ['code']
+        verbose_name = "Mã ICD-10"
+        verbose_name_plural = "Mã ICD-10"
+
+class ICD10Subcategory(models.Model):
+    category = models.ForeignKey(
+        ICD10Category,
+        on_delete=models.CASCADE,
+        related_name='subcategories'
+    )
+    code = models.CharField(max_length=10, unique=True, db_index=True)
+    name = models.CharField(max_length=255)
+    include = models.TextField(null=True, blank=True)
+    exclude = models.TextField(null=True, blank=True)
+
+    def __str__(self):
+        return f"{self.code} - {self.name}"
+
+    class Meta:
+        ordering = ['code']
+        verbose_name = "Mã phụ ICD-10"
+        verbose_name_plural = "Mã phụ ICD-10"
+
+class ICD10Code(models.Model):
+    subcategory = models.ForeignKey(
+        ICD10Subcategory,
+        on_delete=models.CASCADE,
+        related_name='icd10_codes'
+    )
+    code = models.CharField(max_length=10, unique=True, db_index=True)
+    name = models.TextField()
+    description = models.TextField(null=True, blank=True)
+    extra_info = models.TextField(null=True, blank=True)
+
+    def __str__(self):
+        return f"{self.code} - {self.name}"
+
+    class Meta:
+        ordering = ['code']
+        verbose_name = "Mã chi tiết ICD-10"
+        verbose_name_plural = "Mã chi tiết ICD-10"
