@@ -40,9 +40,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'apps.ai_engine.agents',
     'apps.core_services.core',
-    'apps.commerce_ecosystem.delivery',
-    'apps.commerce_ecosystem.inventory',
-    'apps.commerce_ecosystem.sales',
+
     'apps.core_services.appointments',
     'apps.core_services.authentication',
     'apps.core_services.insurance_mock',
