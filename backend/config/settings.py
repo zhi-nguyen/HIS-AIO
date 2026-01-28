@@ -39,9 +39,6 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'apps.ai_engine.agents',
-    'apps.commerce_ecosystem.delivery',
-    'apps.commerce_ecosystem.inventory',
-    'apps.commerce_ecosystem.sales',
     'apps.core_services.appointments',
     'apps.core_services.authentication',
     'apps.core_services.insurance_mock',
@@ -90,10 +87,33 @@ WSGI_APPLICATION = 'config.wsgi.application'
 
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': 'his_database',
+        'USER': 'postgres',
+        'PASSWORD': 'postgres',
+        'HOST': 'localhost',
+        'PORT': '5432',
     }
 }
+
+# Redis Configuration
+# https://redis.io/docs/
+REDIS_HOST = 'localhost'
+REDIS_PORT = 6379
+REDIS_DB = 0
+REDIS_AGENT_MEMORY_TTL = 86400  # 24 hours (in seconds)
+
+# RAG Service Configuration
+import os
+RAG_VECTOR_DB = 'pgvector'  # Vector database backend
+RAG_EMBEDDING_PROVIDER = os.getenv('RAG_EMBEDDING_PROVIDER', 'sentence-transformers')  # 'google' or 'sentence-transformers'
+RAG_EMBEDDING_MODEL = os.getenv('RAG_EMBEDDING_MODEL', 'all-MiniLM-L6-v2')  # Model name
+RAG_EMBEDDING_DIMENSION = 768  # Default dimension for embeddings (adjust based on model)
+RAG_TOP_K_RESULTS = 5  # Default number of results to retrieve
+RAG_SIMILARITY_THRESHOLD = 0.5  # Minimum similarity score (0-1)
+
+# Google AI Configuration (if using Google embeddings)
+GOOGLE_API_KEY = os.getenv('GOOGLE_API_KEY', '')
 
 
 # Password validation
