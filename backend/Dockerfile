@@ -18,11 +18,9 @@ RUN apt-get update && apt-get install -y \
 
 # Install Python dependencies
 COPY requirements.txt /app/
-COPY requirements_rag.txt /app/
 
 RUN pip install --upgrade pip && \
-    pip install -r requirements.txt && \
-    pip install -r requirements_rag.txt
+    pip install -r requirements.txt
 
 # Copy project
 COPY . /app/

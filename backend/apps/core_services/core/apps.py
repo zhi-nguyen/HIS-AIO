@@ -1,6 +1,6 @@
 from django.apps import AppConfig
 
 
-class InpatientsConfig(AppConfig):
+class CoreConfig(AppConfig):
     default_auto_field = 'django.db.models.BigAutoField'
-    name = 'apps.medical_services.inpatients'
+    name = 'apps.core_services.core'

@@ -16,16 +16,18 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 
+from decouple import config, Csv
+
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-bg4r5r+2r*h8vd05(hsn4hel)bf8rg0x+yev)++*t9gul9bhja'
+SECRET_KEY = config('SECRET_KEY', default='django-insecure-bg4r5r+2r*h8vd05(hsn4hel)bf8rg0x+yev)++*t9gul9bhja')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = config('DEBUG', default=True, cast=bool)
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='localhost,127.0.0.1', cast=Csv())
 
 
 # Application definition
@@ -39,6 +41,8 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'apps.ai_engine.agents',
+    'apps.ai_engine.rag_service',
+    'apps.core_services.core',
     'apps.core_services.appointments',
     'apps.core_services.authentication',
     'apps.core_services.insurance_mock',
@@ -48,7 +52,7 @@ INSTALLED_APPS = [
     'apps.medical_services.lis',
     'apps.medical_services.ris',
     'apps.core_services.departments',
-    
+    'apps.core_services.reception',
 ]
 
 MIDDLEWARE = [
@@ -88,32 +92,34 @@ WSGI_APPLICATION = 'config.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'his_database',
-        'USER': 'postgres',
-        'PASSWORD': 'postgres',
-        'HOST': 'localhost',
-        'PORT': '5432',
+        'NAME': config('POSTGRES_DB', default='his_database'),
+        'USER': config('POSTGRES_USER', default='postgres'),
+        'PASSWORD': config('POSTGRES_PASSWORD', default='postgres'),
+        'HOST': config('POSTGRES_HOST', default='localhost'),
+        'PORT': config('POSTGRES_PORT', default='5432'),
     }
 }
 
 # Redis Configuration
 # https://redis.io/docs/
-REDIS_HOST = 'localhost'
-REDIS_PORT = 6379
-REDIS_DB = 0
-REDIS_AGENT_MEMORY_TTL = 86400  # 24 hours (in seconds)
+# Redis Configuration
+# https://redis.io/docs/
+REDIS_HOST = config('REDIS_HOST', default='localhost')
+REDIS_PORT = config('REDIS_PORT', default=6379, cast=int)
+REDIS_DB = config('REDIS_DB', default=0, cast=int)
+REDIS_AGENT_MEMORY_TTL = config('REDIS_AGENT_MEMORY_TTL', default=86400, cast=int)
 
 # RAG Service Configuration
 import os
-RAG_VECTOR_DB = 'pgvector'  # Vector database backend
-RAG_EMBEDDING_PROVIDER = os.getenv('RAG_EMBEDDING_PROVIDER', 'sentence-transformers')  # 'google' or 'sentence-transformers'
-RAG_EMBEDDING_MODEL = os.getenv('RAG_EMBEDDING_MODEL', 'all-MiniLM-L6-v2')  # Model name
-RAG_EMBEDDING_DIMENSION = 768  # Default dimension for embeddings (adjust based on model)
-RAG_TOP_K_RESULTS = 5  # Default number of results to retrieve
-RAG_SIMILARITY_THRESHOLD = 0.5  # Minimum similarity score (0-1)
+RAG_VECTOR_DB = config('RAG_VECTOR_DB', default='pgvector')
+RAG_EMBEDDING_PROVIDER = config('RAG_EMBEDDING_PROVIDER', default='sentence-transformers')
+RAG_EMBEDDING_MODEL = config('RAG_EMBEDDING_MODEL', default='all-MiniLM-L6-v2')
+RAG_EMBEDDING_DIMENSION = config('RAG_EMBEDDING_DIMENSION', default=768, cast=int)
+RAG_TOP_K_RESULTS = config('RAG_TOP_K_RESULTS', default=5, cast=int)
+RAG_SIMILARITY_THRESHOLD = config('RAG_SIMILARITY_THRESHOLD', default=0.5, cast=float)
 
 # Google AI Configuration (if using Google embeddings)
-GOOGLE_API_KEY = os.getenv('GOOGLE_API_KEY', '')
+GOOGLE_API_KEY = config('GOOGLE_API_KEY', default='')
 
 
 # Password validation
