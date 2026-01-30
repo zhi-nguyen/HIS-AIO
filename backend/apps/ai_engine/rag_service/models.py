@@ -19,6 +19,9 @@ class VectorDocument(UUIDModel):
     class CollectionType(models.TextChoices):
         CLINICAL_RECORDS = 'clinical_records', 'Clinical Records'
         ICD10_CODES = 'icd10_codes', 'ICD-10 Codes'
+        DRUGS = 'drugs', 'Drugs & Interactions'
+        MEDICAL_PROTOCOLS = 'medical_protocols', 'Medical Protocols'
+        HOSPITAL_PROCESS = 'hospital_process', 'Hospital Process Q&A'
     
     # Collection info
     collection = models.CharField(

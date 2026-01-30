@@ -23,15 +23,16 @@ class EmbeddingService:
     Supports multiple embedding backends and includes caching.
     """
     
-    def __init__(self, provider: str = 'sentence-transformers', model_name: Optional[str] = None):
+    
+    def __init__(self, provider: str = 'google', model_name: Optional[str] = None):
         """
         Initialize embedding service.
         
         Args:
-            provider: Embedding provider ('google', 'sentence-transformers')
+            provider: Embedding provider ('google') - default and only supported
             model_name: Specific model name (provider-dependent)
         """
-        self.provider = provider
+        self.provider = 'google'  # Enforce google
         self.model_name = model_name
         self._embedding_model = None
         self._embedding_cache: Dict[str, List[float]] = {}
@@ -41,22 +42,12 @@ class EmbeddingService:
     def _initialize_model(self):
         """Initialize the embedding model based on provider."""
         try:
-            if self.provider == 'google':
-                self._init_google_embeddings()
-            elif self.provider == 'sentence-transformers':
-                self._init_sentence_transformers()
-            else:
-                raise ValueError(f"Unsupported embedding provider: {self.provider}")
-                
-            logger.info(f"Initialized {self.provider} embedding model: {self.model_name}")
+            self._init_google_embeddings()
+            logger.info(f"Initialized Google embedding model: {self.model_name}")
             
         except Exception as e:
             logger.error(f"Failed to initialize embedding model: {e}")
-            # Fallback to sentence-transformers
-            if self.provider != 'sentence-transformers':
-                logger.warning("Falling back to sentence-transformers")
-                self.provider = 'sentence-transformers'
-                self._init_sentence_transformers()
+            raise RuntimeError("Failed to initialize Google GenAI embeddings. Ensure GOOGLE_API_KEY is set.")
     
     def _init_google_embeddings(self):
         """Initialize Google GenAI embeddings."""
@@ -66,28 +57,21 @@ class EmbeddingService:
             
             api_key = getattr(settings, 'GOOGLE_API_KEY', None)
             if not api_key:
-                raise ValueError("GOOGLE_API_KEY not found in settings")
+                # Try getting from os environment if not in settings
+                import os
+                api_key = os.environ.get('GOOGLE_API_KEY')
+                
+            if not api_key:
+                raise ValueError("GOOGLE_API_KEY not found in settings or environment")
             
             # Configure the client
             client = genai.Client(api_key=api_key)
-            self.model_name = self.model_name or 'gemini-embedding-001'
+            # Use text-embedding-004 which supports output_dimensionality
+            self.model_name = self.model_name or 'models/text-embedding-004'
             self._embedding_model = client
             
         except ImportError:
             raise ImportError("google-genai not installed. Run: pip install google-genai")
-    
-
-    
-    def _init_sentence_transformers(self):
-        """Initialize local Sentence Transformers."""
-        try:
-            from sentence_transformers import SentenceTransformer
-            
-            self.model_name = self.model_name or 'all-MiniLM-L6-v2'
-            self._embedding_model = SentenceTransformer(self.model_name)
-            
-        except ImportError:
-            raise ImportError("sentence-transformers not installed. Run: pip install sentence-transformers")
     
     def _get_cache_key(self, text: str) -> str:
         """Generate cache key for text."""
@@ -117,10 +101,7 @@ class EmbeddingService:
         
         # Generate embedding
         try:
-            if self.provider == 'google':
-                embedding = await self._embed_google(text)
-            else:  # sentence-transformers
-                embedding = await self._embed_sentence_transformer(text)
+            embedding = await self._embed_google(text)
             
             # Cache result
             if use_cache:
@@ -138,29 +119,18 @@ class EmbeddingService:
         import asyncio
         
         def _sync_embed():
+            # Force 768 dimensions for compatibility
             result = self._embedding_model.models.embed_content(
                 model=self.model_name,
-                content=text
+                contents=text,
+                config={'output_dimensionality': 768}
             )
             return result.embeddings[0].values
         
         # Run in executor to avoid blocking
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(None, _sync_embed)
-    
 
-    
-    async def _embed_sentence_transformer(self, text: str) -> List[float]:
-        """Generate embedding using Sentence Transformers."""
-        import asyncio
-        
-        def _sync_embed():
-            embedding = self._embedding_model.encode(text, convert_to_numpy=True)
-            return embedding.tolist()
-        
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(None, _sync_embed)
-    
     async def embed_batch(self, texts: List[str], use_cache: bool = True) -> List[List[float]]:
         """
         Generate embeddings for multiple texts efficiently.
@@ -175,11 +145,14 @@ class EmbeddingService:
         import asyncio
         
         # For small batches, use concurrent individual calls
+        # Note: Google GenAI might have batch support, but for now we stick to implementation
+        # that definitely works with current client pattern or use simple loop/gather
         if len(texts) <= 10:
             tasks = [self.embed_text(text, use_cache=use_cache) for text in texts]
             return await asyncio.gather(*tasks)
         
-        # For large batches, use batch processing if available
+        # For large batches, process in chunks to respect rate limits if needed
+        # For now, just linear async calls
         embeddings = []
         for text in texts:
             embedding = await self.embed_text(text, use_cache=use_cache)
@@ -190,10 +163,9 @@ class EmbeddingService:
     def get_embedding_dimension(self) -> int:
         """Get the dimension of embeddings from this model."""
         dimension_map = {
-            'all-MiniLM-L6-v2': 384,
-            'all-mpnet-base-v2': 768,
             'gemini-embedding-001': 768,
-            'models/embedding-001': 768,  # Legacy
+            'models/embedding-001': 768,
+            'models/text-embedding-004': 768,
         }
         
         return dimension_map.get(self.model_name, 768)  # Default to 768
@@ -203,6 +175,8 @@ async def embed_clinical_note(
     chief_complaint: str,
     history_of_present_illness: str,
     physical_exam: str,
+    final_diagnosis: Optional[str] = None,
+    treatment_plan: Optional[str] = None,
     embedding_service: Optional[EmbeddingService] = None
 ) -> List[float]:
     """
@@ -223,14 +197,122 @@ async def embed_clinical_note(
         embedding_service = EmbeddingService()
     
     # Combine clinical text
-    combined_text = f"""
-    Lý do khám: {chief_complaint}
+    parts = [
+        f"Lý do khám/Triệu chứng chính: {chief_complaint}",
+        f"Bệnh sử: {history_of_present_illness}",
+        f"Khám lâm sàng: {physical_exam}"
+    ]
     
-    Bệnh sử: {history_of_present_illness}
+    if final_diagnosis:
+        parts.append(f"Chẩn đoán: {final_diagnosis}")
     
-    Khám lâm sàng: {physical_exam}
-    """.strip()
+    if treatment_plan:
+        parts.append(f"Hướng dẫn điều trị: {treatment_plan}")
+        
+    combined_text = "\n\n".join(parts)
     
+    return await embedding_service.embed_text(combined_text)
+
+
+async def embed_drug_info(
+    name: str,
+    usage: str,
+    contraindications: Optional[str] = None,
+    side_effects: Optional[str] = None,
+    embedding_service: Optional[EmbeddingService] = None
+) -> List[float]:
+    """
+    Generate embedding for drug information.
+    
+    Args:
+        name: Drug name
+        usage: Usage instructions
+        contraindications: Contraindications (optional)
+        side_effects: Side effects (optional)
+        embedding_service: EmbeddingService instance
+        
+    Returns:
+        Embedding vector for the drug
+    """
+    if embedding_service is None:
+        embedding_service = EmbeddingService()
+        
+    parts = [
+        f"Thuốc: {name}",
+        f"Chỉ định/Cách dùng: {usage}"
+    ]
+    
+    if contraindications:
+        parts.append(f"Chống chỉ định: {contraindications}")
+        
+    if side_effects:
+        parts.append(f"Tác dụng phụ: {side_effects}")
+        
+    combined_text = "\n\n".join(parts)
+    return await embedding_service.embed_text(combined_text)
+
+
+async def embed_medical_protocol(
+    title: str,
+    content: str,
+    category: Optional[str] = None,
+    embedding_service: Optional[EmbeddingService] = None
+) -> List[float]:
+    """
+    Generate embedding for a medical protocol.
+    
+    Args:
+        title: Protocol title
+        content: Protocol content
+        category: Protocol category (optional)
+        embedding_service: EmbeddingService instance
+        
+    Returns:
+        Embedding vector
+    """
+    if embedding_service is None:
+        embedding_service = EmbeddingService()
+        
+    parts = [f"Phác đồ: {title}"]
+    
+    if category:
+        parts.append(f"Danh mục: {category}")
+        
+    parts.append(f"Nội dung: {content}")
+    
+    combined_text = "\n\n".join(parts)
+    return await embedding_service.embed_text(combined_text)
+
+
+async def embed_hospital_process(
+    question: str,
+    answer: str,
+    category: Optional[str] = None,
+    embedding_service: Optional[EmbeddingService] = None
+) -> List[float]:
+    """
+    Generate embedding for hospital process Q&A.
+    
+    Args:
+        question: Question about process
+        answer: Answer/Guidance
+        category: Process category (optional)
+        embedding_service: EmbeddingService instance
+        
+    Returns:
+        Embedding vector
+    """
+    if embedding_service is None:
+        embedding_service = EmbeddingService()
+        
+    parts = []
+    if category:
+        parts.append(f"Chủ đề: {category}")
+        
+    parts.append(f"Câu hỏi: {question}")
+    parts.append(f"Trả lời: {answer}")
+    
+    combined_text = "\n\n".join(parts)
     return await embedding_service.embed_text(combined_text)
 
 
