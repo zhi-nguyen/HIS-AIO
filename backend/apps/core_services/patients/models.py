@@ -74,3 +74,4 @@ class Patient(UUIDModel):
         if self.province and self.ward:
             if self.ward.province != self.province:
                 raise ValidationError({'ward': _('Xã/Phường này không thuộc Tỉnh/Thành phố đã chọn.')})
+
