@@ -1,4 +1,3 @@
-
 from django.db import models
 from uuid6 import uuid7
 
@@ -99,3 +98,4 @@ class ICD10Code(models.Model):
         ordering = ['code']
         verbose_name = "Mã chi tiết ICD-10"
         verbose_name_plural = "Mã chi tiết ICD-10"
+
