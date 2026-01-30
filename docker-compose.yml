@@ -1,0 +1,61 @@
+version: '3.8'
+
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: his_db
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=${POSTGRES_DB:-his}
+    volumes:
+      - his_postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: his_backend
+    volumes:
+      - ./backend:/app
+    ports:
+      - "8000:8000"
+    env_file:
+      - ./backend/.env
+    environment:
+      - PYTHONUNBUFFERED=1
+      # Database settings from .env will be used, but explicit override here guarantees connection to docker service
+      - POSTGRES_HOST=db
+      # RAG Settings can be removed here if they are in .env, or kept as overrides
+    depends_on:
+      db:
+        condition: service_healthy
+    command: python manage.py runserver 0.0.0.0:8000
+    restart: always
+
+  # frontend:
+  #   build:
+  #     context: ./frontend
+  #     dockerfile: Dockerfile
+  #   container_name: his_frontend
+  #   volumes:
+  #     - ./frontend:/app
+  #     - /app/node_modules
+  #   ports:
+  #     - "3000:3000"
+  #   environment:
+  #     - NODE_ENV=development
+  #   depends_on:
+  #     - backend
+  #   restart: always
+
+volumes:
+  his_postgres_data:
