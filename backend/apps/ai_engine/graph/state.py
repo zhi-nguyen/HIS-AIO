@@ -85,6 +85,7 @@ class AgentName:
     TRIAGE = "triage"
     CONSULTANT = "consultant"
     PHARMACIST = "pharmacist"
+    PARACLINICAL = "paraclinical"
     SUMMARIZE = "summarize"
     MARKETING = "marketing"
     HUMAN = "human"

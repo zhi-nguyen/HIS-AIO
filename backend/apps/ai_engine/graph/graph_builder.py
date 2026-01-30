@@ -20,6 +20,7 @@ from .nodes import (
     triage_node_with_escalation,
     consultant_node,
     pharmacist_node,
+    paraclinical_node,
     summarize_node,
     marketing_node,
     human_intervention_node,
@@ -28,6 +29,7 @@ from .nodes import (
     consultant_tools,
     pharmacist_tools,
     triage_tools,
+    paraclinical_tools,
 )
 from langgraph.prebuilt import ToolNode, tools_condition
 
@@ -56,6 +58,7 @@ def route_from_supervisor(state: AgentState) -> str:
         AgentName.TRIAGE,
         AgentName.CONSULTANT,
         AgentName.PHARMACIST,
+        AgentName.PARACLINICAL,
         AgentName.SUMMARIZE,
         AgentName.MARKETING,
         AgentName.HUMAN,
@@ -160,6 +163,7 @@ def build_agent_graph(
     builder.add_node(AgentName.TRIAGE, triage_node_with_escalation)
     builder.add_node(AgentName.CONSULTANT, consultant_node)
     builder.add_node(AgentName.PHARMACIST, pharmacist_node)
+    builder.add_node(AgentName.PARACLINICAL, paraclinical_node)
     builder.add_node(AgentName.SUMMARIZE, summarize_node)
     builder.add_node(AgentName.MARKETING, marketing_node)
 
@@ -167,6 +171,7 @@ def build_agent_graph(
     builder.add_node("consultant_tools", ToolNode(consultant_tools))
     builder.add_node("pharmacist_tools", ToolNode(pharmacist_tools))
     builder.add_node("triage_tools", ToolNode(triage_tools))
+    builder.add_node("paraclinical_tools", ToolNode(paraclinical_tools))
     
     # Human-in-the-loop and termination
     builder.add_node(AgentName.HUMAN, human_intervention_node)
@@ -188,6 +193,7 @@ def build_agent_graph(
             AgentName.TRIAGE: AgentName.TRIAGE,
             AgentName.CONSULTANT: AgentName.CONSULTANT,
             AgentName.PHARMACIST: AgentName.PHARMACIST,
+            AgentName.PARACLINICAL: AgentName.PARACLINICAL,
             AgentName.SUMMARIZE: AgentName.SUMMARIZE,
             AgentName.MARKETING: AgentName.MARKETING,
             AgentName.HUMAN: AgentName.HUMAN,
@@ -220,6 +226,14 @@ def build_agent_graph(
         {"tools": "pharmacist_tools", END: AgentName.END}
     )
     builder.add_edge("pharmacist_tools", AgentName.PHARMACIST)
+
+    # Paraclinical flow: Paraclinical -> Tools? -> Paraclinical -> End
+    builder.add_conditional_edges(
+        AgentName.PARACLINICAL,
+        tools_condition,
+        {"tools": "paraclinical_tools", END: AgentName.END}
+    )
+    builder.add_edge("paraclinical_tools", AgentName.PARACLINICAL)
 
     # Triage flow
     # Note: Triage has check_human_intervention, but also tools.
