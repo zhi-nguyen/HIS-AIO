@@ -36,6 +36,7 @@ class EmbeddingService:
         self.model_name = model_name
         self._embedding_model = None
         self._embedding_cache: Dict[str, List[float]] = {}
+        self._dimension = 768 # Default
         
         self._initialize_model()
     
@@ -54,7 +55,20 @@ class EmbeddingService:
         try:
             import google.genai as genai
             from django.conf import settings
+            from apps.ai_engine.agents.models import VectorStore
             
+            # 1. Try to load from Database (VectorStore)
+            vector_config = VectorStore.get_active_config()
+            
+            if vector_config:
+                self.model_name = vector_config.embedding_model or self.model_name
+                self._dimension = vector_config.dimensions
+                logger.info(f"Loaded embedding config from DB: {self.model_name} ({self._dimension}d)")
+            
+            # 2. Fallback to settings or default
+            if not self.model_name:
+                self.model_name = getattr(settings, 'RAG_EMBEDDING_MODEL', 'models/text-embedding-004')
+                
             api_key = getattr(settings, 'GOOGLE_API_KEY', None)
             if not api_key:
                 # Try getting from os environment if not in settings
@@ -119,11 +133,11 @@ class EmbeddingService:
         import asyncio
         
         def _sync_embed():
-            # Force 768 dimensions for compatibility
+            # Use configured dimension
             result = self._embedding_model.models.embed_content(
                 model=self.model_name,
                 contents=text,
-                config={'output_dimensionality': 768}
+                config={'output_dimensionality': self._dimension}
             )
             return result.embeddings[0].values
         
@@ -162,13 +176,7 @@ class EmbeddingService:
     
     def get_embedding_dimension(self) -> int:
         """Get the dimension of embeddings from this model."""
-        dimension_map = {
-            'gemini-embedding-001': 768,
-            'models/embedding-001': 768,
-            'models/text-embedding-004': 768,
-        }
-        
-        return dimension_map.get(self.model_name, 768)  # Default to 768
+        return self._dimension
 
 
 async def embed_clinical_note(
