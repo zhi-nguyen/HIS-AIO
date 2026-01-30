@@ -1,14 +1,13 @@
 from django.db import models
-from uuid6 import uuid7
+from apps.core_services.core.models import UUIDModel
 
-class Department(models.Model):
-    id = models.UUIDField(primary_key=True, default=uuid7, editable=False, unique=True)
+class Department(UUIDModel):
     name = models.CharField(max_length=100)
     code = models.CharField(max_length=20, unique=True)
     def __str__(self):
         return f"{self.name} ({self.code})"
     
-class DepartmentMember(models.Model):
+class DepartmentMember(UUIDModel):
     class Position(models.TextChoices):
         HEAD = 'HEAD', 'Trưởng khoa'
         DEPUTY_HEAD = 'DEPUTY_HEAD', 'Phó khoa'
@@ -16,8 +15,6 @@ class DepartmentMember(models.Model):
         MEDICAL_STAFF = 'MEDICAL_STAFF', 'Nhân viên y tế'
         NURSING_STAFF = 'NURSING_STAFF', 'Nhân viên điều dưỡng'
         SUPPORT_STAFF = 'SUPPORT_STAFF', 'Nhân viên hỗ trợ'
-
-    id = models.UUIDField(primary_key=True, default=uuid7, editable=False, unique=True)
     department = models.ForeignKey(
         Department,
         on_delete=models.CASCADE,

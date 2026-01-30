@@ -50,3 +50,4 @@ class ClinicalRecord(UUIDModel):
 
     def __str__(self):
         return f"Medical Record for {self.visit.visit_code}"
+

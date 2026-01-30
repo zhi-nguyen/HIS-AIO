@@ -1,7 +1,7 @@
 from django.db import models
 from django.contrib.auth.models import AbstractUser
+from apps.core_services.core.models import UUIDModel
 from uuid6 import uuid7
-
 class User(AbstractUser):
     id = models.UUIDField(
         primary_key=True,
@@ -26,24 +26,15 @@ class User(AbstractUser):
     USERNAME_FIELD = 'email'
     REQUIRED_FIELDS = ['phone']
 
-class Profile(models.Model):
-    id = models.UUIDField(
-        primary_key=True,
-        default=uuid7,
-        editable=False,
-        unique=True,
-    )
+class Profile(UUIDModel):
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profile')
     bio = models.TextField(null=True, blank=True)
     avatar = models.ImageField(upload_to='avatars/', null=True, blank=True)
 
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
     def __str__(self):
         return f"Profile of {self.user.username}"
 
-class Staff(models.Model):
+class Staff(UUIDModel):
     class StaffRole(models.TextChoices):
         ADMIN = 'ADMIN', 'Administrator'
         DOCTOR = "DOCTOR", 'Doctor'
@@ -53,12 +44,6 @@ class Staff(models.Model):
         PHARMACIST = "PHARMACIST", 'Pharmacist'
         AI_AGENT = "AI_AGENT", 'AI Agent'
 
-    id = models.UUIDField(
-        primary_key=True,
-        default=uuid7,
-        editable=False,
-        unique=True,
-    )
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='staff_profile')
     role = models.CharField(max_length=20, choices=StaffRole.choices)
     department_link = models.ForeignKey(
@@ -72,13 +57,7 @@ class Staff(models.Model):
     department = models.CharField(max_length=100)
     hire_date = models.DateField()
 
-class Certification(models.Model):
-    id = models.UUIDField(
-        primary_key=True,
-        default=uuid7,
-        editable=False,
-        unique=True,
-    )
+class Certification(UUIDModel):
     staff = models.ForeignKey(Staff, on_delete=models.CASCADE, related_name='certifications')
     code = models.CharField(max_length=50, unique=True)
     name = models.CharField(max_length=255)
