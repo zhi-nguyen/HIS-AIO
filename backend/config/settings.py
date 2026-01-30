@@ -40,6 +40,7 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'apps.api',  # Streaming API
     'apps.ai_engine.agents',
     'apps.ai_engine.rag_service',
     'apps.core_services.core',
@@ -112,14 +113,18 @@ REDIS_AGENT_MEMORY_TTL = config('REDIS_AGENT_MEMORY_TTL', default=86400, cast=in
 # RAG Service Configuration
 import os
 RAG_VECTOR_DB = config('RAG_VECTOR_DB', default='pgvector')
-RAG_EMBEDDING_PROVIDER = config('RAG_EMBEDDING_PROVIDER', default='sentence-transformers')
-RAG_EMBEDDING_MODEL = config('RAG_EMBEDDING_MODEL', default='all-MiniLM-L6-v2')
+RAG_EMBEDDING_PROVIDER = config('RAG_EMBEDDING_PROVIDER', default='google')
+RAG_EMBEDDING_MODEL = config('RAG_EMBEDDING_MODEL', default='models/text-embedding-004')
 RAG_EMBEDDING_DIMENSION = config('RAG_EMBEDDING_DIMENSION', default=768, cast=int)
 RAG_TOP_K_RESULTS = config('RAG_TOP_K_RESULTS', default=5, cast=int)
 RAG_SIMILARITY_THRESHOLD = config('RAG_SIMILARITY_THRESHOLD', default=0.5, cast=float)
 
 # Google AI Configuration (if using Google embeddings)
 GOOGLE_API_KEY = config('GOOGLE_API_KEY', default='')
+
+# SSE Streaming Configuration
+SSE_KEEPALIVE_INTERVAL = config('SSE_KEEPALIVE_INTERVAL', default=15, cast=int)  # seconds
+SSE_MAX_STREAM_DURATION = config('SSE_MAX_STREAM_DURATION', default=120, cast=int)  # seconds
 
 
 # Password validation

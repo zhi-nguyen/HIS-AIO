@@ -33,9 +33,26 @@ class VectorStore(UUIDModel):
     name = models.CharField(max_length=100)
     description = models.TextField(blank=True)
     collection_name = models.CharField(max_length=150, unique=True)
+    
+    # Configuration
+    embedding_model = models.CharField(
+        max_length=100, 
+        default='models/text-embedding-004',
+        help_text="Tên model (VD: models/text-embedding-004)"
+    )
+    dimensions = models.IntegerField(
+        default=768,
+        help_text="Kích thước vector (VD: 768)"
+    )
+    is_active = models.BooleanField(default=True)
 
     def __str__(self):
         return self.name
+
+    @classmethod
+    def get_active_config(cls):
+        """Get the first active configuration or None."""
+        return cls.objects.filter(is_active=True).first()
     
 class AgentLog(UUIDModel):
     agent = models.ForeignKey(
