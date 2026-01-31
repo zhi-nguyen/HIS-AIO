@@ -56,6 +56,8 @@ INSTALLED_APPS = [
     'apps.medical_services.paraclinical',  # New
     'apps.core_services.departments',
     'apps.core_services.reception',
+    'apps.core_services.qms',  # Queue Management System
+    'apps.core_services.billing',  # Billing & Payment
 ]
 
 MIDDLEWARE = [
