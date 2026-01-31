@@ -52,6 +52,8 @@ INSTALLED_APPS = [
     'apps.medical_services.inpatients',
     'apps.medical_services.lis',
     'apps.medical_services.ris',
+    'apps.medical_services.pharmacy',      # New
+    'apps.medical_services.paraclinical',  # New
     'apps.core_services.departments',
     'apps.core_services.reception',
 ]

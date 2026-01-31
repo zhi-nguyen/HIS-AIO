@@ -2,24 +2,213 @@
 """
 LangChain Tools for Medical AI Agents
 
-Cung cấp các công cụ (tools) cho agents sử dụng:
-- Consultant: Đặt lịch hẹn, kiểm tra lịch trống
-- Pharmacist: Kiểm tra tương tác thuốc, gợi ý thay thế
-- Triage: Gửi cảnh báo khẩn cấp
+Cung cấp các công cụ (tools) cho agents sử dụng, kết nối trực tiếp với Business Services.
 """
 
 from langchain_core.tools import tool
-from typing import List, Optional
+from typing import List, Optional, Dict
 from datetime import datetime
+import json
 
+# Import Services
+from apps.core_services.reception.services import ReceptionService
+from apps.medical_services.emr.services import ClinicalService
+from apps.medical_services.paraclinical.services import OrderingService
+from apps.medical_services.pharmacy.services import PharmacyService
+
+# Import Models for lookups
+from apps.core_services.core.models import ICD10Code
+from apps.medical_services.paraclinical.models import ServiceResult, ServiceOrder
 
 # ==============================================================================
-# CODE CONSTANTS (Tường minh, có thể truy cập trong code)
+# TOOLS FOR CLINICAL AGENT
 # ==============================================================================
 
-class TriageCode:
-    """Mã phân loại cấp cứu theo tiêu chuẩn quốc tế."""
-    BLUE = "CODE_BLUE"      # Hồi sức cấp cứu (ngừng tim, ngừng thở)
+@tool
+def save_clinical_draft(visit_id: str, diagnosis_data: str) -> str:
+    """
+    Lưu nháp thông tin khám bệnh (triệu chứng, bệnh sử, chẩn đoán sơ bộ) vào hồ sơ.
+    Sử dụng tool này khi cần cập nhật hồ sơ bệnh án từ thông tin đang trao đổi.
+    
+    Args:
+        visit_id: ID của lượt khám (Visit ID).
+        diagnosis_data: Chuỗi JSON chứa các trường cần lưu:
+            - chief_complaint: Lý do khám.
+            - history_of_present_illness: Bệnh sử.
+            - physical_exam: Khám lâm sàng.
+            - final_diagnosis: Chẩn đoán (nếu có).
+            - treatment_plan: Hướng điều trị.
+    
+    Returns:
+        Thông báo xác nhận lưu thành công.
+    """
+    try:
+        data = json.loads(diagnosis_data)
+        record = ClinicalService.save_draft_diagnosis(visit_id, data)
+        return f"Đã lưu nháp hồ sơ thành công cho Visit {record.visit.visit_code}."
+    except json.JSONDecodeError:
+        return "Lỗi: diagnosis_data phải là chuỗi JSON hợp lệ."
+    except Exception as e:
+        return f"Lỗi khi lưu hồ sơ: {str(e)}"
+
+@tool
+def lookup_icd10(keyword: str) -> str:
+    """
+    Tìm kiếm mã bệnh ICD-10 theo từ khóa.
+    
+    Args:
+        keyword: Từ khóa tên bệnh hoặc mã bệnh (ví dụ: "Sốt xuất huyết", "J00").
+    
+    Returns:
+        Danh sách các mã ICD-10 phù hợp (tối đa 5 kết quả).
+    """
+    results = ICD10Code.objects.filter(name__icontains=keyword) | ICD10Code.objects.filter(code__icontains=keyword)
+    results = results[:5]
+    
+    if not results:
+        return f"Không tìm thấy mã ICD-10 nào cho từ khóa '{keyword}'."
+    
+    output = "Kết quả tìm kiếm ICD-10:\n"
+    for item in results:
+        output += f"- {item.code}: {item.name}\n"
+    return output
+
+# ==============================================================================
+# TOOLS FOR PARACLINICAL AGENT
+# ==============================================================================
+
+@tool
+def order_lab_test(visit_id: str, service_ids: List[str], requester_id: str) -> str:
+    """
+    Tạo chỉ định xét nghiệm hoặc chẩn đoán hình ảnh.
+    
+    Args:
+        visit_id: ID lượt khám.
+        service_ids: Danh sách ID của dịch vụ cần chỉ định.
+        requester_id: ID bác sĩ chỉ định (Staff ID).
+    
+    Returns:
+        Thông báo xác nhận chỉ định.
+    """
+    try:
+        orders = OrderingService.create_lab_order(visit_id, service_ids, requester_id)
+        names = [o.service.name for o in orders]
+        return f"Đã chỉ định thành công: {', '.join(names)}"
+    except Exception as e:
+        return f"Lỗi khi tạo chỉ định: {str(e)}"
+
+@tool
+def get_lab_results(visit_id: str) -> str:
+    """
+    Lấy danh sách kết quả cận lâm sàng của lượt khám hiện tại.
+    
+    Args:
+        visit_id: ID lượt khám.
+    
+    Returns:
+        Danh sách kết quả (tên dịch vụ, kết quả, link ảnh nếu có).
+    """
+    results = ServiceResult.objects.filter(
+        order__visit__id=visit_id,
+        order__status=ServiceOrder.Status.COMPLETED
+    ).select_related('order__service')
+    
+    if not results:
+        return "Chưa có kết quả cận lâm sàng nào cho lượt khám này."
+    
+    output = "KẾT QUẢ CẬN LÂM SÀNG:\n"
+    for res in results:
+        val = res.text_result or "Xem ảnh đính kèm"
+        output += f"- {res.order.service.name}: {val}"
+        if res.image_url:
+            output += f" (Link: {res.image_url})"
+        output += "\n"
+        
+    return output
+
+# ==============================================================================
+# TOOLS FOR PHARMACIST AGENT
+# ==============================================================================
+
+@tool
+def check_drug_availability(medication_ids: List[str]) -> str:
+    """
+    Kiểm tra tồn kho thuốc.
+    
+    Args:
+        medication_ids: Danh sách ID thuốc.
+    
+    Returns:
+        Thông tin tồn kho cho từng thuốc.
+    """
+    stock = PharmacyService.check_inventory(medication_ids)
+    output = "TÌNH TRẠNG KHO DƯỢC:\n"
+    for name, count in stock.items():
+        status = "Còn hàng" if count > 0 else "HẾT HÀNG"
+        output += f"- {name}: {count} ({status})\n"
+    return output
+
+@tool
+def check_drug_interaction(medication_ids: List[str]) -> str:
+    """
+    Kiểm tra tương tác thuốc.
+    
+    Args:
+        medication_ids: Danh sách ID thuốc trong đơn.
+    
+    Returns:
+        Cảnh báo tương tác nếu có.
+    """
+    warnings = PharmacyService.validate_interactions(medication_ids)
+    if not warnings:
+        return "Không phát hiện tương tác thuốc đáng kể."
+    
+    return "CẢNH BÁO TƯƠNG TÁC THUỐC:\n" + "\n".join(f"- {w}" for w in warnings)
+
+# ==============================================================================
+# TOOLS FOR TRIAGE AGENT (Keep relevant parts from original logic)
+# ==============================================================================
+
+@tool
+def trigger_emergency_alert(level: str, location: str, patient_info: str) -> str:
+    """
+    Gửi cảnh báo khẩn cấp (CODE RED/BLUE).
+    Hiện tại ghi log, tương lai sẽ đẩy WebSocket.
+    """
+    return f"[MOCK ALERT] Cảnh báo {level} tại {location} cho {patient_info} đã được gửi!"
+
+@tool
+def assess_vital_signs(
+    systolic_bp: Optional[int] = None,
+    heart_rate: Optional[int] = None,
+    spo2: Optional[int] = None,
+    temperature: Optional[float] = None
+) -> str:
+    """
+    Đánh giá nhanh chỉ số sinh hiệu.
+    """
+    alerts = []
+    if systolic_bp and (systolic_bp > 160 or systolic_bp < 90):
+        alerts.append(f"HA: {systolic_bp} (Nguy hiểm)")
+    if heart_rate and (heart_rate > 120 or heart_rate < 50):
+        alerts.append(f"Mạch: {heart_rate} (Nguy hiểm)")
+    if spo2 and spo2 < 92:
+        alerts.append(f"SpO2: {spo2}% (Thiếu oxy)")
+    
+    if alerts:
+        return "CẢNH BÁO SINH HIỆU: " + ", ".join(alerts)
+    return "Sinh hiệu trong giới hạn an toàn."
+
+# ==============================================================================
+# TOOLS FOR CONSULTANT (Keep minimal)
+# ==============================================================================
+
+@tool
+def check_appointment_slots(department: str, date: str) -> str:
+    """
+    Kiểm tra lịch trống (Mock).
+    """
+    return f"Khoa {department} ngày {date} còn trống các khung giờ: 08:00, 10:00, 14:00."
     RED = "CODE_RED"        # Cấp cứu khẩn (< 10 phút)
     YELLOW = "CODE_YELLOW"  # Khẩn cấp (< 60 phút)
     GREEN = "CODE_GREEN"    # Không khẩn cấp (có thể chờ)
