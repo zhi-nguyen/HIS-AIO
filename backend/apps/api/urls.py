@@ -43,5 +43,10 @@ urlpatterns = [
     # UTILITY ENDPOINTS
     # ==========================================================================
     path('health/', views.health_check, name='health_check'),
+    
+    # ==========================================================================
+    # EMR DATA ENDPOINTS
+    # ==========================================================================
+    path('emr/<uuid:visit_id>/ai-suggestions/', data_views.get_ai_suggestions, name='emr_ai_suggestions'),
 ]
 
