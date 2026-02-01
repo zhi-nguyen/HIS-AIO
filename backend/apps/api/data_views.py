@@ -678,3 +678,51 @@ def assess_vitals(request: HttpRequest) -> JsonResponse:
             {"error": str(e), "code": "INTERNAL_ERROR"},
             status=500
         )
+
+
+# =============================================================================
+# AI SUGGESTIONS RETRIEVAL ENDPOINT
+# =============================================================================
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def get_ai_suggestions(request: HttpRequest, visit_id: str) -> JsonResponse:
+    """
+    Retrieve saved AI suggestions for a specific visit's clinical record.
+    
+    Path Parameter:
+        visit_id (UUID): The ID of the visit.
+    
+    Response:
+        {
+            "visit_id": "uuid",
+            "visit_code": "VISIT-xxx",
+            "ai_suggestions": {...},  // The raw AI suggestion JSON
+            "is_finalized": false
+        }
+    """
+    try:
+        from apps.medical_services.emr.models import ClinicalRecord
+        
+        record = ClinicalRecord.objects.select_related('visit').get(visit__id=visit_id)
+        
+        response = {
+            "visit_id": str(record.visit.id),
+            "visit_code": record.visit.visit_code,
+            "ai_suggestions": record.ai_suggestion_json,
+            "is_finalized": record.is_finalized,
+        }
+        
+        return JsonResponse(response, json_dumps_params={'ensure_ascii': False})
+        
+    except ClinicalRecord.DoesNotExist:
+        return JsonResponse(
+            {"error": "Clinical record not found for this visit", "code": "NOT_FOUND"},
+            status=404
+        )
+    except Exception as e:
+        logger.error(f"Get AI suggestions error: {e}", exc_info=True)
+        return JsonResponse(
+            {"error": str(e), "code": "INTERNAL_ERROR"},
+            status=500
+        )

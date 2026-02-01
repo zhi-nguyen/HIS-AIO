@@ -26,9 +26,12 @@ from .prompts import (
     GLOBAL_LANGUAGE_RULE,
 )
 
-from .nodes import (
+from .llm_config import (
     MODEL_CONFIG,
     TEMPERATURE_CONFIG,
+)
+
+from .nodes import (
     supervisor_node,
     clinical_node_with_escalation,
     triage_node_with_escalation,

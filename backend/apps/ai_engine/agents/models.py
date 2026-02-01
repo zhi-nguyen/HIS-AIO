@@ -6,6 +6,10 @@ class AgentProfile(UUIDModel):
         CONSULTANT = 'CONSULTANT', 'Consultant'
         TRIAGE = 'TRIAGE', 'Triage'
         CLINICAL = 'CLINICAL', 'Clinical'
+        PHARMACY = 'PHARMACY', 'Pharmacy'
+        PARACLINICAL = 'PARACLINICAL', 'Paraclinical'
+        MARKETING = 'MARKETING', 'Marketing'
+        HUMAN_INTERVENTION = 'HUMAN_INTERVENTION', 'Human Intervention'
         CORE = 'CORE', 'Core'
         
     class ModelName(models.TextChoices):

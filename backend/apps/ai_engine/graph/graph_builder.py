@@ -115,6 +115,36 @@ def should_continue(state: AgentState) -> str:
 
 
 # =============================================================================
+# PERSISTENCE SETUP
+# =============================================================================
+
+def get_db_connection_pool():
+    """
+    Create a connection pool for PostgresSaver.
+    """
+    try:
+        from django.conf import settings
+        from psycopg_pool import ConnectionPool
+        
+        db_config = settings.DATABASES['default']
+        # Construct simplified connection string or use params
+        # conninfo format: postgresql://user:password@host:port/dbname
+        conninfo = f"postgresql://{db_config['USER']}:{db_config['PASSWORD']}@{db_config['HOST']}:{db_config['PORT']}/{db_config['NAME']}"
+        
+        pool = ConnectionPool(
+            conninfo=conninfo,
+            max_size=20,
+            kwargs={"autocommit": True}
+        )
+        return pool
+    except ImportError:
+        logger.warning("psycopg_pool not installed. Persistence will use MemorySaver.")
+        return None
+    except Exception as e:
+        logger.warning(f"Could not create DB pool: {e}. Persistence will use MemorySaver.")
+        return None
+
+# =============================================================================
 # GRAPH BUILDER
 # =============================================================================
 
@@ -127,26 +157,10 @@ def build_agent_graph(
     
     Args:
         checkpointer: Optional LangGraph checkpointer for persistence
-        include_memory: If True and no checkpointer provided, use MemorySaver
+        include_memory: If True and no checkpointer provided, attempt to use PostgresSaver, fallback to MemorySaver
     
     Returns:
         Compiled StateGraph ready for execution
-    
-    Example:
-        # Basic usage
-        graph = build_agent_graph()
-        
-        # With custom checkpointer
-        from langgraph.checkpoint.postgres import PostgresSaver
-        checkpointer = PostgresSaver(conn_string="...")
-        graph = build_agent_graph(checkpointer=checkpointer)
-        
-        # Execute
-        initial_state = create_initial_state(
-            session_id="sess-123",
-            initial_message="Tôi bị đau đầu"
-        )
-        result = graph.invoke(initial_state)
     """
     # Create the graph builder
     builder = StateGraph(AgentState)
@@ -235,24 +249,7 @@ def build_agent_graph(
     )
     builder.add_edge("paraclinical_tools", AgentName.PARACLINICAL)
 
-    # Triage flow
-    # Note: Triage has check_human_intervention, but also tools.
-    # We prioritize tools first. If no tool, check human intervention.
-    # However, standard tools_condition routes to END if no tool.
-    # We need a custom condition or careful ordering.
-    # Let's use tools_condition normally, mapping END to check_human_intervention logic or intermediate check.
-    
     # Triage flow: Triage -> Tools? -> Triage -> Human Check? -> End
-
-    
-    # Custom conditional edge for Triage human check (after tool check passes/fails)
-    # We can't route from TRIAGE twice. 
-    # Solution: We need a "dummy node" or use the fact that detailed control flow 
-    # is easier if we define a custom routing function combining both.
-    
-    # BETTER APPROACH for Triage:
-    # Use a custom function `triage_routing` instead of `tools_condition`.
-    
     def triage_routing(state):
         # 1. Check for tool calls
         last_message = state["messages"][-1]
@@ -261,7 +258,6 @@ def build_agent_graph(
         # 2. Check for human intervention
         return check_human_intervention(state)
 
-    # Remove the previous add_conditional_edges for TRIAGE and replace with:
     builder.add_conditional_edges(
         AgentName.TRIAGE,
         triage_routing,
@@ -287,7 +283,19 @@ def build_agent_graph(
     
     # Setup checkpointer for persistence
     if checkpointer is None and include_memory:
-        checkpointer = MemorySaver()
+        try:
+            from langgraph.checkpoint.postgres import PostgresSaver
+            pool = get_db_connection_pool()
+            if pool:
+                checkpointer = PostgresSaver(pool)
+                checkpointer.setup() # Ensure tables exist
+                logger.info("Using PostgresSaver for persistence")
+            else:
+                checkpointer = MemorySaver()
+                logger.info("Using MemorySaver (Postgres pool failed)")
+        except ImportError:
+            checkpointer = MemorySaver()
+            logger.info("Using MemorySaver (PostgresSaver import failed)")
     
     # Compile
     graph = builder.compile(checkpointer=checkpointer)
