@@ -7,13 +7,29 @@ Provides endpoints for:
 - Health checks
 """
 
-from django.urls import path
+from django.urls import path, include
+from rest_framework_simplejwt.views import (
+    TokenObtainPairView,
+    TokenRefreshView,
+)
 from . import views
 from . import data_views
+from .routers import router
 
 app_name = 'api'
 
 urlpatterns = [
+    # ==========================================================================
+    # AUTHENTICATION (JWT)
+    # ==========================================================================
+    path('token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
+    path('token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
+    
+    # ==========================================================================
+    # REST API ROUTER (CRUD)
+    # ==========================================================================
+    path('', include(router.urls)),
+
     # ==========================================================================
     # CHAT ENDPOINTS (Streaming)
     # ==========================================================================

@@ -11,7 +11,7 @@ class User(AbstractUser):
     )
 
     email = models.EmailField(unique=True, null=False, blank=False)
-    phone = models.CharField(max_length=12, unique=True,null=False, blank=False)
+    phone = models.CharField(max_length=12, unique=True, null=True, blank=True)
 
     otp = models.CharField(max_length=6, null=True, blank=True)
     passcode = models.CharField(max_length=6, null=True, blank=True)
