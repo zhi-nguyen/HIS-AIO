@@ -352,6 +352,23 @@ class StreamingService:
                 elif event_kind == "on_chain_end":
                     # Check if this is the final output
                     output = event_data.get("output", {})
+                    
+                    # DEBUG: Log chain end events
+                    if isinstance(output, dict):
+                        has_messages = "messages" in output
+                        msg_count = len(output.get("messages", []))
+                        agent = output.get("current_agent", "unknown")
+                        logger.info(f"[DEBUG] on_chain_end: name={event_name}, agent={agent}, has_messages={has_messages}, msg_count={msg_count}")
+                        
+                        if has_messages and msg_count > 0:
+                            last_msg = output["messages"][-1]
+                            if hasattr(last_msg, "content"):
+                                content_preview = str(last_msg.content)[:100] if last_msg.content else "(empty)"
+                                logger.info(f"[DEBUG] Last message content preview: {content_preview}")
+                            if hasattr(last_msg, "additional_kwargs"):
+                                has_structured = "structured_response" in last_msg.additional_kwargs
+                                logger.info(f"[DEBUG] Has structured_response: {has_structured}")
+                    
                     if isinstance(output, dict) and "messages" in output:
                         final_output = output
             

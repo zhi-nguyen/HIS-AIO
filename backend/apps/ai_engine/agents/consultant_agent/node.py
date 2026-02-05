@@ -2,37 +2,66 @@
 """
 Consultant Agent Node - Nhân viên tư vấn
 
-Sử dụng 2-phase approach cho agents có tools:
-1. Phase 1: LLM với tools để thực hiện appointment booking
-2. Phase 2: Structured output để format response
+REFACTORED cho Real Token Streaming:
+- Phase 1: LLM với tools để booking
+- Phase 2: Text response nếu không cần tools
 """
 
-from typing import Dict, Any
-from langchain_core.messages import SystemMessage, AIMessage
+from typing import Dict, Any, List
+import re
+from langchain_core.messages import SystemMessage, AIMessage, HumanMessage
 
 from apps.ai_engine.graph.state import AgentState
-from apps.ai_engine.graph.llm_config import llm_consultant_with_tools, llm_flash, logging_node_execution
-from apps.ai_engine.agents.schemas import ConsultantResponse
-from apps.ai_engine.agents.utils import format_structured_response_to_message
-from .prompts import CONSULTANT_PROMPT
+from apps.ai_engine.graph.llm_config import llm_consultant_with_tools, logging_node_execution
+from apps.ai_engine.agents.message_utils import convert_and_filter_messages, log_llm_response
+from .prompts import CONSULTANT_THINKING_PROMPT
+
+
+def extract_thinking_steps(text: str) -> List[str]:
+    """Extract thinking steps từ text với format **Bước X:**"""
+    steps = []
+    pattern = r'\*\*Bước\s*\d+[^*]*\*\*:?\s*([^\*]+?)(?=\*\*Bước|\*\*Phản hồi|$)'
+    matches = re.findall(pattern, text, re.DOTALL | re.IGNORECASE)
+    
+    for i, match in enumerate(matches, 1):
+        step_text = match.strip()
+        if step_text:
+            if len(step_text) > 200:
+                step_text = step_text[:200] + "..."
+            steps.append(f"Bước {i}: {step_text}")
+    
+    return steps if steps else ["Đã xử lý yêu cầu tư vấn"]
+
+
+def extract_department_info(text: str) -> str:
+    """Extract department info từ text."""
+    pattern = r'(Khoa\s+\w+[^,\n]*|tầng\s+\d+[^,\n]*|phòng\s+\d+[^,\n]*)'
+    matches = re.findall(pattern, text, re.IGNORECASE)
+    if matches:
+        return ", ".join(matches[:3])
+    return None
 
 
 def consultant_node(state: AgentState) -> Dict[str, Any]:
     """
-    Consultant Agent (Nhân viên tư vấn) - Has Booking Tools
+    Consultant Agent (Nhân viên tư vấn) - Real Token Streaming
     
-    Sử dụng 2-phase approach:
-    - Nếu cần gọi tools -> trả về AIMessage với tool_calls
-    - Nếu không cần tools -> trả về structured JSON response
+    Flow:
+    1. Nếu cần tools -> return tool calls
+    2. LLM text response cho tư vấn thông thường
     """
     logging_node_execution("CONSULTANT")
     messages = state["messages"]
-    prompt = [SystemMessage(content=CONSULTANT_PROMPT)] + messages
+    
+    # Convert và filter messages
+    converted_messages, last_user_message = convert_and_filter_messages(messages, "CONSULTANT")
+    
+    prompt = [SystemMessage(content=CONSULTANT_THINKING_PROMPT)] + converted_messages
     
     # Phase 1: Gọi LLM với tools binding
     response = llm_consultant_with_tools.invoke(prompt)
     
-    # Nếu LLM quyết định gọi tool, trả về để LangGraph xử lý
+    # Nếu LLM quyết định gọi tool
     if hasattr(response, "tool_calls") and response.tool_calls:
         print(f"[CONSULTANT] Tool calls detected: {[tc['name'] for tc in response.tool_calls]}")
         return {
@@ -40,46 +69,38 @@ def consultant_node(state: AgentState) -> Dict[str, Any]:
             "current_agent": "consultant"
         }
     
-    # Phase 2: Parse response thành structured format
+    # Log response
+    text_analysis = log_llm_response(response, "CONSULTANT")
+    
     try:
-        llm_structured = llm_flash.with_structured_output(ConsultantResponse)
+        # Extract components từ text
+        thinking_steps = extract_thinking_steps(text_analysis)
+        department_info = extract_department_info(text_analysis)
         
-        format_prompt = [
-            SystemMessage(content=f"""Bạn là Consultant Agent. Hãy format lại phản hồi sau thành JSON theo schema yêu cầu.
-            
-Phản hồi gốc: {response.content}
-
-JSON Schema yêu cầu:
-{{
-  "thinking_progress": ["Bước 1...", "Bước 2..."],
-  "final_response": "Phản hồi đầy đủ...",
-  "confidence_score": 0.0-1.0,
-  "appointment_info": {{"department": "...", "date": "...", "time_slot": "...", "doctor_name": "..."}} (hoặc null),
-  "available_slots": ["slot1", "slot2"] (hoặc null),
-  "department_info": "Thông tin khoa phòng",
-  "insurance_guidance": "Hướng dẫn bảo hiểm nếu có"
-}}""")
-        ] + messages
+        print(f"[CONSULTANT] Thinking steps: {len(thinking_steps)}")
         
-        structured_response = llm_structured.invoke(format_prompt)
+        # Build structured data
+        structured_data = {
+            "thinking_progress": thinking_steps,
+            "final_response": text_analysis,
+            "confidence_score": 0.85,
+            "department_info": department_info,
+        }
         
-        # Log thinking progress
-        print(f"[CONSULTANT] Thinking Progress:")
-        for step in structured_response.thinking_progress:
-            print(f"  - {step}")
-        print(f"[CONSULTANT] Confidence: {structured_response.confidence_score}")
-        
-        message = format_structured_response_to_message(structured_response, "consultant")
-        
-    except Exception as e:
-        print(f"[CONSULTANT] Structured output error: {e}")
         message = AIMessage(
-            content=response.content,
+            content=text_analysis,
             additional_kwargs={
                 "agent": "consultant",
-                "thinking_progress": [],
-                "structured_response": None
+                "structured_response": structured_data,
+                "thinking_progress": thinking_steps,
             }
+        )
+        
+    except Exception as e:
+        print(f"[CONSULTANT] Error: {e}")
+        message = AIMessage(
+            content=text_analysis,
+            additional_kwargs={"agent": "consultant", "error": str(e)}
         )
     
     return {
