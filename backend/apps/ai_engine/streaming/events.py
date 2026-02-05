@@ -10,13 +10,31 @@ from enum import Enum
 
 
 class EventType:
-    """Event type constants for SSE streaming."""
+    """
+    Event type constants for SSE streaming.
+    
+    Protocol: "Stream Tư Duy - Return Kết Quả" (Stream Thoughts, Return Data)
+    
+    Thinking Phase (Giai đoạn 1):
+        - THINKING: Stream từng token suy luận để Frontend hiển thị mượt
+        
+    Data Phase (Giai đoạn 2):
+        - RESULT_JSON: Gửi toàn bộ cục JSON kết quả một lần
+        - DONE: Kết thúc stream
+    """
+    # Phase 1: Thinking (stream token-by-token)
+    THINKING = "thinking"      # Stream thought tokens
+    
+    # Phase 2: Result (complete JSON)
+    RESULT_JSON = "result_json" # Complete structured JSON result
+    DONE = "done"              # Stream completion marker
+    
+    # Legacy/compatibility types
     STATUS = "status"
-    TOKEN = "token"
+    TOKEN = "token"            # Alias for thinking
     TOOL_START = "tool_start"
     TOOL_END = "tool_end"
     ERROR = "error"
-    DONE = "done"
     KEEPALIVE = "keepalive"
 
 
@@ -93,8 +111,27 @@ class StreamEvent:
     """
     Structured streaming event for SSE.
     
+    Protocol: "Stream Tư Duy - Return Kết Quả" (Stream Thoughts, Return Data)
+    
+    Event Format:
+        // Chunk dạng suy luận (Gửi liên tục nhiều lần)
+        { "type": "thinking", "content": "Đang tra cứu..." }
+        
+        // Chunk kết quả (Gửi 1 lần duy nhất khi xong)
+        { 
+          "type": "result_json", 
+          "content": {
+              "status": "warning",
+              "drug_interactions": [...],
+              ...
+          } 
+        }
+        
+        // Chunk kết thúc
+        { "type": "done" }
+    
     Attributes:
-        type: Event type (status, token, error, done)
+        type: Event type (thinking, result_json, done, error)
         data: Event-specific data payload
     """
     type: str
@@ -105,6 +142,60 @@ class StreamEvent:
         result = {"type": self.type}
         result.update(self.data)
         return result
+    
+    # =========================================================================
+    # PHASE 1: THINKING EVENTS (Stream token-by-token)
+    # =========================================================================
+    
+    @classmethod
+    def thinking(cls, content: str) -> "StreamEvent":
+        """
+        Create a thinking event for streaming thought tokens.
+        
+        Giai đoạn 1: Stream từng chữ trong quá trình suy luận.
+        Frontend hiển thị text này chạy mượt mà (giống ChatGPT).
+        
+        Args:
+            content: Thought token content (partial text)
+            
+        Returns:
+            StreamEvent with type="thinking"
+            
+        Example:
+            yield StreamEvent.thinking("Đang").to_dict()
+            yield StreamEvent.thinking(" tra").to_dict()
+            yield StreamEvent.thinking(" cứu").to_dict()
+        """
+        return cls(type=EventType.THINKING, data={"content": content})
+    
+    # =========================================================================
+    # PHASE 2: RESULT EVENTS (Complete JSON at the end)
+    # =========================================================================
+    
+    @classmethod
+    def result_json(cls, content: Dict[str, Any]) -> "StreamEvent":
+        """
+        Create a result_json event with complete structured data.
+        
+        Giai đoạn 2: Khi suy luận xong, gửi toàn bộ cục JSON cuối cùng.
+        Frontend nhận được JSON hợp lệ để render component.
+        
+        Args:
+            content: Complete structured data (Dict, not string)
+            
+        Returns:
+            StreamEvent with type="result_json"
+            
+        Example:
+            yield StreamEvent.result_json({
+                "status": "warning",
+                "drug_interactions": [
+                    {"drug_pair": "...", "severity": "...", ...}
+                ],
+                "message": "Cảnh báo tương tác thuốc..."
+            }).to_dict()
+        """
+        return cls(type=EventType.RESULT_JSON, data={"content": content})
     
     @classmethod
     def status(cls, status: str, message: str = None, agent: str = None) -> "StreamEvent":
@@ -159,9 +250,22 @@ class StreamEvent:
         )
     
     @classmethod
-    def done(cls, full_response: str, metadata: Dict[str, Any] = None) -> "StreamEvent":
-        """Create a completion event."""
-        data = {"full_response": full_response}
+    def done(cls, full_response: str = None, metadata: Dict[str, Any] = None) -> "StreamEvent":
+        """
+        Create a completion event to signal stream end.
+        
+        Giai đoạn kết thúc: Đánh dấu stream đã hoàn tất.
+        
+        Args:
+            full_response: Optional full text response (legacy support)
+            metadata: Optional session metadata
+            
+        Returns:
+            StreamEvent with type="done"
+        """
+        data = {}
+        if full_response:
+            data["full_response"] = full_response
         if metadata:
             data["metadata"] = metadata
         return cls(type=EventType.DONE, data=data)

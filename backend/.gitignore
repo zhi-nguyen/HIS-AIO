@@ -6,6 +6,6 @@ db.sqlite3
 logs/
 .pytest_cache
 /media
-
+tests/
 .agent/
 scripts/

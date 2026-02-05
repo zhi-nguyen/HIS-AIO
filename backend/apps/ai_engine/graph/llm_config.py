@@ -40,14 +40,16 @@ TEMPERATURE_CONFIG = {
 llm_pro = ChatGoogleGenerativeAI(
     model=MODEL_CONFIG["complex"],
     temperature=TEMPERATURE_CONFIG["precise"],
-    convert_system_message_to_human=True
+    convert_system_message_to_human=True,
+    streaming=True  # Enable token-by-token streaming
 )
 
 # Model for Fast Tasks (Consultant, Marketing, Summarize)
 llm_flash = ChatGoogleGenerativeAI(
     model=MODEL_CONFIG["fast"],
     temperature=TEMPERATURE_CONFIG["creative"],
-    convert_system_message_to_human=True
+    convert_system_message_to_human=True,
+    streaming=True  # Enable token-by-token streaming
 )
 
 # ==============================================================================
