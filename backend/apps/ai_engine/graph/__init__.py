@@ -9,6 +9,9 @@ Main exports:
 - AgentState: State type for the graph
 - create_initial_state: Factory for initial state
 - run_agent_sync / run_agent_async: Execute the graph
+
+NOTE: Node imports are NOT included here to avoid circular imports.
+Import nodes directly from graph.nodes or individual agent node files.
 """
 
 from .state import (
@@ -31,20 +34,11 @@ from .llm_config import (
     TEMPERATURE_CONFIG,
 )
 
-from .nodes import (
-    supervisor_node,
-    clinical_node_with_escalation,
-    triage_node_with_escalation,
-    consultant_node,
-    pharmacist_node,
-    summarize_node,
-    marketing_node,
-    human_intervention_node,
-    end_node,
-    NODE_REGISTRY,
-    get_node,
-)
-# ...
+# NOTE: Node imports removed to avoid circular imports
+# Import nodes directly when needed:
+#   from apps.ai_engine.graph.nodes import supervisor_node, ...
+# Or:
+#   from apps.ai_engine.agents.core_agent.node import supervisor_node
 
 __all__ = [
     # State
@@ -60,26 +54,45 @@ __all__ = [
     "get_system_prompt",
     "GLOBAL_LANGUAGE_RULE",
     
-    # Nodes
+    # Config
     "MODEL_CONFIG",
     "TEMPERATURE_CONFIG",
-    "supervisor_node",
-    "clinical_node_with_escalation",
-    "triage_node_with_escalation",
-    "consultant_node",
-    "pharmacist_node",
-    "summarize_node",
-    "marketing_node",
-    "human_intervention_node",
-    "end_node",
-    "NODE_REGISTRY",
-    "get_node",
-    
-    # Graph
-    "build_agent_graph",
-    "create_simple_graph",
-    "run_agent_sync",
-    "run_agent_async",
-    "get_default_graph",
-    "get_graph_mermaid",
 ]
+
+
+# Lazy imports for graph building functions
+def build_agent_graph(*args, **kwargs):
+    """Lazy import to avoid circular imports."""
+    from .graph_builder import build_agent_graph as _build
+    return _build(*args, **kwargs)
+
+
+def create_simple_graph(*args, **kwargs):
+    """Lazy import to avoid circular imports."""
+    from .graph_builder import create_simple_graph as _create
+    return _create(*args, **kwargs)
+
+
+def run_agent_sync(*args, **kwargs):
+    """Lazy import to avoid circular imports."""
+    from .graph_builder import run_agent_sync as _run
+    return _run(*args, **kwargs)
+
+
+async def run_agent_async(*args, **kwargs):
+    """Lazy import to avoid circular imports."""
+    from .graph_builder import run_agent_async as _run
+    return await _run(*args, **kwargs)
+
+
+def get_default_graph(*args, **kwargs):
+    """Lazy import to avoid circular imports."""
+    from .graph_builder import get_default_graph as _get
+    return _get(*args, **kwargs)
+
+
+def get_graph_mermaid(*args, **kwargs):
+    """Lazy import to avoid circular imports."""
+    from .graph_builder import get_graph_mermaid as _get
+    return _get(*args, **kwargs)
+
