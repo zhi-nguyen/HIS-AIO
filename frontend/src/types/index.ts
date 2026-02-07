@@ -1,0 +1,354 @@
+/**
+ * Type definitions for HIS Frontend
+ * Phù hợp với backend Django/DRF
+ */
+
+// ============================================================================
+// AUTH TYPES
+// ============================================================================
+
+export interface LoginCredentials {
+    email: string;  // Backend sử dụng email làm USERNAME_FIELD
+    password: string;
+}
+
+export interface TokenResponse {
+    access: string;
+    refresh: string;
+}
+
+export interface JWTPayload {
+    user_id: string;  // UUID từ backend
+    email?: string;
+    exp: number;
+    iat: number;
+    jti?: string;
+    token_type?: string;
+}
+
+// ============================================================================
+// STAFF & USER TYPES
+// ============================================================================
+
+export type StaffRole =
+    | 'ADMIN'
+    | 'DOCTOR'
+    | 'NURSE'
+    | 'RECEPTIONIST'
+    | 'LAB_TECHNICIAN'
+    | 'PHARMACIST'
+    | 'AI_AGENT';
+
+export interface Staff {
+    id: string;
+    user_id: string;
+    role: StaffRole;
+    department: string;
+    department_link?: string;
+    hire_date: string;
+}
+
+// ============================================================================
+// PATIENT TYPES
+// ============================================================================
+
+export type Gender = 'M' | 'F' | 'O';
+
+export interface Patient {
+    id: string;
+    patient_code: string;
+    first_name: string;
+    last_name: string;
+    full_name?: string;  // computed property from backend
+    full_address?: string;  // computed property from backend
+    date_of_birth?: string;
+    gender: Gender;
+    contact_number?: string;
+    id_card?: string;
+    insurance_number?: string;
+    address_detail?: string;
+    province?: string;
+    ward?: string;
+    is_anonymous?: boolean;
+    is_merged?: boolean;
+    created_at?: string;
+    updated_at?: string;
+}
+
+export interface PatientCreateInput {
+    first_name: string;
+    last_name: string;
+    date_of_birth?: string;
+    gender: Gender;
+    contact_number?: string;
+    id_card?: string;
+    insurance_number?: string;
+    address_detail?: string;
+}
+
+// ============================================================================
+// VISIT / RECEPTION TYPES
+// ============================================================================
+
+// Backend Visit status from reception/models.py
+export type VisitStatus = 'CHECK_IN' | 'TRIAGE' | 'WAITING' | 'IN_PROGRESS' | 'PENDING_RESULTS' | 'COMPLETED' | 'CANCELLED';
+export type VisitPriority = 'NORMAL' | 'PRIORITY' | 'EMERGENCY';
+
+export interface Visit {
+    id: string;
+    visit_code: string;
+    patient: Patient | string;  // Can be nested or just ID
+    status: VisitStatus;
+    priority: VisitPriority;
+    queue_number: number;
+    check_in_time?: string;
+    check_out_time?: string;
+    assigned_staff?: string;
+    created_at?: string;
+    updated_at?: string;
+}
+
+export interface VisitCreateInput {
+    patient: string;  // patient ID
+    priority?: VisitPriority;
+}
+
+// ============================================================================
+// QMS TYPES
+// ============================================================================
+
+export type QueueStatus = 'WAITING' | 'CALLED' | 'IN_PROGRESS' | 'COMPLETED' | 'SKIPPED';
+export type StationType = 'TRIAGE' | 'DOCTOR' | 'LAB' | 'IMAGING' | 'PHARMACY' | 'CASHIER';
+
+export interface QueueNumber {
+    id: string;
+    number_code: string;  // VD: PK01-2026013101-005
+    daily_sequence: number;
+    visit: Visit | string;
+    station: ServiceStation | string;
+    status: QueueStatus;
+    priority: number;
+    created_date: string;
+    created_time: string;
+    called_at?: string;
+}
+
+export interface ServiceStation {
+    id: string;
+    code: string;
+    name: string;
+    station_type: StationType;
+    is_active: boolean;
+    room_location?: string;
+    current_queue?: QueueNumber;
+}
+
+// ============================================================================
+// EMR / CLINICAL TYPES
+// ============================================================================
+
+export interface VitalSigns {
+    temperature?: number;
+    systolic_bp?: number;
+    diastolic_bp?: number;
+    heart_rate?: number;
+    respiratory_rate?: number;
+    spo2?: number;
+    weight?: number;
+    height?: number;
+}
+
+export interface AISuggestion {
+    differential_diagnosis?: string[];
+    recommended_tests?: string[];
+    treatment_suggestions?: string[];
+    warnings?: string[];
+    reasoning?: string;
+}
+
+export interface ClinicalRecord {
+    id: string;
+    visit: Visit;
+    chief_complaint: string;
+    present_illness?: string;
+    past_medical_history?: string;
+    vital_signs?: VitalSigns;
+    physical_examination?: string;
+    diagnosis?: string;
+    icd_codes?: string[];
+    treatment_plan?: string;
+    ai_suggestions?: AISuggestion;
+    is_finalized: boolean;
+    created_by: string;
+    created_at: string;
+    updated_at: string;
+}
+
+// ============================================================================
+// LIS TYPES
+// ============================================================================
+
+export interface LabTest {
+    id: string;
+    test_code: string;
+    test_name: string;
+    category: string;
+    unit: string;
+    reference_min?: number;
+    reference_max?: number;
+    price: number;
+}
+
+export type LabOrderStatus = 'PENDING' | 'SAMPLE_COLLECTED' | 'IN_PROGRESS' | 'COMPLETED' | 'VERIFIED';
+export type ResultFlag = 'NORMAL' | 'LOW' | 'HIGH' | 'CRITICAL';
+
+export interface LabOrderItem {
+    id: string;
+    lab_test: LabTest;
+    result_value?: string;
+    result_flag?: ResultFlag;
+    notes?: string;
+}
+
+export interface LabOrder {
+    id: string;
+    order_code: string;
+    visit: Visit;
+    tests: LabOrderItem[];
+    status: LabOrderStatus;
+    ordered_by: string;
+    created_at: string;
+}
+
+// ============================================================================
+// RIS TYPES
+// ============================================================================
+
+export type Modality = 'XRAY' | 'CT' | 'MRI' | 'US' | 'OTHER';
+export type ImagingOrderStatus = 'PENDING' | 'SCHEDULED' | 'IN_PROGRESS' | 'COMPLETED' | 'REPORTED';
+
+export interface ImagingProcedure {
+    id: string;
+    procedure_code: string;
+    procedure_name: string;
+    modality: Modality;
+    price: number;
+}
+
+export interface ImagingOrder {
+    id: string;
+    order_code: string;
+    visit: Visit;
+    procedure: ImagingProcedure;
+    clinical_indication?: string;
+    status: ImagingOrderStatus;
+    report?: string;
+    findings?: string;
+    ordered_by: string;
+    created_at: string;
+}
+
+// ============================================================================
+// PHARMACY TYPES
+// ============================================================================
+
+export interface Medication {
+    id: string;
+    drug_code: string;
+    drug_name: string;
+    generic_name?: string;
+    dosage_form: string;
+    strength: string;
+    unit: string;
+    price: number;
+}
+
+export type PrescriptionStatus = 'PENDING' | 'DISPENSED' | 'PARTIALLY_DISPENSED' | 'CANCELLED';
+
+export interface PrescriptionItem {
+    id: string;
+    medication: Medication;
+    quantity: number;
+    dosage: string;
+    frequency: string;
+    duration: string;
+    instructions?: string;
+}
+
+export interface Prescription {
+    id: string;
+    prescription_code: string;
+    visit: Visit;
+    items: PrescriptionItem[];
+    status: PrescriptionStatus;
+    prescribed_by: string;
+    created_at: string;
+}
+
+// ============================================================================
+// AI TYPES
+// ============================================================================
+
+export type TriageLevel = 'RED' | 'ORANGE' | 'YELLOW' | 'GREEN' | 'BLUE';
+export type InteractionSeverity = 'MINOR' | 'MODERATE' | 'MAJOR' | 'CONTRAINDICATED';
+
+export interface TriageAssessmentInput {
+    patient_id: string;
+    patient_name: string;
+    age: number;
+    gender: string;
+    chief_complaint: string;
+    symptoms: string[];
+    vital_signs: VitalSigns;
+    medical_history?: string;
+}
+
+export interface TriageAssessmentResult {
+    triage_level: TriageLevel;
+    priority_score: number;
+    recommended_department: string;
+    ai_reasoning: string;
+    vital_signs_assessment: {
+        alerts: string[];
+        recommendations: string[];
+    };
+}
+
+export interface DrugInteractionInput {
+    patient_id: string;
+    medications: Array<{
+        drug_name: string;
+        dosage: string;
+        frequency: string;
+    }>;
+}
+
+export interface DrugInteraction {
+    drug_pair: [string, string];
+    severity: InteractionSeverity;
+    description: string;
+    recommendation: string;
+}
+
+export interface DrugInteractionResult {
+    interactions: DrugInteraction[];
+    safe_combinations: string[];
+    ai_analysis: string;
+}
+
+// ============================================================================
+// API RESPONSE TYPES
+// ============================================================================
+
+export interface PaginatedResponse<T> {
+    count: number;
+    next: string | null;
+    previous: string | null;
+    results: T[];
+}
+
+export interface ApiError {
+    detail?: string;
+    message?: string;
+    errors?: Record<string, string[]>;
+}

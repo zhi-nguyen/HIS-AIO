@@ -41,21 +41,27 @@ services:
     command: python manage.py runserver 0.0.0.0:8000
     restart: always
 
-  # frontend:
-  #   build:
-  #     context: ./frontend
-  #     dockerfile: Dockerfile
-  #   container_name: his_frontend
-  #   volumes:
-  #     - ./frontend:/app
-  #     - /app/node_modules
-  #   ports:
-  #     - "3000:3000"
-  #   environment:
-  #     - NODE_ENV=development
-  #   depends_on:
-  #     - backend
-  #   restart: always
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: his_frontend
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/.next
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=development
+      - WATCHPACK_POLLING=true
+      - CHOKIDAR_USEPOLLING=true
+      - NEXT_PUBLIC_API_URL=http://localhost:8000/api/v1
+    stdin_open: true
+    tty: true
+    depends_on:
+      - backend
+    restart: always
 
 volumes:
   his_postgres_data:
