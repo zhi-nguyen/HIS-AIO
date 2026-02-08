@@ -13,7 +13,7 @@ from langchain_core.messages import SystemMessage, AIMessage, HumanMessage
 
 from apps.ai_engine.graph.state import AgentState
 from apps.ai_engine.graph.llm_config import llm_pro, logging_node_execution
-from apps.ai_engine.agents.message_utils import convert_and_filter_messages, log_llm_response
+from apps.ai_engine.agents.message_utils import convert_and_filter_messages, log_llm_response, extract_final_response
 from .prompts import CLINICAL_THINKING_PROMPT
 
 
@@ -86,7 +86,7 @@ def clinical_node(state: AgentState) -> Dict[str, Any]:
         # Build structured response
         structured_data = {
             "thinking_progress": thinking_steps,
-            "final_response": text_analysis,
+            "final_response": extract_final_response(text_analysis, "Kết luận"),
             "confidence_score": 0.8 if diagnoses else 0.6,
             "differential_diagnosis": diagnoses,
             "requires_urgent_care": requires_urgent,

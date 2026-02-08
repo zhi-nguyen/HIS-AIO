@@ -1,7 +1,44 @@
 from django.db import models
-from django.contrib.auth.models import AbstractUser
+from django.contrib.auth.models import AbstractUser, BaseUserManager
 from apps.core_services.core.models import UUIDModel
 from uuid6 import uuid7
+
+
+class UserManager(BaseUserManager):
+    """
+    Custom User Manager cho model User sử dụng email làm USERNAME_FIELD.
+    """
+    def create_user(self, email, password=None, **extra_fields):
+        """
+        Tạo và lưu User thông thường với email và password.
+        """
+        if not email:
+            raise ValueError('Email là bắt buộc')
+        email = self.normalize_email(email)
+        # Tạo username từ email nếu không có
+        if 'username' not in extra_fields or not extra_fields['username']:
+            extra_fields['username'] = email.split('@')[0]
+        user = self.model(email=email, **extra_fields)
+        user.set_password(password)
+        user.save(using=self._db)
+        return user
+
+    def create_superuser(self, email, password=None, **extra_fields):
+        """
+        Tạo và lưu Superuser với email và password.
+        """
+        extra_fields.setdefault('is_staff', True)
+        extra_fields.setdefault('is_superuser', True)
+        extra_fields.setdefault('is_active', True)
+
+        if extra_fields.get('is_staff') is not True:
+            raise ValueError('Superuser phải có is_staff=True.')
+        if extra_fields.get('is_superuser') is not True:
+            raise ValueError('Superuser phải có is_superuser=True.')
+
+        return self.create_user(email, password, **extra_fields)
+
+
 class User(AbstractUser):
     id = models.UUIDField(
         primary_key=True,
@@ -25,6 +62,8 @@ class User(AbstractUser):
 
     USERNAME_FIELD = 'email'
     REQUIRED_FIELDS = ['phone']
+    
+    objects = UserManager()
 
 class Profile(UUIDModel):
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profile')

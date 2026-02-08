@@ -113,3 +113,56 @@ def log_llm_response(response: Any, agent_name: str = "AGENT") -> str:
     print(f"[{agent_name}] Response length: {len(content)} chars")
     print(f"[{agent_name}] Response preview: {content[:200] if content else '(empty)'}...")
     return content
+
+
+def extract_final_response(text: str, marker: str = "Kết luận") -> str:
+    """
+    Extract phần final response từ text, loại bỏ các bước thinking.
+    
+    Tìm marker (VD: "**Kết luận:**" hoặc "**Phản hồi cho khách hàng:**")
+    và lấy nội dung từ marker đến cuối text.
+    
+    Args:
+        text: Full text response từ LLM
+        marker: Tên marker để tìm (không cần ** hoặc :)
+    
+    Returns:
+        Phần final response, hoặc text gốc nếu không tìm thấy marker
+    
+    Example:
+        >>> extract_final_response(text, "Kết luận")
+        >>> extract_final_response(text, "Phản hồi cho khách hàng")
+    """
+    import re
+    
+    if not text:
+        return ""
+    
+    # Build pattern to match marker with optional ** and :
+    # Match: **Kết luận:** or **Kết luận:** or Kết luận: etc.
+    escaped_marker = re.escape(marker)
+    pattern = rf'\*\*{escaped_marker}[:\s]*\*\*:?\s*|\*\*{escaped_marker}:\*\*\s*|{escaped_marker}:\s*'
+    
+    match = re.search(pattern, text, re.IGNORECASE)
+    
+    if match:
+        # Extract from after the marker to end of text
+        final_response = text[match.end():].strip()
+        
+        # If empty, fallback to text after marker position
+        if not final_response:
+            return text[match.start():].strip()
+        
+        return final_response
+    
+    # Fallback: Try to remove thinking steps and return what's left
+    # Remove sections like **Bước 1...** to **Bước N...**
+    cleaned = re.sub(
+        r'\*\*Bước\s*\d+[^*]*\*\*:?\s*[^*]+?(?=\*\*Bước|\*\*Kết luận|\*\*Phản hồi|\*\*Nội dung|\*\*Bản Tóm Tắt|$)',
+        '',
+        text,
+        flags=re.DOTALL | re.IGNORECASE
+    ).strip()
+    
+    # If we still have content, return it; otherwise return original
+    return cleaned if cleaned else text
