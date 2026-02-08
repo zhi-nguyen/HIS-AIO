@@ -1,83 +1,47 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
-import { Layout, Menu, Avatar, Dropdown, Space, Typography, Spin, Button } from 'antd';
+import { Layout, Menu, Avatar, Dropdown, Space, Typography, Spin, Button, Tag } from 'antd';
 import {
     DashboardOutlined,
     UserOutlined,
     TeamOutlined,
     MedicineBoxOutlined,
     ExperimentOutlined,
-    PictureOutlined,
+    FileImageOutlined,
     DollarOutlined,
     MenuFoldOutlined,
     MenuUnfoldOutlined,
     LogoutOutlined,
     SettingOutlined,
     BellOutlined,
-    OrderedListOutlined,
+    SolutionOutlined,
+    NotificationOutlined,
 } from '@ant-design/icons';
 import type { MenuProps } from 'antd';
 import { useAuth } from '@/contexts/AuthContext';
+import { getMenuItems, roleConfig, StaffRole, canAccessRoute, getDefaultRoute } from '@/lib/roles';
 
 const { Header, Sider, Content } = Layout;
 const { Text } = Typography;
 
 /**
- * Dashboard Layout
- * Layout chính với Sidebar navigation cho các trang dashboard
+ * Dashboard Layout với Role-based Navigation
  */
 
-// Menu items theo module
-const menuItems: MenuProps['items'] = [
-    {
-        key: '/dashboard',
-        icon: <DashboardOutlined />,
-        label: 'Tổng quan',
-    },
-    {
-        type: 'divider',
-    },
-    {
-        key: 'reception',
-        icon: <TeamOutlined />,
-        label: 'Tiếp nhận',
-        children: [
-            { key: '/dashboard/patients', label: 'Bệnh nhân' },
-            { key: '/dashboard/reception', label: 'Tiếp nhận khám' },
-            { key: '/dashboard/qms', label: 'Hàng đợi (QMS)' },
-        ],
-    },
-    {
-        key: 'clinical',
-        icon: <MedicineBoxOutlined />,
-        label: 'Khám bệnh',
-        children: [
-            { key: '/dashboard/clinical', label: 'Phòng khám' },
-            { key: '/dashboard/clinical/queue', label: 'Danh sách chờ' },
-        ],
-    },
-    {
-        key: 'paraclinical',
-        icon: <ExperimentOutlined />,
-        label: 'Cận lâm sàng',
-        children: [
-            { key: '/dashboard/lis', label: 'Xét nghiệm (LIS)' },
-            { key: '/dashboard/ris', label: 'Chẩn đoán HA (RIS)' },
-        ],
-    },
-    {
-        key: '/dashboard/pharmacy',
-        icon: <OrderedListOutlined />,
-        label: 'Dược phẩm',
-    },
-    {
-        key: '/dashboard/billing',
-        icon: <DollarOutlined />,
-        label: 'Thanh toán',
-    },
-];
+// Icon mapping
+const iconMap: Record<string, React.ReactNode> = {
+    DashboardOutlined: <DashboardOutlined />,
+    UserOutlined: <UserOutlined />,
+    TeamOutlined: <TeamOutlined />,
+    MedicineBoxOutlined: <MedicineBoxOutlined />,
+    ExperimentOutlined: <ExperimentOutlined />,
+    FileImageOutlined: <FileImageOutlined />,
+    DollarOutlined: <DollarOutlined />,
+    SolutionOutlined: <SolutionOutlined />,
+    NotificationOutlined: <NotificationOutlined />,
+};
 
 export default function DashboardLayout({
     children,
@@ -89,12 +53,34 @@ export default function DashboardLayout({
     const { user, logout, isAuthenticated, isLoading } = useAuth();
     const [collapsed, setCollapsed] = useState(false);
 
+    const userRole = (user?.staff_profile?.role as StaffRole) || 'RECEPTIONIST';
+    const roleInfo = roleConfig[userRole];
+
+    // Tạo menu items dựa trên role
+    const menuItems: MenuProps['items'] = useMemo(() => {
+        const items = getMenuItems(userRole);
+        return items.map(item => ({
+            key: item.path,
+            icon: iconMap[item.icon] || <DashboardOutlined />,
+            label: item.label,
+        }));
+    }, [userRole]);
+
     // Redirect nếu chưa đăng nhập
     useEffect(() => {
         if (!isLoading && !isAuthenticated) {
             router.push('/login');
         }
     }, [isAuthenticated, isLoading, router]);
+
+    // Redirect nếu không có quyền truy cập route hiện tại
+    useEffect(() => {
+        if (!isLoading && isAuthenticated && pathname) {
+            if (!canAccessRoute(userRole, pathname)) {
+                router.push(getDefaultRoute(userRole));
+            }
+        }
+    }, [isLoading, isAuthenticated, pathname, userRole, router]);
 
     // Menu click handler
     const handleMenuClick: MenuProps['onClick'] = (e) => {
@@ -103,6 +89,17 @@ export default function DashboardLayout({
 
     // User dropdown menu
     const userMenuItems: MenuProps['items'] = [
+        {
+            key: 'role',
+            label: (
+                <Space>
+                    <Text type="secondary">Vai trò:</Text>
+                    <Tag color={roleInfo?.color}>{roleInfo?.label}</Tag>
+                </Space>
+            ),
+            disabled: true,
+        },
+        { type: 'divider' },
         {
             key: 'profile',
             icon: <UserOutlined />,
@@ -129,7 +126,7 @@ export default function DashboardLayout({
     if (isLoading) {
         return (
             <div className="min-h-screen flex items-center justify-center">
-                <Spin size="large" fullscreen tip="Đang tải..." />
+                <Spin size="large" tip="Đang tải..." />
             </div>
         );
     }
@@ -137,21 +134,6 @@ export default function DashboardLayout({
     if (!isAuthenticated) {
         return null;
     }
-
-    // Tìm selected keys và open keys từ pathname
-    const getSelectedKeys = () => [pathname];
-    const getOpenKeys = () => {
-        if (pathname.includes('/patients') || pathname.includes('/reception') || pathname.includes('/qms')) {
-            return ['reception'];
-        }
-        if (pathname.includes('/clinical')) {
-            return ['clinical'];
-        }
-        if (pathname.includes('/lis') || pathname.includes('/ris')) {
-            return ['paraclinical'];
-        }
-        return [];
-    };
 
     return (
         <Layout className="min-h-screen">
@@ -173,12 +155,20 @@ export default function DashboardLayout({
                     </Space>
                 </div>
 
+                {/* Role Badge */}
+                {!collapsed && (
+                    <div className="px-4 py-2 text-center">
+                        <Tag color={roleInfo?.color} className="text-xs">
+                            {roleInfo?.label}
+                        </Tag>
+                    </div>
+                )}
+
                 {/* Navigation Menu */}
                 <Menu
                     theme="dark"
                     mode="inline"
-                    selectedKeys={getSelectedKeys()}
-                    defaultOpenKeys={getOpenKeys()}
+                    selectedKeys={[pathname]}
                     items={menuItems}
                     onClick={handleMenuClick}
                     className="border-none"

@@ -12,7 +12,7 @@ from langchain_core.messages import SystemMessage, AIMessage, HumanMessage
 
 from apps.ai_engine.graph.state import AgentState
 from apps.ai_engine.graph.llm_config import llm_flash, logging_node_execution
-from apps.ai_engine.agents.message_utils import convert_and_filter_messages, log_llm_response
+from apps.ai_engine.agents.message_utils import convert_and_filter_messages, log_llm_response, extract_final_response
 from .prompts import SUMMARIZE_THINKING_PROMPT
 
 
@@ -75,7 +75,7 @@ def summarize_node(state: AgentState) -> Dict[str, Any]:
         # Build structured data
         structured_data = {
             "thinking_progress": thinking_steps,
-            "final_response": text_analysis,
+            "final_response": extract_final_response(text_analysis, "Bản Tóm Tắt"),
             "confidence_score": 0.85,
             "special_notes": special_notes,
         }

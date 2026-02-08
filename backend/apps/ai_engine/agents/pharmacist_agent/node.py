@@ -20,6 +20,7 @@ from apps.ai_engine.graph.llm_config import (
 )
 from apps.ai_engine.agents.schemas import PharmacistResponse, DrugInteraction
 from apps.ai_engine.agents.utils import format_structured_response_to_message
+from apps.ai_engine.agents.message_utils import extract_final_response
 from .prompts import PHARMACIST_THINKING_PROMPT, PHARMACIST_STRUCTURE_PROMPT
 
 
@@ -282,7 +283,7 @@ def pharmacist_node(state: AgentState) -> Dict[str, Any]:
         # Build structured response
         structured_data = {
             "thinking_progress": thinking_steps,
-            "final_response": text_analysis[:1000] if len(text_analysis) > 1000 else text_analysis,
+            "final_response": extract_final_response(text_analysis, "Khuyến nghị"),
             "confidence_score": 0.85 if drug_interactions else 0.7,
             "drug_interactions": drug_interactions if drug_interactions else None,
             "alternative_drugs": alternative_drugs if alternative_drugs else None,

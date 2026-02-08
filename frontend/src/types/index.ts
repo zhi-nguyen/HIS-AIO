@@ -158,30 +158,43 @@ export interface VitalSigns {
     height?: number;
 }
 
+export interface ClinicalRecord {
+    id: string;
+    visit: string | Visit;
+    doctor?: string;
+    doctor_name?: string;
+    chief_complaint: string;
+    history_of_present_illness?: string;
+    physical_exam?: string;
+    vital_signs?: VitalSigns;
+    medical_summary?: string;
+    final_diagnosis?: string;
+    main_icd?: string;
+    main_icd_code?: string;
+    main_icd_name?: string;
+    treatment_plan?: string;
+    triage_agent_summary?: Record<string, unknown>;
+    clinical_agent_summary?: Record<string, unknown>;
+    core_agent_summary?: Record<string, unknown>;
+    ai_suggestion_json?: Record<string, unknown>;
+    is_finalized: boolean;
+    created_at?: string;
+    updated_at?: string;
+}
+
+export interface ICD10Code {
+    id: string;
+    code: string;
+    name: string;
+    description?: string;
+}
+
 export interface AISuggestion {
     differential_diagnosis?: string[];
     recommended_tests?: string[];
     treatment_suggestions?: string[];
     warnings?: string[];
     reasoning?: string;
-}
-
-export interface ClinicalRecord {
-    id: string;
-    visit: Visit;
-    chief_complaint: string;
-    present_illness?: string;
-    past_medical_history?: string;
-    vital_signs?: VitalSigns;
-    physical_examination?: string;
-    diagnosis?: string;
-    icd_codes?: string[];
-    treatment_plan?: string;
-    ai_suggestions?: AISuggestion;
-    is_finalized: boolean;
-    created_by: string;
-    created_at: string;
-    updated_at: string;
 }
 
 // ============================================================================

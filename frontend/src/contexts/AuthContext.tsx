@@ -10,16 +10,24 @@ import { message } from 'antd';
  * Backend sử dụng email làm USERNAME_FIELD
  */
 
+interface StaffProfile {
+    id: string;
+    role: string;
+    department?: string;
+}
+
 interface User {
     user_id: string;
     email?: string;
     exp: number;
     iat: number;
+    staff_profile?: StaffProfile;
 }
 
 interface AuthContextType {
     user: User | null;
     isLoading: boolean;
+    loading: boolean; // alias for isLoading
     isAuthenticated: boolean;
     login: (email: string, password: string) => Promise<boolean>;
     logout: () => void;
@@ -91,6 +99,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const value: AuthContextType = {
         user,
         isLoading,
+        loading: isLoading,
         isAuthenticated: !!user,
         login,
         logout,
