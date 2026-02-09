@@ -16,6 +16,48 @@ import hashlib
 logger = logging.getLogger(__name__)
 
 
+def get_embedding(text: str, use_cache: bool = True) -> List[float]:
+    """
+    Synchronous wrapper for generating text embedding using Google GenAI.
+    
+    Tiện dụng cho code đồng bộ (sync) không cần async/await.
+    Sử dụng thread pool để tránh vấn đề nested event loops.
+    
+    Args:
+        text: Text cần chuyển thành embedding
+        use_cache: Có sử dụng cache không
+        
+    Returns:
+        List[float]: Vector embedding 768 dimensions
+        
+    Example:
+        >>> embedding = get_embedding("Bệnh nhân đau đầu, sốt cao")
+        >>> len(embedding)
+        768
+    """
+    import concurrent.futures
+    
+    if not text or not text.strip():
+        logger.warning("Empty text provided for embedding")
+        return []
+    
+    def _sync_embed():
+        """Run embedding in new event loop within thread."""
+        import asyncio
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            service = EmbeddingService()
+            return loop.run_until_complete(service.embed_text(text, use_cache))
+        finally:
+            loop.close()
+    
+    # Always use thread pool to avoid nested event loop issues
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(_sync_embed)
+        return future.result()
+
+
 class EmbeddingService:
     """
     Service for generating embeddings from clinical text.
@@ -24,26 +66,37 @@ class EmbeddingService:
     """
     
     
-    def __init__(self, provider: str = 'google', model_name: Optional[str] = None):
+    def __init__(self, provider: str = 'google', model_name: Optional[str] = None, lazy_init: bool = True):
         """
         Initialize embedding service.
         
         Args:
             provider: Embedding provider ('google') - default and only supported
             model_name: Specific model name (provider-dependent)
+            lazy_init: If True, delay model initialization until first use (async-safe)
         """
         self.provider = 'google'  # Enforce google
         self.model_name = model_name
         self._embedding_model = None
         self._embedding_cache: Dict[str, List[float]] = {}
         self._dimension = 768 # Default
+        self._initialized = False
         
-        self._initialize_model()
+        if not lazy_init:
+            self._initialize_model()
+    
+    def _ensure_initialized(self):
+        """Ensure the model is initialized (lazy initialization)."""
+        if not self._initialized:
+            self._initialize_model()
     
     def _initialize_model(self):
         """Initialize the embedding model based on provider."""
+        if self._initialized:
+            return
         try:
             self._init_google_embeddings()
+            self._initialized = True
             logger.info(f"Initialized Google embedding model: {self.model_name}")
             
         except Exception as e:
@@ -53,35 +106,40 @@ class EmbeddingService:
     def _init_google_embeddings(self):
         """Initialize Google GenAI embeddings."""
         try:
-            import google.genai as genai
+            from google import genai
             from django.conf import settings
-            from apps.ai_engine.agents.models import VectorStore
             
             # 1. Try to load from Database (VectorStore)
-            vector_config = VectorStore.get_active_config()
-            
-            if vector_config:
-                self.model_name = vector_config.embedding_model or self.model_name
-                self._dimension = vector_config.dimensions
-                logger.info(f"Loaded embedding config from DB: {self.model_name} ({self._dimension}d)")
+            try:
+                from apps.ai_engine.agents.models import VectorStore
+                vector_config = VectorStore.get_active_config()
+                
+                if vector_config:
+                    self.model_name = vector_config.embedding_model or self.model_name
+                    self._dimension = vector_config.dimensions
+                    logger.info(f"Loaded embedding config from DB: {self.model_name} ({self._dimension}d)")
+            except Exception as db_error:
+                logger.debug(f"Skipping DB config load: {db_error}")
             
             # 2. Fallback to settings or default
             if not self.model_name:
-                self.model_name = getattr(settings, 'RAG_EMBEDDING_MODEL', 'models/text-embedding-004')
+                self.model_name = getattr(settings, 'RAG_EMBEDDING_MODEL', 'gemini-embedding-001')
                 
             api_key = getattr(settings, 'GOOGLE_API_KEY', None)
             if not api_key:
-                # Try getting from os environment if not in settings
                 import os
                 api_key = os.environ.get('GOOGLE_API_KEY')
                 
             if not api_key:
                 raise ValueError("GOOGLE_API_KEY not found in settings or environment")
+
+            if self.model_name and self.model_name.startswith('models/'):
+                self.model_name = self.model_name.replace('models/', '')
             
-            # Configure the client
+            # Nếu lỡ model name trống thì set default
+            self.model_name = self.model_name or 'gemini-embedding-001'
+
             client = genai.Client(api_key=api_key)
-            # Use text-embedding-004 which supports output_dimensionality
-            self.model_name = self.model_name or 'models/text-embedding-004'
             self._embedding_model = client
             
         except ImportError:
@@ -115,6 +173,8 @@ class EmbeddingService:
         
         # Generate embedding
         try:
+            # Ensure model is initialized (lazy initialization)
+            self._ensure_initialized()
             embedding = await self._embed_google(text)
             
             # Cache result

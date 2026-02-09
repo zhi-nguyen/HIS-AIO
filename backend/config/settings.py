@@ -136,7 +136,7 @@ REDIS_AGENT_MEMORY_TTL = config('REDIS_AGENT_MEMORY_TTL', default=86400, cast=in
 import os
 RAG_VECTOR_DB = config('RAG_VECTOR_DB', default='pgvector')
 RAG_EMBEDDING_PROVIDER = config('RAG_EMBEDDING_PROVIDER', default='google')
-RAG_EMBEDDING_MODEL = config('RAG_EMBEDDING_MODEL', default='models/text-embedding-004')
+RAG_EMBEDDING_MODEL = config('RAG_EMBEDDING_MODEL', default='')
 RAG_EMBEDDING_DIMENSION = config('RAG_EMBEDDING_DIMENSION', default=768, cast=int)
 RAG_TOP_K_RESULTS = config('RAG_TOP_K_RESULTS', default=5, cast=int)
 RAG_SIMILARITY_THRESHOLD = config('RAG_SIMILARITY_THRESHOLD', default=0.5, cast=float)
