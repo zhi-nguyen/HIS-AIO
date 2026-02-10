@@ -33,7 +33,8 @@ const antTheme = {
     colorError: "#F44336",
     colorInfo: "#2196F3",
     borderRadius: 6,
-    fontFamily: "var(--font-geist-sans), -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+    fontFamily: "'Roboto', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+    fontSize: 16,
   },
   components: {
     Layout: {

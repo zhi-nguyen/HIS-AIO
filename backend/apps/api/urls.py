@@ -14,6 +14,7 @@ from rest_framework_simplejwt.views import (
 )
 from . import views
 from . import data_views
+from apps.core_services.appointments import booking_api as booking_views
 from .routers import router
 
 app_name = 'api'
@@ -54,6 +55,11 @@ urlpatterns = [
     
     # Patient Summary - Generate summaries from EMR data
     path('patient/summary/', data_views.generate_patient_summary, name='patient_summary'),
+    
+    # ==========================================================================
+    # BOOKING ENDPOINTS (Patient Chatbot)
+    # ==========================================================================
+    path('appointments/book/', booking_views.create_booking, name='create_booking'),
     
     # ==========================================================================
     # UTILITY ENDPOINTS

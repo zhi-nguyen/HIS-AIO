@@ -1,14 +1,20 @@
 # apps/ai_engine/graph/llm_config.py
 
 from langchain_google_genai import ChatGoogleGenerativeAI
-from .tools import (
-    check_appointment_slots, 
-    book_appointment, 
+from apps.ai_engine.agents.consultant_agent.tools import (
+    check_appointment_slots,
+    open_booking_form,
+    book_appointment,
+)
+from apps.ai_engine.agents.pharmacist_agent.tools import (
     check_drug_interaction,
     suggest_drug_alternative,
+)
+from apps.ai_engine.agents.triage_agent.tools import (
     trigger_emergency_alert,
     assess_vital_signs,
-    # Paraclinical Tools
+)
+from apps.ai_engine.agents.paraclinical_agent.tools import (
     receive_clinical_order,
     check_contraindications,
     track_sample_status,
@@ -56,7 +62,7 @@ llm_flash = ChatGoogleGenerativeAI(
 # TOOLS BINDING
 # ==============================================================================
 
-consultant_tools = [check_appointment_slots, book_appointment]
+consultant_tools = [check_appointment_slots, open_booking_form]
 pharmacist_tools = [check_drug_interaction, suggest_drug_alternative]
 triage_tools = [trigger_emergency_alert, assess_vital_signs]
 paraclinical_tools = [

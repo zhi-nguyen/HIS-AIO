@@ -12,7 +12,6 @@ from apps.ai_engine.rag_service.vector_service import VectorService
 from apps.ai_engine.rag_service.context_retrieval import retrieve_patient_context, format_context_for_llm
 from apps.ai_engine.rag_service.hybrid_search import HybridSearchService
 
-
 class EmbeddingServiceTest(TestCase):
     """Test embedding generation."""
     
