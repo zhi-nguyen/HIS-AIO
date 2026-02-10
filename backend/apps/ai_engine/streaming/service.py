@@ -243,6 +243,18 @@ class StreamingService:
             if "final_response" in result:
                 result["message"] = result["final_response"]
         
+        # ==========================================
+        # Check for UI Action embedded by consultant node
+        # (fallback nếu on_tool_end interception bị miss)
+        # ==========================================
+        if messages:
+            last_msg = messages[-1]
+            if hasattr(last_msg, "additional_kwargs") and last_msg.additional_kwargs:
+                ui_action = last_msg.additional_kwargs.get("__ui_action__")
+                if ui_action and isinstance(ui_action, dict):
+                    result["__ui_action__"] = ui_action
+                    logger.info(f"[FALLBACK] UI Action found in additional_kwargs: {ui_action.get('__ui_action__', 'unknown')}")
+        
         return result if result else None
     
     async def stream_response(
@@ -335,7 +347,23 @@ class StreamingService:
                 elif event_kind == "on_tool_end":
                     # Tool execution completed
                     tool_name = event_name
+                    tool_output = event_data.get("output", "")
                     logger.debug(f"Tool ended: {tool_name}")
+                    
+                    # Check if tool output contains a UI action signal
+                    # (e.g., open_booking_form returns JSON with __ui_action__)
+                    try:
+                        output_str = str(tool_output.content) if hasattr(tool_output, 'content') else str(tool_output)
+                        parsed_output = json.loads(output_str)
+                        if isinstance(parsed_output, dict) and parsed_output.get("__ui_action__"):
+                            action_name = parsed_output.pop("__ui_action__")
+                            logger.info(f"UI Action intercepted: {action_name}")
+                            yield StreamEvent.ui_action(action_name, parsed_output).to_dict()
+                            # Don't yield normal tool_end for UI actions
+                            continue
+                    except (json.JSONDecodeError, TypeError, ValueError):
+                        pass
+                    
                     yield StreamEvent.tool_end(tool_name).to_dict()
                 
                 elif event_kind == "on_chat_model_stream":
@@ -407,6 +435,16 @@ class StreamingService:
                         "duration_seconds": round(elapsed, 2),
                         "agent": current_agent,
                     }
+                    
+                    # ==========================================
+                    # FALLBACK: Emit ui_action BEFORE result_json
+                    # nếu consultant node gắn __ui_action__ data
+                    # ==========================================
+                    ui_action_data = structured_result.pop("__ui_action__", None)
+                    if ui_action_data and isinstance(ui_action_data, dict):
+                        action_name = ui_action_data.pop("__ui_action__", "unknown")
+                        logger.info(f"[STREAM] Emitting fallback ui_action: {action_name}")
+                        yield StreamEvent.ui_action(action_name, ui_action_data).to_dict()
                     
                     # Send the complete JSON result
                     yield StreamEvent.result_json(structured_result).to_dict()

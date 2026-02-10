@@ -1,5 +1,12 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // Fix Turbopack panic: resolve tailwindcss từ đúng thư mục frontend/node_modules
+  turbopack: {
+    resolveAlias: {
+      tailwindcss: './node_modules/tailwindcss',
+    },
+  },
+
   // Rewrites để proxy API requests trong development
   async rewrites() {
     return [
