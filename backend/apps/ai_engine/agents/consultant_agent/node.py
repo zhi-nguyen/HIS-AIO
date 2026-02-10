@@ -9,6 +9,7 @@ REFACTORED cho Real Token Streaming:
 
 from typing import Dict, Any, List
 import re
+import json
 from langchain_core.messages import SystemMessage, AIMessage, HumanMessage
 
 from apps.ai_engine.graph.state import AgentState
@@ -34,11 +35,19 @@ def extract_thinking_steps(text: str) -> List[str]:
 
 
 def extract_department_info(text: str) -> str:
-    """Extract department info từ text."""
-    pattern = r'(Khoa\s+\w+[^,\n]*|tầng\s+\d+[^,\n]*|phòng\s+\d+[^,\n]*)'
-    matches = re.findall(pattern, text, re.IGNORECASE)
+    """Extract department info từ text - chỉ lấy tên khoa chính."""
+    # Tìm tên khoa cụ thể ("khoa Tim mạch", "khoa Nhi", etc.)
+    pattern = r'[Kk]hoa\s+([A-ZÀ-Ỹa-zà-ỹ]+(?:\s+[A-ZÀ-Ỹa-zà-ỹ]+){0,3})'
+    matches = re.findall(pattern, text)
     if matches:
-        return ", ".join(matches[:3])
+        # Chỉ lấy tên khoa đầu tiên, tránh duplicate
+        dept = matches[0].strip()
+        # Bỏ các từ không phải tên khoa
+        stop_words = ['vào', 'ngày', 'rồi', 'và', 'ạ', 'nhé', 'em', 'anh', 'chị']
+        for sw in stop_words:
+            if dept.lower().endswith(f' {sw}'):
+                dept = dept[:dept.lower().rfind(f' {sw}')].strip()
+        return f"khoa {dept}" if dept else None
     return None
 
 
@@ -55,6 +64,22 @@ def consultant_node(state: AgentState) -> Dict[str, Any]:
     
     # Convert và filter messages
     converted_messages, last_user_message = convert_and_filter_messages(messages, "CONSULTANT")
+    
+    # ==========================================
+    # Check nếu vừa loop lại từ ToolNode (open_booking_form)
+    # → phát hiện __ui_action__ trong ToolMessage để gắn vào output
+    # ==========================================
+    ui_action_data = None
+    for msg in reversed(messages[-5:]):  # Chỉ check 5 message gần nhất
+        if hasattr(msg, 'content') and isinstance(msg.content, str):
+            try:
+                parsed = json.loads(msg.content)
+                if isinstance(parsed, dict) and parsed.get('__ui_action__'):
+                    ui_action_data = parsed
+                    print(f"[CONSULTANT] UI Action detected from ToolMessage: {parsed.get('__ui_action__')}")
+                    break
+            except (json.JSONDecodeError, TypeError):
+                pass
     
     prompt = [SystemMessage(content=CONSULTANT_THINKING_PROMPT)] + converted_messages
     
@@ -93,6 +118,10 @@ def consultant_node(state: AgentState) -> Dict[str, Any]:
                 "agent": "consultant",
                 "structured_response": structured_data,
                 "thinking_progress": thinking_steps,
+                # Gắn ui_action nếu có (từ open_booking_form tool)
+                **({
+                    "__ui_action__": ui_action_data
+                } if ui_action_data else {}),
             }
         )
         

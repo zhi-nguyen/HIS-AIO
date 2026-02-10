@@ -29,6 +29,9 @@ class EventType:
     RESULT_JSON = "result_json" # Complete structured JSON result
     DONE = "done"              # Stream completion marker
     
+    # UI Action (interactive components)
+    UI_ACTION = "ui_action"    # Signal frontend to render a UI component
+    
     # Legacy/compatibility types
     STATUS = "status"
     TOKEN = "token"            # Alias for thinking
@@ -216,6 +219,31 @@ class StreamEvent:
     def token(cls, content: str) -> "StreamEvent":
         """Create a token streaming event."""
         return cls(type=EventType.TOKEN, data={"content": content})
+    
+    @classmethod
+    def ui_action(cls, action: str, payload: Dict[str, Any] = None) -> "StreamEvent":
+        """
+        Signal frontend to render a specific UI component.
+        
+        Ví dụ: Khi Agent muốn mở form đặt lịch, nó gọi tool `open_booking_form`.
+        Streaming Service sẽ chuyển output thành ui_action event.
+        Frontend nhận event này và render component tương ứng.
+        
+        Args:
+            action: Tên hành động UI (vd: "open_booking_form")
+            payload: Dữ liệu đi kèm cho component (vd: department, date, slots)
+            
+        Returns:
+            StreamEvent with type="ui_action"
+            
+        Example:
+            yield StreamEvent.ui_action("open_booking_form", {
+                "department": "Cardiology",
+                "date": "2026-02-11",
+                "suggested_times": ["08:00", "10:00", "14:00"]
+            }).to_dict()
+        """
+        return cls(type=EventType.UI_ACTION, data={"action": action, "payload": payload or {}})
     
     @classmethod
     def tool_start(cls, tool_name: str) -> "StreamEvent":

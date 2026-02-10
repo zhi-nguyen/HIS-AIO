@@ -41,8 +41,8 @@ class VectorStore(UUIDModel):
     # Configuration
     embedding_model = models.CharField(
         max_length=100, 
-        default='models/text-embedding-004',
-        help_text="Tên model (VD: models/text-embedding-004)"
+        default='',
+        help_text="Tên model (VD: )"
     )
     dimensions = models.IntegerField(
         default=768,

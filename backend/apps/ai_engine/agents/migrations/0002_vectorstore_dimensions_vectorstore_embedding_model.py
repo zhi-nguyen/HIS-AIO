@@ -18,6 +18,6 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name='vectorstore',
             name='embedding_model',
-            field=models.CharField(default='models/text-embedding-004', help_text='Tên model (VD: models/text-embedding-004)', max_length=100),
+            field=models.CharField(default='', help_text='Tên model (VD: )', max_length=100),
         ),
     ]
