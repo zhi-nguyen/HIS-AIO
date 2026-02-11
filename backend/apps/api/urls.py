@@ -62,6 +62,11 @@ urlpatterns = [
     path('appointments/book/', booking_views.create_booking, name='create_booking'),
     
     # ==========================================================================
+    # INSURANCE MOCK ENDPOINTS
+    # ==========================================================================
+    path('insurance/', include('apps.core_services.insurance_mock.urls')),
+
+    # ==========================================================================
     # UTILITY ENDPOINTS
     # ==========================================================================
     path('health/', views.health_check, name='health_check'),
