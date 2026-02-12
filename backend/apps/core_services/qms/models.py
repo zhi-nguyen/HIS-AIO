@@ -24,6 +24,13 @@ class QueueStatus(models.TextChoices):
     NO_SHOW = 'NO_SHOW', 'Không có mặt'
 
 
+class QueueSourceType(models.TextChoices):
+    """Nguồn gốc vào hàng chờ — phân biệt 3 luồng bệnh nhân"""
+    WALK_IN = 'WALK_IN', 'Vãng lai'
+    ONLINE_BOOKING = 'ONLINE_BOOKING', 'Đặt lịch từ xa'
+    EMERGENCY = 'EMERGENCY', 'Cấp cứu'
+
+
 class ServiceStation(UUIDModel):
     """
     Điểm dịch vụ - nơi bệnh nhân cần đến
@@ -171,7 +178,23 @@ class QueueEntry(UUIDModel):
     priority = models.IntegerField(
         default=0,
         verbose_name="Độ ưu tiên",
-        help_text="Số càng cao càng ưu tiên (VD: Cấp cứu=10, Người già=5, Thường=0)"
+        help_text="Emergency=100, Booking đúng giờ=7, Booking trễ=3, Walk-in=0"
+    )
+    
+    # --- 3-Stream Queue Fields ---
+    source_type = models.CharField(
+        max_length=20,
+        choices=QueueSourceType.choices,
+        default=QueueSourceType.WALK_IN,
+        verbose_name="Nguồn vào hàng chờ"
+    )
+    booking_ref = models.ForeignKey(
+        'appointments.Appointment',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='queue_entries',
+        verbose_name="Lịch hẹn gốc"
     )
     
     # Notes

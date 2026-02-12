@@ -19,6 +19,11 @@ class Appointment(UUIDModel):
     appointment_type = models.CharField(max_length=20, choices=Type.choices, default=Type.NEW_VISIT)
 
     scheduled_time = models.DateTimeField()
+    time_slot_end = models.DateTimeField(
+        null=True, blank=True,
+        verbose_name="Thời gian kết thúc khung giờ",
+        help_text="VD: Nếu hẹn 08:00-08:15, đây là 08:15"
+    )
 
     visit = models.OneToOneField(
         'reception.Visit',
