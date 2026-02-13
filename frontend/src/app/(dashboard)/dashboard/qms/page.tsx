@@ -14,6 +14,14 @@ import {
     Empty,
     Spin,
     Avatar,
+    Modal,
+    Input,
+    Tabs,
+    Tooltip,
+    Statistic,
+    Row,
+    Col,
+    Divider,
 } from 'antd';
 import {
     SoundOutlined,
@@ -22,27 +30,54 @@ import {
     ReloadOutlined,
     UserOutlined,
     ClockCircleOutlined,
+    ThunderboltOutlined,
+    CalendarOutlined,
+    TeamOutlined,
+    AlertOutlined,
+    MedicineBoxOutlined,
+    QrcodeOutlined,
 } from '@ant-design/icons';
 import { qmsApi } from '@/lib/services';
-import type { QueueNumber, ServiceStation } from '@/types';
+import type {
+    ServiceStation,
+    CalledPatient,
+    QueueBoardEntry,
+    QueueSourceType,
+} from '@/types';
 
 const { Title, Text } = Typography;
 
-/**
- * QMS Page
- * Hệ thống quản lý hàng đợi (Queue Management System)
- */
+// ============================================================================
+// Cấu hình hiển thị cho từng loại nguồn
+// ============================================================================
 
-// Extend types locally for QMS-specific fields
-interface QueueEntry {
-    id: string;
-    queue_number: QueueNumber;
-    station: ServiceStation;
-    status: string;
-    priority: number;
-    entered_queue_time: string;
-    called_time?: string;
-}
+const sourceConfig: Record<QueueSourceType, { color: string; icon: React.ReactNode; label: string; tagColor: string }> = {
+    EMERGENCY: {
+        color: '#ff4d4f',
+        icon: <ThunderboltOutlined />,
+        label: 'Cấp cứu',
+        tagColor: 'red',
+    },
+    ONLINE_BOOKING: {
+        color: '#1890ff',
+        icon: <CalendarOutlined />,
+        label: 'Đặt lịch',
+        tagColor: 'blue',
+    },
+    WALK_IN: {
+        color: '#8c8c8c',
+        icon: <TeamOutlined />,
+        label: 'Vãng lai',
+        tagColor: 'default',
+    },
+};
+
+const priorityLabel = (priority: number): { text: string; color: string } => {
+    if (priority >= 100) return { text: 'CẤP CỨU', color: 'red' };
+    if (priority >= 7) return { text: 'Đúng giờ', color: 'green' };
+    if (priority >= 3) return { text: 'Trễ nhẹ', color: 'gold' };
+    return { text: 'Thường', color: 'default' };
+};
 
 const statusConfig: Record<string, { color: string; label: string }> = {
     WAITING: { color: 'gold', label: 'Đang chờ' },
@@ -53,14 +88,39 @@ const statusConfig: Record<string, { color: string; label: string }> = {
     NO_SHOW: { color: 'error', label: 'Không có mặt' },
 };
 
+// ============================================================================
+// Component chính
+// ============================================================================
+
 export default function QMSPage() {
+    // --- State ---
     const [stations, setStations] = useState<ServiceStation[]>([]);
     const [selectedStation, setSelectedStation] = useState<string | null>(null);
-    const [waitingQueue, setWaitingQueue] = useState<QueueNumber[]>([]);
-    const [currentServing, setCurrentServing] = useState<QueueNumber | null>(null);
+    const [currentServing, setCurrentServing] = useState<CalledPatient | null>(null);
+    const [waitingList, setWaitingList] = useState<QueueBoardEntry[]>([]);
+    const [totalWaiting, setTotalWaiting] = useState(0);
+    const [estimatedWait, setEstimatedWait] = useState(0);
     const [loading, setLoading] = useState(false);
+    const [callLoading, setCallLoading] = useState(false);
 
-    // Fetch stations
+    // Walk-in modal
+    const [walkinModal, setWalkinModal] = useState(false);
+    const [walkinPatientId, setWalkinPatientId] = useState('');
+    const [walkinReason, setWalkinReason] = useState('');
+    const [walkinLoading, setWalkinLoading] = useState(false);
+
+    // Emergency modal
+    const [emergencyModal, setEmergencyModal] = useState(false);
+    const [emergencyPatientId, setEmergencyPatientId] = useState('');
+    const [emergencyReason, setEmergencyReason] = useState('');
+    const [emergencyLoading, setEmergencyLoading] = useState(false);
+
+    // Kiosk modal
+    const [kioskModal, setKioskModal] = useState(false);
+    const [kioskAppointmentId, setKioskAppointmentId] = useState('');
+    const [kioskLoading, setKioskLoading] = useState(false);
+
+    // --- Fetch stations ---
     const fetchStations = useCallback(async () => {
         try {
             const data = await qmsApi.getStations();
@@ -73,111 +133,297 @@ export default function QMSPage() {
         }
     }, [selectedStation]);
 
-    // Fetch queue for selected station
-    const fetchQueue = useCallback(async () => {
+    // --- Fetch queue board ---
+    const fetchQueueBoard = useCallback(async () => {
         if (!selectedStation) return;
-
         setLoading(true);
         try {
-            const data = await qmsApi.getWaiting(selectedStation);
-            // Separate current serving from waiting
-            const waiting = data.filter((q) => q.status === 'WAITING');
-            const serving = data.find((q) => q.status === 'CALLED' || q.status === 'IN_PROGRESS');
-
-            setWaitingQueue(waiting);
-            setCurrentServing(serving || null);
-        } catch (error) {
-            console.error('Error fetching queue:', error);
+            const data = await qmsApi.getQueueBoard(selectedStation);
+            setCurrentServing(data.current_serving);
+            setWaitingList(data.waiting_list);
+            setTotalWaiting(data.total_waiting);
+            setEstimatedWait(data.estimated_wait_minutes);
+        } catch {
+            // Fallback: sử dụng legacy endpoint
+            try {
+                const waitingData = await qmsApi.getWaiting(selectedStation);
+                const mapped: QueueBoardEntry[] = waitingData.map((q, idx) => ({
+                    position: idx + 1,
+                    queue_number: q.number_code,
+                    patient_name: '',
+                    source_type: 'WALK_IN' as QueueSourceType,
+                    priority: q.priority || 0,
+                    wait_time_minutes: null,
+                }));
+                setWaitingList(mapped);
+                setTotalWaiting(waitingData.length);
+                setCurrentServing(null);
+            } catch (fallbackErr) {
+                console.error('Error fetching queue:', fallbackErr);
+            }
         } finally {
             setLoading(false);
         }
     }, [selectedStation]);
 
-    useEffect(() => {
-        fetchStations();
-    }, [fetchStations]);
-
+    useEffect(() => { fetchStations(); }, [fetchStations]);
     useEffect(() => {
         if (selectedStation) {
-            fetchQueue();
+            fetchQueueBoard();
+            // Auto-refresh mỗi 10 giây
+            const interval = setInterval(fetchQueueBoard, 10000);
+            return () => clearInterval(interval);
         }
-    }, [selectedStation, fetchQueue]);
+    }, [selectedStation, fetchQueueBoard]);
 
-    // Call next number
+    // --- Doctor Call Next ---
     const handleCallNext = async () => {
         if (!selectedStation) return;
-
+        setCallLoading(true);
         try {
-            const result = await qmsApi.callNext(selectedStation);
-            if (result) {
-                message.success(`Đã gọi số: ${result.number_code}`);
-                // TODO: Play sound notification
-                fetchQueue();
+            const result = await qmsApi.doctorCallNext(selectedStation);
+            if (result.success && result.called_patient) {
+                const p = result.called_patient;
+                const src = sourceConfig[p.source_type];
+
+                // Speech synthesis
+                if ('speechSynthesis' in window) {
+                    const utterance = new SpeechSynthesisUtterance(
+                        `Mời số ${p.daily_sequence}, ${p.patient_name || ''}, đến ${p.station_name}`
+                    );
+                    utterance.lang = 'vi-VN';
+                    utterance.rate = 0.9;
+                    speechSynthesis.speak(utterance);
+                }
+
+                message.success({
+                    content: (
+                        <span>
+                            Đã gọi <Tag color={src.tagColor}>{src.label}</Tag>
+                            <strong>{p.queue_number}</strong> — {p.patient_name || 'BN'}
+                        </span>
+                    ),
+                    duration: 4,
+                });
+                fetchQueueBoard();
             } else {
-                message.info('Không còn bệnh nhân trong hàng đợi');
+                message.info(result.message || 'Không còn bệnh nhân trong hàng đợi');
             }
         } catch (error) {
             console.error('Error calling next:', error);
-            message.error('Không thể gọi số tiếp theo');
+            message.error('Không thể gọi bệnh nhân tiếp theo');
+        } finally {
+            setCallLoading(false);
         }
     };
 
-    // Complete current
-    const handleComplete = async () => {
-        if (!currentServing) return;
-
+    // --- Walk-in Check-in ---
+    const handleWalkinCheckin = async () => {
+        if (!selectedStation || !walkinPatientId) return;
+        setWalkinLoading(true);
         try {
-            await qmsApi.completeQueue(currentServing.id);
-            message.success('Đã hoàn thành phục vụ');
-            fetchQueue();
-        } catch (error) {
-            console.error('Error completing:', error);
-            message.error('Không thể cập nhật trạng thái');
+            const result = await qmsApi.walkinCheckin({
+                patient_id: walkinPatientId,
+                station_id: selectedStation,
+                reason: walkinReason || undefined,
+            });
+            message.success(`Số ${result.queue_number} — Vãng lai đã vào hàng đợi`);
+            setWalkinModal(false);
+            setWalkinPatientId('');
+            setWalkinReason('');
+            fetchQueueBoard();
+        } catch (error: unknown) {
+            const err = error as { response?: { data?: { error?: string } } };
+            message.error(err?.response?.data?.error || 'Không thể tạo số hàng đợi');
+        } finally {
+            setWalkinLoading(false);
         }
     };
 
-    // Skip current
-    const handleSkip = async () => {
-        if (!currentServing) return;
-
+    // --- Emergency Flag ---
+    const handleEmergencyFlag = async () => {
+        if (!selectedStation || !emergencyPatientId) return;
+        setEmergencyLoading(true);
         try {
-            await qmsApi.skipQueue(currentServing.id);
-            message.warning('Đã bỏ qua số hiện tại');
-            fetchQueue();
-        } catch (error) {
-            console.error('Error skipping:', error);
-            message.error('Không thể bỏ qua');
+            const result = await qmsApi.emergencyFlag({
+                patient_id: emergencyPatientId,
+                station_id: selectedStation,
+                reason: emergencyReason || undefined,
+            });
+            message.warning({
+                content: `🚨 CẤP CỨU — Số ${result.queue_number} (Priority ${result.priority})`,
+                duration: 5,
+            });
+            setEmergencyModal(false);
+            setEmergencyPatientId('');
+            setEmergencyReason('');
+            fetchQueueBoard();
+        } catch (error: unknown) {
+            const err = error as { response?: { data?: { error?: string } } };
+            message.error(err?.response?.data?.error || 'Không thể flag cấp cứu');
+        } finally {
+            setEmergencyLoading(false);
+        }
+    };
+
+    // --- Kiosk Check-in (Booking) ---
+    const handleKioskCheckin = async () => {
+        if (!selectedStation || !kioskAppointmentId) return;
+        setKioskLoading(true);
+        try {
+            const result = await qmsApi.kioskCheckin(kioskAppointmentId, selectedStation);
+            const lateCat = result.lateness_info?.category;
+            const lateMsg = lateCat === 'ON_TIME' ? '✅ Đúng giờ'
+                : lateCat === 'LATE' ? `⚠️ Trễ ${result.lateness_info.minutes} phút`
+                    : `❌ Quá trễ (${result.lateness_info.minutes} phút)`;
+
+            message.success({
+                content: `Booking check-in: Số ${result.queue_number} — ${lateMsg} — Priority ${result.priority}`,
+                duration: 5,
+            });
+            setKioskModal(false);
+            setKioskAppointmentId('');
+            fetchQueueBoard();
+        } catch (error: unknown) {
+            const err = error as { response?: { data?: { error?: string } } };
+            message.error(err?.response?.data?.error || 'Không thể check-in booking');
+        } finally {
+            setKioskLoading(false);
         }
     };
 
     const currentStation = stations.find((s) => s.id === selectedStation);
 
+    // --- Đếm theo source_type ---
+    const emergencyCount = waitingList.filter(w => w.source_type === 'EMERGENCY').length;
+    const bookingCount = waitingList.filter(w => w.source_type === 'ONLINE_BOOKING').length;
+    const walkinCount = waitingList.filter(w => w.source_type === 'WALK_IN').length;
+
     return (
         <div className="space-y-4">
-            {/* Page Header */}
-            <div className="flex justify-between items-center">
+            {/* ===== Page Header ===== */}
+            <div className="flex justify-between items-center flex-wrap gap-3">
                 <div>
-                    <Title level={3} className="!mb-0">Quản lý Hàng đợi (QMS)</Title>
-                    <Text type="secondary">Gọi số và quản lý bệnh nhân tại các điểm dịch vụ</Text>
+                    <Title level={3} className="!mb-0">
+                        <MedicineBoxOutlined className="mr-2 text-blue-500" />
+                        Hàng chờ Lâm sàng — 3 Luồng
+                    </Title>
+                    <Text type="secondary">
+                        Emergency → Booking ưu tiên → Walk-in FCFS
+                    </Text>
                 </div>
-                <Space>
+                <Space wrap>
                     <Select
                         placeholder="Chọn điểm dịch vụ"
                         value={selectedStation}
                         onChange={setSelectedStation}
-                        style={{ width: 250 }}
+                        style={{ width: 260 }}
                         options={stations.map((s) => ({
                             value: s.id,
                             label: `[${s.code}] ${s.name}`,
                         }))}
                     />
-                    <Button icon={<ReloadOutlined />} onClick={fetchQueue}>
+                    <Button icon={<ReloadOutlined />} onClick={fetchQueueBoard}>
                         Làm mới
                     </Button>
                 </Space>
             </div>
 
-            <div className="grid grid-cols-3 gap-4">
+            {/* ===== Stats Row ===== */}
+            <Row gutter={16}>
+                <Col xs={12} sm={6}>
+                    <Card size="small">
+                        <Statistic
+                            title="Tổng chờ"
+                            value={totalWaiting}
+                            prefix={<ClockCircleOutlined />}
+                            valueStyle={{ color: '#faad14' }}
+                        />
+                    </Card>
+                </Col>
+                <Col xs={12} sm={6}>
+                    <Card size="small">
+                        <Statistic
+                            title={<><ThunderboltOutlined className="text-red-500" /> Cấp cứu</>}
+                            value={emergencyCount}
+                            valueStyle={{ color: emergencyCount > 0 ? '#ff4d4f' : '#8c8c8c' }}
+                        />
+                    </Card>
+                </Col>
+                <Col xs={12} sm={6}>
+                    <Card size="small">
+                        <Statistic
+                            title={<><CalendarOutlined className="text-blue-500" /> Đặt lịch</>}
+                            value={bookingCount}
+                            valueStyle={{ color: '#1890ff' }}
+                        />
+                    </Card>
+                </Col>
+                <Col xs={12} sm={6}>
+                    <Card size="small">
+                        <Statistic
+                            title={<><TeamOutlined /> Vãng lai</>}
+                            value={walkinCount}
+                        />
+                    </Card>
+                </Col>
+            </Row>
+
+            {/* ===== Action Buttons Row ===== */}
+            <Card size="small">
+                <Space wrap>
+                    <Button
+                        type="primary"
+                        size="large"
+                        icon={<SoundOutlined />}
+                        onClick={handleCallNext}
+                        loading={callLoading}
+                        disabled={!selectedStation}
+                    >
+                        GỌI TIẾP
+                    </Button>
+                    <Divider type="vertical" />
+                    <Tooltip title="Tiếp nhận vãng lai">
+                        <Button
+                            icon={<TeamOutlined />}
+                            onClick={() => setWalkinModal(true)}
+                            disabled={!selectedStation}
+                        >
+                            Walk-in
+                        </Button>
+                    </Tooltip>
+                    <Tooltip title="Quét QR booking">
+                        <Button
+                            icon={<QrcodeOutlined />}
+                            onClick={() => setKioskModal(true)}
+                            disabled={!selectedStation}
+                        >
+                            Kiosk Check-in
+                        </Button>
+                    </Tooltip>
+                    <Tooltip title="Flag cấp cứu (Priority 100)">
+                        <Button
+                            danger
+                            icon={<AlertOutlined />}
+                            onClick={() => setEmergencyModal(true)}
+                            disabled={!selectedStation}
+                        >
+                            🚨 Cấp cứu
+                        </Button>
+                    </Tooltip>
+                    {estimatedWait > 0 && (
+                        <>
+                            <Divider type="vertical" />
+                            <Text type="secondary">
+                                ⏱ Chờ ~{estimatedWait} phút
+                            </Text>
+                        </>
+                    )}
+                </Space>
+            </Card>
+
+            {/* ===== Main Grid: Current Serving + Waiting Queue ===== */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
                 {/* Current Serving */}
                 <Card
                     title={
@@ -186,28 +432,83 @@ export default function QMSPage() {
                             <span>Đang phục vụ</span>
                         </Space>
                     }
-                    className="col-span-1"
+                    className="lg:col-span-1"
                 >
                     {currentServing ? (
                         <div className="text-center py-4">
-                            <div className="text-6xl font-bold text-blue-600 mb-4">
-                                {currentServing.daily_sequence || '---'}
-                            </div>
-                            <Tag color="blue" className="text-lg px-4 py-1 mb-4">
-                                {currentServing.number_code}
+                            {/* Source badge */}
+                            <Tag
+                                color={sourceConfig[currentServing.source_type]?.tagColor}
+                                icon={sourceConfig[currentServing.source_type]?.icon}
+                                className="mb-3"
+                            >
+                                {sourceConfig[currentServing.source_type]?.label}
                             </Tag>
+
+                            {/* Số thứ tự lớn */}
+                            <div
+                                className="text-6xl font-bold mb-2"
+                                style={{ color: sourceConfig[currentServing.source_type]?.color || '#1890ff' }}
+                            >
+                                {currentServing.daily_sequence}
+                            </div>
+                            <Tag color="blue" className="text-lg px-4 py-1 mb-2">
+                                {currentServing.queue_number}
+                            </Tag>
+                            <div className="text-base text-gray-600 mb-1">
+                                {currentServing.patient_name || 'Bệnh nhân'}
+                            </div>
+                            <Text type="secondary" className="text-xs">
+                                {currentServing.display_label}
+                            </Text>
+
+                            {/* Priority Tag */}
+                            {currentServing.priority > 0 && (() => {
+                                const pl = priorityLabel(currentServing.priority);
+                                return (
+                                    <div className="mt-2">
+                                        <Tag color={pl.color}>P{currentServing.priority} — {pl.text}</Tag>
+                                    </div>
+                                );
+                            })()}
+
+                            {/* Wait time */}
+                            {currentServing.wait_time_minutes != null && (
+                                <div className="mt-1">
+                                    <Text type="secondary" className="text-xs">
+                                        Chờ {currentServing.wait_time_minutes} phút
+                                    </Text>
+                                </div>
+                            )}
+
                             <div className="flex justify-center gap-2 mt-4">
                                 <Button
                                     type="primary"
                                     icon={<CheckOutlined />}
-                                    onClick={handleComplete}
+                                    onClick={async () => {
+                                        try {
+                                            await qmsApi.completeQueue(currentServing.entry_id);
+                                            message.success('Hoàn thành phục vụ');
+                                            fetchQueueBoard();
+                                        } catch {
+                                            message.error('Không thể cập nhật');
+                                        }
+                                    }}
                                 >
                                     Hoàn thành
                                 </Button>
                                 <Button
                                     danger
                                     icon={<ForwardOutlined />}
-                                    onClick={handleSkip}
+                                    onClick={async () => {
+                                        try {
+                                            await qmsApi.skipQueue(currentServing.entry_id);
+                                            message.warning('Bỏ qua');
+                                            fetchQueueBoard();
+                                        } catch {
+                                            message.error('Không thể bỏ qua');
+                                        }
+                                    }}
                                 >
                                     Bỏ qua
                                 </Button>
@@ -217,13 +518,14 @@ export default function QMSPage() {
                         <div className="text-center py-8">
                             <Empty
                                 image={Empty.PRESENTED_IMAGE_SIMPLE}
-                                description="Không có bệnh nhân đang phục vụ"
+                                description="Chưa có bệnh nhân"
                             />
                             <Button
                                 type="primary"
                                 size="large"
                                 icon={<SoundOutlined />}
                                 onClick={handleCallNext}
+                                loading={callLoading}
                                 className="mt-4"
                             >
                                 Gọi số tiếp theo
@@ -237,62 +539,56 @@ export default function QMSPage() {
                     title={
                         <Space>
                             <ClockCircleOutlined className="text-orange-500" />
-                            <span>Hàng đợi ({waitingQueue.length})</span>
+                            <span>Hàng đợi ({totalWaiting})</span>
                         </Space>
                     }
-                    className="col-span-2"
+                    className="lg:col-span-2"
                     extra={
                         <Button
                             type="primary"
                             icon={<SoundOutlined />}
                             onClick={handleCallNext}
-                            disabled={waitingQueue.length === 0}
+                            loading={callLoading}
+                            disabled={waitingList.length === 0}
                         >
                             Gọi tiếp
                         </Button>
                     }
                 >
-                    <Spin spinning={loading}>
-                        {waitingQueue.length > 0 ? (
-                            <List
-                                dataSource={waitingQueue}
-                                renderItem={(item, index) => (
-                                    <List.Item>
-                                        <List.Item.Meta
-                                            avatar={
-                                                <Badge count={index + 1} style={{ backgroundColor: index === 0 ? '#1E88E5' : '#8c8c8c' }}>
-                                                    <Avatar icon={<UserOutlined />} />
-                                                </Badge>
-                                            }
-                                            title={
-                                                <Space>
-                                                    <Text strong>
-                                                        {item.number_code}
-                                                    </Text>
-                                                    {item.priority > 0 && (
-                                                        <Tag color="red">Ưu tiên</Tag>
-                                                    )}
-                                                </Space>
-                                            }
-                                            description={
-                                                <Text type="secondary">
-                                                    Chờ từ: {new Date(item.created_time).toLocaleTimeString('vi-VN')}
-                                                </Text>
-                                            }
-                                        />
-                                        <Tag color={statusConfig[item.status]?.color || 'default'}>
-                                            {statusConfig[item.status]?.label || item.status}
-                                        </Tag>
-                                    </List.Item>
-                                )}
-                            />
-                        ) : (
-                            <Empty
-                                image={Empty.PRESENTED_IMAGE_SIMPLE}
-                                description="Không có bệnh nhân trong hàng đợi"
-                            />
-                        )}
-                    </Spin>
+                    <Tabs
+                        defaultActiveKey="all"
+                        size="small"
+                        items={[
+                            {
+                                key: 'all',
+                                label: `Tất cả (${waitingList.length})`,
+                                children: <QueueList items={waitingList} loading={loading} />,
+                            },
+                            {
+                                key: 'emergency',
+                                label: (
+                                    <Badge count={emergencyCount} size="small" offset={[8, 0]}>
+                                        <span className="text-red-500">🚨 Cấp cứu</span>
+                                    </Badge>
+                                ),
+                                children: <QueueList items={waitingList.filter(w => w.source_type === 'EMERGENCY')} loading={loading} />,
+                            },
+                            {
+                                key: 'booking',
+                                label: (
+                                    <Badge count={bookingCount} size="small" offset={[8, 0]}>
+                                        <span className="text-blue-500">📱 Đặt lịch</span>
+                                    </Badge>
+                                ),
+                                children: <QueueList items={waitingList.filter(w => w.source_type === 'ONLINE_BOOKING')} loading={loading} />,
+                            },
+                            {
+                                key: 'walkin',
+                                label: `🚶 Vãng lai (${walkinCount})`,
+                                children: <QueueList items={waitingList.filter(w => w.source_type === 'WALK_IN')} loading={loading} />,
+                            },
+                        ]}
+                    />
                 </Card>
             </div>
 
@@ -316,6 +612,173 @@ export default function QMSPage() {
                     </Space>
                 </Card>
             )}
+
+            {/* ===== Walk-in Modal ===== */}
+            <Modal
+                title={<><TeamOutlined /> Tiếp nhận vãng lai</>}
+                open={walkinModal}
+                onCancel={() => setWalkinModal(false)}
+                onOk={handleWalkinCheckin}
+                confirmLoading={walkinLoading}
+                okText="Lấy số"
+            >
+                <div className="space-y-3 py-2">
+                    <div>
+                        <Text type="secondary">Patient ID *</Text>
+                        <Input
+                            placeholder="Nhập mã bệnh nhân (UUID)"
+                            value={walkinPatientId}
+                            onChange={(e) => setWalkinPatientId(e.target.value)}
+                        />
+                    </div>
+                    <div>
+                        <Text type="secondary">Lý do khám</Text>
+                        <Input.TextArea
+                            placeholder="VD: Đau đầu, sốt cao..."
+                            value={walkinReason}
+                            onChange={(e) => setWalkinReason(e.target.value)}
+                            rows={2}
+                        />
+                    </div>
+                </div>
+            </Modal>
+
+            {/* ===== Kiosk Check-in Modal ===== */}
+            <Modal
+                title={<><QrcodeOutlined /> Kiosk Check-in (Booking)</>}
+                open={kioskModal}
+                onCancel={() => setKioskModal(false)}
+                onOk={handleKioskCheckin}
+                confirmLoading={kioskLoading}
+                okText="Check-in"
+            >
+                <div className="space-y-3 py-2">
+                    <div>
+                        <Text type="secondary">Appointment ID *</Text>
+                        <Input
+                            placeholder="Quét QR hoặc nhập mã lịch hẹn"
+                            value={kioskAppointmentId}
+                            onChange={(e) => setKioskAppointmentId(e.target.value)}
+                        />
+                    </div>
+                    <div className="bg-blue-50 p-3 rounded-lg text-sm">
+                        <Text type="secondary">
+                            ⏰ <strong>Quy tắc ưu tiên:</strong><br />
+                            • Đúng giờ / trễ ≤15p → Priority 7<br />
+                            • Trễ 15-30p → Priority 3<br />
+                            • Trễ &gt;30p → Mất ưu tiên (Priority 0)
+                        </Text>
+                    </div>
+                </div>
+            </Modal>
+
+            {/* ===== Emergency Modal ===== */}
+            <Modal
+                title={<span className="text-red-500"><AlertOutlined /> 🚨 Flag Cấp cứu</span>}
+                open={emergencyModal}
+                onCancel={() => setEmergencyModal(false)}
+                onOk={handleEmergencyFlag}
+                confirmLoading={emergencyLoading}
+                okText="FLAG CẤP CỨU"
+                okButtonProps={{ danger: true }}
+            >
+                <div className="space-y-3 py-2">
+                    <div>
+                        <Text type="secondary">Patient ID *</Text>
+                        <Input
+                            placeholder="Mã bệnh nhân cấp cứu"
+                            value={emergencyPatientId}
+                            onChange={(e) => setEmergencyPatientId(e.target.value)}
+                        />
+                    </div>
+                    <div>
+                        <Text type="secondary">Lý do cấp cứu</Text>
+                        <Input.TextArea
+                            placeholder="VD: Ngưng tim, chấn thương nặng..."
+                            value={emergencyReason}
+                            onChange={(e) => setEmergencyReason(e.target.value)}
+                            rows={2}
+                        />
+                    </div>
+                    <div className="bg-red-50 p-3 rounded-lg text-sm text-red-700">
+                        <AlertOutlined /> Priority = 100 — Bệnh nhân sẽ được gọi ngay lập tức,
+                        bỏ qua toàn bộ hàng đợi hiện tại.
+                    </div>
+                </div>
+            </Modal>
         </div>
+    );
+}
+
+// ============================================================================
+// Sub-component: Queue List
+// ============================================================================
+
+function QueueList({ items, loading }: { items: QueueBoardEntry[]; loading: boolean }) {
+    return (
+        <Spin spinning={loading}>
+            {items.length > 0 ? (
+                <List
+                    dataSource={items}
+                    renderItem={(item) => {
+                        const src = sourceConfig[item.source_type] || sourceConfig.WALK_IN;
+                        const pl = priorityLabel(item.priority);
+
+                        return (
+                            <List.Item>
+                                <List.Item.Meta
+                                    avatar={
+                                        <Badge
+                                            count={item.position}
+                                            style={{
+                                                backgroundColor: item.position === 1 ? '#1E88E5' : '#8c8c8c',
+                                            }}
+                                        >
+                                            <Avatar
+                                                icon={src.icon || <UserOutlined />}
+                                                style={{
+                                                    backgroundColor: item.source_type === 'EMERGENCY' ? '#fff1f0' : undefined,
+                                                }}
+                                            />
+                                        </Badge>
+                                    }
+                                    title={
+                                        <Space>
+                                            <Text strong>{item.queue_number}</Text>
+                                            <Tag color={src.tagColor} icon={src.icon}>
+                                                {src.label}
+                                            </Tag>
+                                            {item.priority > 0 && (
+                                                <Tag color={pl.color}>P{item.priority}</Tag>
+                                            )}
+                                        </Space>
+                                    }
+                                    description={
+                                        <Space>
+                                            {item.patient_name && (
+                                                <Text type="secondary">{item.patient_name}</Text>
+                                            )}
+                                            {item.wait_time_minutes != null && (
+                                                <Text type="secondary" className="text-xs">
+                                                    • Chờ {item.wait_time_minutes}p
+                                                </Text>
+                                            )}
+                                        </Space>
+                                    }
+                                />
+                                <Tag color={statusConfig.WAITING.color}>
+                                    {statusConfig.WAITING.label}
+                                </Tag>
+                            </List.Item>
+                        );
+                    }}
+                />
+            ) : (
+                <Empty
+                    image={Empty.PRESENTED_IMAGE_SIMPLE}
+                    description="Trống"
+                />
+            )}
+        </Spin>
     );
 }

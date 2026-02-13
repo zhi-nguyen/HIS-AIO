@@ -1,152 +1,177 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Typography, Card, Tag, Space, Row, Col, Statistic, Badge } from 'antd';
+import { Typography, Card, Tag, Space, Row, Col, Statistic, Badge, Select } from 'antd';
 import {
     SoundOutlined,
     UserOutlined,
     MedicineBoxOutlined,
-    ExperimentOutlined,
-    DollarOutlined,
     ClockCircleOutlined,
+    ThunderboltOutlined,
+    CalendarOutlined,
+    TeamOutlined,
 } from '@ant-design/icons';
 import { qmsApi } from '@/lib/services';
+import type {
+    ServiceStation,
+    CalledPatient,
+    QueueBoardEntry,
+    QueueSourceType,
+} from '@/types';
 
 const { Title, Text } = Typography;
 
 /**
- * QMS Display Screen - Màn hình gọi số
- * Hiển thị trên màn hình TV/Monitor tại phòng chờ
+ * QMS Display Screen — Bảng LED Hàng đợi 3 Luồng
+ * Hiển thị trên TV/Monitor tại phòng chờ.
+ * Tự động refresh từ endpoint GET /qms/queue/board/
  */
 
-interface QueueCall {
-    id: string;
-    queue_number: string;
-    patient_name: string;
-    service_point: string;
-    service_type: 'CLINICAL' | 'LAB' | 'IMAGING' | 'PHARMACY' | 'CASHIER';
-    status: 'CALLING' | 'IN_SERVICE' | 'COMPLETED';
-    called_at?: string;
-}
-
-const serviceConfig: Record<string, { icon: React.ReactNode; color: string; label: string }> = {
-    CLINICAL: { icon: <MedicineBoxOutlined />, color: 'blue', label: 'Khám bệnh' },
-    LAB: { icon: <ExperimentOutlined />, color: 'purple', label: 'Xét nghiệm' },
-    IMAGING: { icon: <MedicineBoxOutlined />, color: 'cyan', label: 'Chẩn đoán HA' },
-    PHARMACY: { icon: <MedicineBoxOutlined />, color: 'green', label: 'Nhà thuốc' },
-    CASHIER: { icon: <DollarOutlined />, color: 'gold', label: 'Thu ngân' },
+const sourceIcon: Record<QueueSourceType, { icon: React.ReactNode; color: string; label: string }> = {
+    EMERGENCY: { icon: <ThunderboltOutlined />, color: '#ff4d4f', label: 'CẤP CỨU' },
+    ONLINE_BOOKING: { icon: <CalendarOutlined />, color: '#1890ff', label: 'ĐẶT LỊCH' },
+    WALK_IN: { icon: <TeamOutlined />, color: '#8c8c8c', label: 'VÃNG LAI' },
 };
 
 export default function DisplayScreen() {
-    const [currentCalls, setCurrentCalls] = useState<QueueCall[]>([]);
-    const [upcomingCalls, setUpcomingCalls] = useState<QueueCall[]>([]);
+    const [stations, setStations] = useState<ServiceStation[]>([]);
+    const [selectedStation, setSelectedStation] = useState<string | null>(null);
+    const [currentServing, setCurrentServing] = useState<CalledPatient | null>(null);
+    const [waitingList, setWaitingList] = useState<QueueBoardEntry[]>([]);
+    const [totalWaiting, setTotalWaiting] = useState(0);
     const [currentTime, setCurrentTime] = useState(new Date());
-    const [stats, setStats] = useState({ total: 0, completed: 0, waiting: 0 });
 
-    // Update time every second
+    // Đồng hồ
     useEffect(() => {
         const timer = setInterval(() => setCurrentTime(new Date()), 1000);
         return () => clearInterval(timer);
     }, []);
 
-    // Fetch queue data
-    const fetchQueueData = useCallback(async () => {
-        try {
-            const data = await qmsApi.getDisplayQueue();
-            setCurrentCalls(data.current_calls || []);
-            setUpcomingCalls(data.upcoming || []);
-            setStats(data.stats || { total: 0, completed: 0, waiting: 0 });
-        } catch (error) {
-            console.error('Error fetching queue:', error);
-            // Demo data for display
-            setCurrentCalls([
-                { id: '1', queue_number: 'A-001', patient_name: 'Nguyễn Văn A', service_point: 'Phòng khám 1', service_type: 'CLINICAL', status: 'CALLING' },
-                { id: '2', queue_number: 'B-015', patient_name: 'Trần Thị B', service_point: 'Phòng XN 2', service_type: 'LAB', status: 'CALLING' },
-                { id: '3', queue_number: 'C-008', patient_name: 'Lê Văn C', service_point: 'Quầy thuốc', service_type: 'PHARMACY', status: 'CALLING' },
-            ]);
-            setUpcomingCalls([
-                { id: '4', queue_number: 'A-002', patient_name: 'Phạm D', service_point: 'Phòng khám 1', service_type: 'CLINICAL', status: 'IN_SERVICE' },
-                { id: '5', queue_number: 'A-003', patient_name: 'Hoàng E', service_point: 'Phòng khám 2', service_type: 'CLINICAL', status: 'IN_SERVICE' },
-                { id: '6', queue_number: 'D-012', patient_name: 'Vũ F', service_point: 'Thu ngân 1', service_type: 'CASHIER', status: 'IN_SERVICE' },
-            ]);
-            setStats({ total: 150, completed: 89, waiting: 61 });
-        }
+    // Fetch stations
+    useEffect(() => {
+        const load = async () => {
+            try {
+                const data = await qmsApi.getStations();
+                setStations(data);
+                if (data.length > 0) setSelectedStation(data[0].id);
+            } catch (e) {
+                console.error('Lỗi load stations:', e);
+            }
+        };
+        load();
     }, []);
 
-    useEffect(() => {
-        fetchQueueData();
-        const interval = setInterval(fetchQueueData, 5000); // Refresh every 5 seconds
-        return () => clearInterval(interval);
-    }, [fetchQueueData]);
-
-    // Play sound for new calls
-    useEffect(() => {
-        if (currentCalls.some(c => c.status === 'CALLING')) {
-            // Browser speech synthesis
-            if ('speechSynthesis' in window) {
-                const call = currentCalls.find(c => c.status === 'CALLING');
-                if (call) {
-                    const utterance = new SpeechSynthesisUtterance(
-                        `Mời số ${call.queue_number.replace('-', ' ')} đến ${call.service_point}`
-                    );
-                    utterance.lang = 'vi-VN';
-                    utterance.rate = 0.9;
-                    speechSynthesis.speak(utterance);
-                }
-            }
+    // Fetch queue board
+    const fetchBoard = useCallback(async () => {
+        if (!selectedStation) return;
+        try {
+            const data = await qmsApi.getQueueBoard(selectedStation);
+            setCurrentServing(data.current_serving);
+            setWaitingList(data.waiting_list);
+            setTotalWaiting(data.total_waiting);
+        } catch {
+            // Fallback demo
+            setCurrentServing(null);
+            setWaitingList([]);
         }
-    }, [currentCalls]);
+    }, [selectedStation]);
+
+    useEffect(() => {
+        if (selectedStation) {
+            fetchBoard();
+            const interval = setInterval(fetchBoard, 5000);
+            return () => clearInterval(interval);
+        }
+    }, [selectedStation, fetchBoard]);
+
+    // Speech synthesis khi có bệnh nhân mới được gọi
+    useEffect(() => {
+        if (currentServing && 'speechSynthesis' in window) {
+            const utterance = new SpeechSynthesisUtterance(
+                `Mời số ${currentServing.daily_sequence}, ${currentServing.patient_name || ''}, đến ${currentServing.station_name}`
+            );
+            utterance.lang = 'vi-VN';
+            utterance.rate = 0.9;
+            speechSynthesis.speak(utterance);
+        }
+    }, [currentServing?.entry_id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    const emergencyCount = waitingList.filter(w => w.source_type === 'EMERGENCY').length;
+    const bookingCount = waitingList.filter(w => w.source_type === 'ONLINE_BOOKING').length;
+    const walkinCount = waitingList.filter(w => w.source_type === 'WALK_IN').length;
 
     return (
         <div className="min-h-screen bg-gradient-to-br from-blue-900 via-blue-800 to-indigo-900 p-6 text-white">
             {/* Header */}
-            <header className="flex items-center justify-between mb-8">
+            <header className="flex items-center justify-between mb-6">
                 <div className="flex items-center gap-4">
                     <MedicineBoxOutlined className="text-4xl text-cyan-400" />
                     <div>
                         <Title level={2} className="!text-white !mb-0">Bệnh Viện Đa Khoa ABC</Title>
-                        <Text className="text-blue-200">Hệ thống gọi số tự động</Text>
+                        <Text className="text-blue-200">Hàng chờ lâm sàng — 3 Luồng ưu tiên</Text>
                     </div>
                 </div>
-                <div className="text-right">
-                    <div className="text-4xl font-bold text-cyan-400">
-                        {currentTime.toLocaleTimeString('vi-VN')}
-                    </div>
-                    <div className="text-blue-200">
-                        {currentTime.toLocaleDateString('vi-VN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+                <div className="flex items-center gap-6">
+                    <Select
+                        value={selectedStation}
+                        onChange={setSelectedStation}
+                        style={{ width: 220 }}
+                        dropdownStyle={{ background: '#1e3a5f' }}
+                        options={stations.map(s => ({
+                            value: s.id,
+                            label: `[${s.code}] ${s.name}`,
+                        }))}
+                    />
+                    <div className="text-right">
+                        <div className="text-4xl font-bold text-cyan-400">
+                            {currentTime.toLocaleTimeString('vi-VN')}
+                        </div>
+                        <div className="text-blue-200">
+                            {currentTime.toLocaleDateString('vi-VN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+                        </div>
                     </div>
                 </div>
             </header>
 
             {/* Stats */}
-            <Row gutter={16} className="mb-8">
-                <Col span={8}>
+            <Row gutter={16} className="mb-6">
+                <Col span={6}>
                     <Card className="bg-white/10 border-white/20">
                         <Statistic
-                            title={<span className="text-blue-200">Tổng số lượt</span>}
-                            value={stats.total}
+                            title={<span className="text-blue-200">Tổng chờ</span>}
+                            value={totalWaiting}
                             valueStyle={{ color: '#fff' }}
                             prefix={<UserOutlined />}
                         />
                     </Card>
                 </Col>
-                <Col span={8}>
+                <Col span={6}>
                     <Card className="bg-white/10 border-white/20">
                         <Statistic
-                            title={<span className="text-blue-200">Đã hoàn thành</span>}
-                            value={stats.completed}
-                            valueStyle={{ color: '#52c41a' }}
-                            prefix={<ClockCircleOutlined />}
+                            title={<span className="text-red-300">🚨 Cấp cứu</span>}
+                            value={emergencyCount}
+                            valueStyle={{ color: emergencyCount > 0 ? '#ff4d4f' : '#8c8c8c' }}
+                            prefix={<ThunderboltOutlined />}
                         />
                     </Card>
                 </Col>
-                <Col span={8}>
+                <Col span={6}>
                     <Card className="bg-white/10 border-white/20">
                         <Statistic
-                            title={<span className="text-blue-200">Đang chờ</span>}
-                            value={stats.waiting}
-                            valueStyle={{ color: '#faad14' }}
-                            prefix={<ClockCircleOutlined />}
+                            title={<span className="text-blue-200">📱 Đặt lịch</span>}
+                            value={bookingCount}
+                            valueStyle={{ color: '#1890ff' }}
+                            prefix={<CalendarOutlined />}
+                        />
+                    </Card>
+                </Col>
+                <Col span={6}>
+                    <Card className="bg-white/10 border-white/20">
+                        <Statistic
+                            title={<span className="text-blue-200">🚶 Vãng lai</span>}
+                            value={walkinCount}
+                            valueStyle={{ color: '#d9d9d9' }}
+                            prefix={<TeamOutlined />}
                         />
                     </Card>
                 </Col>
@@ -154,7 +179,7 @@ export default function DisplayScreen() {
 
             {/* Main Display */}
             <Row gutter={24}>
-                {/* Current Calls - Main Focus */}
+                {/* Current Call — Focus Area */}
                 <Col span={16}>
                     <Card
                         title={
@@ -166,44 +191,53 @@ export default function DisplayScreen() {
                         className="bg-white/10 border-white/20"
                         styles={{ header: { borderBottom: '1px solid rgba(255,255,255,0.2)' }, body: { padding: 0 } }}
                     >
-                        <div className="divide-y divide-white/10">
-                            {currentCalls.map((call) => (
-                                <div
-                                    key={call.id}
-                                    className="p-6 flex items-center justify-between animate-pulse"
-                                >
-                                    <div className="flex items-center gap-6">
-                                        <div className="text-6xl font-bold text-cyan-400">
-                                            {call.queue_number}
+                        {currentServing ? (
+                            <div className="p-8 flex items-center justify-between animate-pulse">
+                                <div className="flex items-center gap-8">
+                                    <div
+                                        className="text-8xl font-bold"
+                                        style={{ color: sourceIcon[currentServing.source_type]?.color || '#22d3ee' }}
+                                    >
+                                        {currentServing.daily_sequence}
+                                    </div>
+                                    <div>
+                                        <div className="text-3xl font-semibold text-white mb-2">
+                                            {currentServing.patient_name || 'Bệnh nhân'}
                                         </div>
-                                        <div>
-                                            <div className="text-2xl font-semibold text-white">
-                                                {call.patient_name}
-                                            </div>
+                                        <Space>
                                             <Tag
-                                                icon={serviceConfig[call.service_type]?.icon}
-                                                color={serviceConfig[call.service_type]?.color}
-                                                className="text-lg mt-2"
+                                                icon={sourceIcon[currentServing.source_type]?.icon}
+                                                color={currentServing.source_type === 'EMERGENCY' ? 'red'
+                                                    : currentServing.source_type === 'ONLINE_BOOKING' ? 'blue'
+                                                        : 'default'}
+                                                className="text-base"
                                             >
-                                                {serviceConfig[call.service_type]?.label}
+                                                {sourceIcon[currentServing.source_type]?.label}
                                             </Tag>
-                                        </div>
-                                    </div>
-                                    <div className="text-right">
-                                        <Badge status="processing" />
-                                        <div className="text-3xl font-bold text-yellow-400">
-                                            {call.service_point}
-                                        </div>
+                                            {currentServing.priority > 0 && (
+                                                <Tag color="gold" className="text-base">
+                                                    P{currentServing.priority}
+                                                </Tag>
+                                            )}
+                                        </Space>
                                     </div>
                                 </div>
-                            ))}
-                            {currentCalls.length === 0 && (
-                                <div className="p-12 text-center text-blue-300">
-                                    <ClockCircleOutlined className="text-4xl mb-4" />
-                                    <div>Không có số đang gọi</div>
+                                <div className="text-right">
+                                    <Badge status="processing" />
+                                    <div className="text-3xl font-bold text-yellow-400">
+                                        {currentServing.station_name}
+                                    </div>
+                                    <div className="text-sm text-blue-300 mt-1">
+                                        {currentServing.queue_number}
+                                    </div>
                                 </div>
-                            )}
-                        </div>
+                            </div>
+                        ) : (
+                            <div className="p-14 text-center text-blue-300">
+                                <ClockCircleOutlined className="text-5xl mb-4" />
+                                <div className="text-xl">Không có số đang gọi</div>
+                            </div>
+                        )}
                     </Card>
                 </Col>
 
@@ -215,32 +249,55 @@ export default function DisplayScreen() {
                         styles={{ header: { borderBottom: '1px solid rgba(255,255,255,0.2)' }, body: { padding: 0 } }}
                     >
                         <div className="divide-y divide-white/10">
-                            {upcomingCalls.map((call, index) => (
-                                <div
-                                    key={call.id}
-                                    className="p-4 flex items-center justify-between"
-                                >
-                                    <div className="flex items-center gap-4">
-                                        <div className="text-2xl font-bold text-blue-300">
-                                            {index + 1}.
-                                        </div>
-                                        <div>
-                                            <div className="text-xl font-semibold text-white">
-                                                {call.queue_number}
+                            {waitingList.slice(0, 8).map((entry) => {
+                                const src = sourceIcon[entry.source_type] || sourceIcon.WALK_IN;
+
+                                return (
+                                    <div
+                                        key={`${entry.queue_number}-${entry.position}`}
+                                        className={`p-4 flex items-center justify-between ${entry.source_type === 'EMERGENCY' ? 'bg-red-900/30' : ''
+                                            }`}
+                                    >
+                                        <div className="flex items-center gap-4">
+                                            <div className="text-2xl font-bold text-blue-300">
+                                                {entry.position}.
                                             </div>
-                                            <Text className="text-blue-200 text-sm">
-                                                {call.patient_name}
-                                            </Text>
+                                            <div>
+                                                <div className="text-xl font-semibold text-white">
+                                                    {entry.queue_number}
+                                                </div>
+                                                <Space size={4}>
+                                                    <Tag
+                                                        icon={src.icon}
+                                                        color={entry.source_type === 'EMERGENCY' ? 'red'
+                                                            : entry.source_type === 'ONLINE_BOOKING' ? 'blue'
+                                                                : 'default'}
+                                                        className="text-xs"
+                                                    >
+                                                        {src.label}
+                                                    </Tag>
+                                                    {entry.priority > 0 && (
+                                                        <Tag color="gold" className="text-xs">P{entry.priority}</Tag>
+                                                    )}
+                                                </Space>
+                                            </div>
                                         </div>
+                                        {entry.patient_name && (
+                                            <Text className="text-blue-200 text-sm">
+                                                {entry.patient_name}
+                                            </Text>
+                                        )}
                                     </div>
-                                    <Tag color={serviceConfig[call.service_type]?.color}>
-                                        {call.service_point}
-                                    </Tag>
-                                </div>
-                            ))}
-                            {upcomingCalls.length === 0 && (
+                                );
+                            })}
+                            {waitingList.length === 0 && (
                                 <div className="p-8 text-center text-blue-300">
-                                    Không có số chờ
+                                    Hàng đợi trống
+                                </div>
+                            )}
+                            {waitingList.length > 8 && (
+                                <div className="p-3 text-center text-blue-300 text-sm">
+                                    ... và {waitingList.length - 8} bệnh nhân khác
                                 </div>
                             )}
                         </div>
@@ -250,7 +307,9 @@ export default function DisplayScreen() {
 
             {/* Footer */}
             <footer className="mt-8 text-center text-blue-300">
-                <Text>Vui lòng chú ý màn hình và lắng nghe thông báo • Hotline: 1900 1234</Text>
+                <Text>
+                    Vui lòng chú ý màn hình và lắng nghe thông báo • Hotline: 1900 1234
+                </Text>
             </footer>
         </div>
     );
