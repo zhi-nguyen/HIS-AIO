@@ -15,6 +15,7 @@ from rest_framework_simplejwt.views import (
 from . import views
 from . import data_views
 from apps.core_services.appointments import booking_api as booking_views
+from apps.core_services.qms import views as qms_views
 from .routers import router
 
 app_name = 'api'
@@ -60,6 +61,15 @@ urlpatterns = [
     # BOOKING ENDPOINTS (Patient Chatbot)
     # ==========================================================================
     path('appointments/book/', booking_views.create_booking, name='create_booking'),
+    
+    # ==========================================================================
+    # QMS CLINICAL QUEUE ENDPOINTS
+    # ==========================================================================
+    path('qms/kiosk/checkin/', qms_views.kiosk_checkin, name='qms_kiosk_checkin'),
+    path('qms/walkin/checkin/', qms_views.walkin_checkin, name='qms_walkin_checkin'),
+    path('qms/emergency/flag/', qms_views.emergency_flag, name='qms_emergency_flag'),
+    path('qms/doctor/call-next/', qms_views.doctor_call_next, name='qms_doctor_call_next'),
+    path('qms/queue/board/', qms_views.queue_board, name='qms_queue_board'),
     
     # ==========================================================================
     # INSURANCE MOCK ENDPOINTS

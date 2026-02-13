@@ -5,6 +5,10 @@ import type {
     QueueNumber,
     ServiceStation,
     PaginatedResponse,
+    QueueBoardData,
+    CallNextResponse,
+    KioskCheckinResponse,
+    WalkinCheckinResponse,
 } from '@/types';
 
 /**
@@ -101,9 +105,13 @@ export const visitApi = {
 
 /**
  * Queue Management API Services
- * Hệ thống xếp hàng (QMS)
+ * Hệ thống hàng chờ lâm sàng 3 luồng (Emergency / Booking / Walk-in)
  */
 export const qmsApi = {
+    // ==========================================
+    // Legacy CRUD endpoints
+    // ==========================================
+
     // Lấy danh sách hàng đợi
     getQueues: async (params?: {
         status?: string;
@@ -119,12 +127,6 @@ export const qmsApi = {
             params: { status: 'WAITING', station: stationId },
         });
         return response.data.results || response.data;
-    },
-
-    // Gọi số tiếp theo
-    callNext: async (stationId: string): Promise<QueueNumber | null> => {
-        const response = await api.post(`/qms/stations/${stationId}/call_next/`);
-        return response.data;
     },
 
     // Hoàn thành số hiện tại
@@ -157,7 +159,73 @@ export const qmsApi = {
         return response.data;
     },
 
-    // Lấy danh sách đang gọi (cho màn hình display)
+    // ==========================================
+    // Clinical Queue 3-Stream Endpoints
+    // ==========================================
+
+    /**
+     * Kiosk Check-in — Bệnh nhân quét QR booking
+     * POST /qms/kiosk/checkin/
+     */
+    kioskCheckin: async (appointmentId: string, stationId: string): Promise<KioskCheckinResponse> => {
+        const response = await api.post('/qms/kiosk/checkin/', {
+            appointment_id: appointmentId,
+            station_id: stationId,
+        });
+        return response.data;
+    },
+
+    /**
+     * Walk-in Check-in — Vãng lai lấy số
+     * POST /qms/walkin/checkin/
+     */
+    walkinCheckin: async (data: {
+        patient_id: string;
+        station_id: string;
+        reason?: string;
+        is_elderly_or_child?: boolean;
+    }): Promise<WalkinCheckinResponse> => {
+        const response = await api.post('/qms/walkin/checkin/', data);
+        return response.data;
+    },
+
+    /**
+     * Emergency Flag — Nhân viên y tế flag cấp cứu
+     * POST /qms/emergency/flag/
+     */
+    emergencyFlag: async (data: {
+        patient_id: string;
+        station_id: string;
+        reason?: string;
+    }): Promise<{ success: boolean; message: string; queue_number: string; priority: number }> => {
+        const response = await api.post('/qms/emergency/flag/', data);
+        return response.data;
+    },
+
+    /**
+     * Doctor Call Next — Bác sĩ gọi bệnh nhân tiếp theo
+     * Thuật toán: Emergency → Booking ưu tiên → Walk-in FCFS
+     * POST /qms/doctor/call-next/
+     */
+    doctorCallNext: async (stationId: string): Promise<CallNextResponse> => {
+        const response = await api.post('/qms/doctor/call-next/', {
+            station_id: stationId,
+        });
+        return response.data;
+    },
+
+    /**
+     * Queue Board — Bảng LED hàng đợi theo station
+     * GET /qms/queue/board/?station_id=...
+     */
+    getQueueBoard: async (stationId: string): Promise<QueueBoardData> => {
+        const response = await api.get('/qms/queue/board/', {
+            params: { station_id: stationId },
+        });
+        return response.data.data;
+    },
+
+    // Legacy display (backward compat)
     getDisplayQueue: async () => {
         try {
             const [currentRes, waitingRes] = await Promise.all([

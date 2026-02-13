@@ -92,7 +92,7 @@ export interface PatientCreateInput {
 
 // Backend Visit status from reception/models.py
 export type VisitStatus = 'CHECK_IN' | 'TRIAGE' | 'WAITING' | 'IN_PROGRESS' | 'PENDING_RESULTS' | 'COMPLETED' | 'CANCELLED';
-export type VisitPriority = 'NORMAL' | 'PRIORITY' | 'EMERGENCY';
+export type VisitPriority = 'NORMAL' | 'ONLINE_BOOKING' | 'PRIORITY' | 'EMERGENCY';
 
 export interface Visit {
     id: string;
@@ -119,6 +119,7 @@ export interface VisitCreateInput {
 
 export type QueueStatus = 'WAITING' | 'CALLED' | 'IN_PROGRESS' | 'COMPLETED' | 'SKIPPED';
 export type StationType = 'TRIAGE' | 'DOCTOR' | 'LAB' | 'IMAGING' | 'PHARMACY' | 'CASHIER';
+export type QueueSourceType = 'WALK_IN' | 'ONLINE_BOOKING' | 'EMERGENCY';
 
 export interface QueueNumber {
     id: string;
@@ -141,6 +142,77 @@ export interface ServiceStation {
     is_active: boolean;
     room_location?: string;
     current_queue?: QueueNumber;
+}
+
+// --- Clinical Queue (3-Stream) Types ---
+
+/** Bệnh nhân được gọi — response từ call_next_patient */
+export interface CalledPatient {
+    entry_id: string;
+    queue_number: string;
+    daily_sequence: number;
+    patient_name: string;
+    source_type: QueueSourceType;
+    priority: number;
+    display_label: string;
+    station_code: string;
+    station_name: string;
+    wait_time_minutes: number | null;
+}
+
+/** Entry trong danh sách chờ */
+export interface QueueBoardEntry {
+    position: number;
+    queue_number: string;
+    patient_name: string;
+    source_type: QueueSourceType;
+    priority: number;
+    wait_time_minutes: number | null;
+}
+
+/** Response từ queue/board/ endpoint */
+export interface QueueBoardData {
+    station: { code: string; name: string };
+    current_serving: CalledPatient | null;
+    waiting_list: QueueBoardEntry[];
+    total_waiting: number;
+    estimated_wait_minutes: number;
+}
+
+/** Booking check-in lateness info */
+export interface LatenessInfo {
+    minutes: number;
+    category: 'ON_TIME' | 'LATE' | 'EXPIRED';
+}
+
+/** Response từ kiosk/checkin/ */
+export interface KioskCheckinResponse {
+    success: boolean;
+    message: string;
+    queue_number: string;
+    daily_sequence: number;
+    priority: number;
+    source: QueueSourceType;
+    lateness_info: LatenessInfo;
+    station: { code: string; name: string };
+}
+
+/** Response từ walkin/checkin/ */
+export interface WalkinCheckinResponse {
+    success: boolean;
+    message: string;
+    queue_number: string;
+    daily_sequence: number;
+    priority: number;
+    source: QueueSourceType;
+    station: { code: string; name: string };
+}
+
+/** Response từ doctor/call-next/ */
+export interface CallNextResponse {
+    success: boolean;
+    message: string;
+    called_patient: CalledPatient | null;
 }
 
 // ============================================================================
