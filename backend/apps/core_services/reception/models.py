@@ -13,6 +13,7 @@ class Visit(UUIDModel):
 
     class Priority(models.TextChoices):
         NORMAL = 'NORMAL', 'Bình thường'
+        ONLINE_BOOKING = 'ONLINE_BOOKING', 'Đặt lịch hẹn'
         PRIORITY = 'PRIORITY', 'Ưu tiên (Người già/Trẻ em)'
         EMERGENCY = 'EMERGENCY', 'Cấp cứu (Code Red)'
 
