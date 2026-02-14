@@ -39,7 +39,28 @@ class Visit(UUIDModel):
         related_name='assigned_visits'
     )
 
+    # --- Triage Result Fields ---
+    chief_complaint = models.TextField(null=True, blank=True, verbose_name='Lý do khám')
+    triage_code = models.CharField(max_length=20, null=True, blank=True, verbose_name='Mã phân luồng')
+    triage_ai_response = models.TextField(null=True, blank=True, verbose_name='Phản hồi AI')
+    triage_confidence = models.IntegerField(null=True, blank=True, verbose_name='Độ tin cậy (%)')
+    recommended_department = models.ForeignKey(
+        'departments.Department',
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='triage_visits',
+        verbose_name='Khoa AI đề xuất'
+    )
+    confirmed_department = models.ForeignKey(
+        'departments.Department',
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='confirmed_visits',
+        verbose_name='Khoa xác nhận'
+    )
+    triage_confirmed_at = models.DateTimeField(null=True, blank=True)
+
     queue_number = models.IntegerField()
 
     def __str__(self):
-        return f"Visit {self.visit_code} - {self.patient.fullname}"
+        return f"Visit {self.visit_code} - {self.patient}"

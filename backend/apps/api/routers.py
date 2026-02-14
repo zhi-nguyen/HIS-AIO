@@ -5,11 +5,13 @@ router = DefaultRouter()
 from apps.core_services.patients.views import PatientViewSet
 from apps.core_services.reception.views import VisitViewSet
 from apps.core_services.qms.views import QueueNumberViewSet, ServiceStationViewSet
+from apps.core_services.departments.views import DepartmentViewSet
 
 router.register(r'patients', PatientViewSet)
 router.register(r'reception/visits', VisitViewSet)
 router.register(r'qms/queues', QueueNumberViewSet)
 router.register(r'qms/stations', ServiceStationViewSet)
+router.register(r'departments', DepartmentViewSet)
 
 from apps.medical_services.emr.views import ClinicalRecordViewSet
 router.register(r'emr/records', ClinicalRecordViewSet)

@@ -14,7 +14,6 @@ class UUIDModel(models.Model):
 class Province(models.Model):
     code = models.CharField(max_length=10, unique=True, db_index=True)
     name = models.CharField(max_length=100)
-
     full_name = models.CharField(max_length=150, null=True, blank=True)
 
     def __str__(self):

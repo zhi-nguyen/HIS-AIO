@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { AntdRegistry } from "@ant-design/nextjs-registry";
-import { ConfigProvider } from "antd";
+import { ConfigProvider, App } from "antd";
 import viVN from "antd/locale/vi_VN";
 import { Geist } from "next/font/google";
 import "./globals.css";
@@ -58,9 +58,11 @@ export default function RootLayout({
       <body className={`${geistSans.variable} antialiased`}>
         <AntdRegistry>
           <ConfigProvider locale={viVN} theme={antTheme}>
-            <AuthProvider>
-              {children}
-            </AuthProvider>
+            <App>
+              <AuthProvider>
+                {children}
+              </AuthProvider>
+            </App>
           </ConfigProvider>
         </AntdRegistry>
       </body>

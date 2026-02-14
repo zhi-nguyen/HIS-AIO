@@ -47,7 +47,7 @@ export default function LoginPage() {
             >
                 {/* Logo & Title */}
                 <div className="text-center mb-8">
-                    <Space direction="vertical" size="small">
+                    <Space orientation="vertical" size="small">
                         <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-500 rounded-full mb-2">
                             <MedicineBoxOutlined className="text-3xl text-white" />
                         </div>

@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import { authApi, tokenUtils } from '@/lib/api';
-import { message } from 'antd';
+import { App } from 'antd';
 
 /**
  * Auth Context
@@ -38,6 +38,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export function AuthProvider({ children }: { children: ReactNode }) {
     const [user, setUser] = useState<User | null>(null);
     const [isLoading, setIsLoading] = useState(true);
+    const { message } = App.useApp();
 
     // Kiểm tra token khi khởi động
     useEffect(() => {
@@ -88,13 +89,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         } finally {
             setIsLoading(false);
         }
-    }, []);
+    }, [message]);
 
     const logout = useCallback(() => {
         authApi.logout();
         setUser(null);
         message.success('Đã đăng xuất!');
-    }, []);
+    }, [message]);
 
     const value: AuthContextType = {
         user,
