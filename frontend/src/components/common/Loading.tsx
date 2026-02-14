@@ -18,10 +18,12 @@ interface LoadingProps {
 
 export default function Loading({ fullPage = false, tip, size = 'large' }: LoadingProps) {
     const spinner = (
-        <Spin
-            indicator={<LoadingOutlined style={{ fontSize: size === 'large' ? 48 : size === 'default' ? 32 : 24 }} spin />}
-            tip={tip && <Text className="mt-2">{tip}</Text>}
-        />
+        <div className="text-center">
+            <Spin
+                indicator={<LoadingOutlined style={{ fontSize: size === 'large' ? 48 : size === 'default' ? 32 : 24 }} spin />}
+            />
+            {tip && <div className="mt-2"><Text>{tip}</Text></div>}
+        </div>
     );
 
     if (fullPage) {

@@ -147,7 +147,7 @@ export default function LISPage() {
             title: 'Bệnh nhân',
             key: 'patient',
             render: (_, record) => (
-                <Space direction="vertical" size={0}>
+                <Space orientation="vertical" size={0}>
                     <Text strong>
                         {record.patient.full_name ||
                             `${record.patient.last_name || ''} ${record.patient.first_name || ''}`}
@@ -313,7 +313,7 @@ export default function LISPage() {
                                     title: 'Xét nghiệm',
                                     key: 'test',
                                     render: (_, d: LabOrderDetail) => (
-                                        <Space direction="vertical" size={0}>
+                                        <Space orientation="vertical" size={0}>
                                             <Text strong>{d.test.name}</Text>
                                             <Text type="secondary" className="text-xs">{d.test.code}</Text>
                                         </Space>

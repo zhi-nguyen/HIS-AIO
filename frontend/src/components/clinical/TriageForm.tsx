@@ -178,7 +178,8 @@ export default function TriageForm({ visitId, patientName, onComplete }: TriageF
             {/* Result */}
             {loading && (
                 <div className="text-center py-4">
-                    <Spin tip="Đang phân tích..." />
+                    <Spin />
+                    <div className="mt-2">Đang phân tích...</div>
                 </div>
             )}
 

@@ -126,7 +126,8 @@ export default function DashboardLayout({
     if (isLoading) {
         return (
             <div className="min-h-screen flex items-center justify-center">
-                <Spin size="large" tip="Đang tải..." />
+                <Spin size="large" />
+                <div className="mt-2">Đang tải...</div>
             </div>
         );
     }

@@ -169,7 +169,7 @@ export default function RISPage() {
             title: 'Kỹ thuật',
             key: 'procedure',
             render: (_, record) => (
-                <Space direction="vertical" size={0}>
+                <Space orientation="vertical" size={0}>
                     <Text strong>{record.procedure?.name}</Text>
                     <Text type="secondary" className="text-xs">
                         {record.procedure?.modality?.code} - {record.procedure?.body_part}
@@ -181,7 +181,7 @@ export default function RISPage() {
             title: 'Bệnh nhân',
             key: 'patient',
             render: (_, record) => (
-                <Space direction="vertical" size={0}>
+                <Space orientation="vertical" size={0}>
                     <Text>
                         {record.patient.full_name ||
                             `${record.patient.last_name || ''} ${record.patient.first_name || ''}`}
@@ -364,7 +364,7 @@ export default function RISPage() {
 
                         {selectedOrder.result && (
                             <Card size="small" title="Kết quả đọc phim">
-                                <Space direction="vertical" className="w-full">
+                                <Space orientation="vertical" className="w-full">
                                     <div>
                                         <Text strong>Mô tả hình ảnh:</Text>
                                         <div>{selectedOrder.result.findings}</div>

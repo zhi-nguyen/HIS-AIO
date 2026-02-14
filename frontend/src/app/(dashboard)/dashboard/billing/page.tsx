@@ -164,7 +164,7 @@ export default function BillingPage() {
                 const patient = record.patient;
                 if (!patient) return <Text type="secondary">-</Text>;
                 return (
-                    <Space direction="vertical" size={0}>
+                    <Space orientation="vertical" size={0}>
                         <Text>
                             {patient.full_name ||
                                 `${patient.last_name || ''} ${patient.first_name || ''}`}
@@ -367,7 +367,7 @@ export default function BillingPage() {
                                         title={item.item_name}
                                         description={`Đơn giá: ${item.unit_price?.toLocaleString('vi-VN')} ₫`}
                                     />
-                                    <Space direction="vertical" size={0} className="text-right">
+                                    <Space orientation="vertical" size={0} className="text-right">
                                         <Text>x{item.quantity}</Text>
                                         <Text strong>{item.total_price?.toLocaleString('vi-VN')} ₫</Text>
                                     </Space>
