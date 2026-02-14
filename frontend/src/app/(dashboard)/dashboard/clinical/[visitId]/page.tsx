@@ -211,7 +211,8 @@ export default function ClinicalExamPage() {
     if (loading) {
         return (
             <div className="flex items-center justify-center min-h-[400px]">
-                <Spin size="large" tip="Đang tải..." />
+                <Spin size="large" />
+                <div className="mt-2">Đang tải...</div>
             </div>
         );
     }

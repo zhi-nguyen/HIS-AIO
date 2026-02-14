@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
     Card,
     Table,
@@ -11,12 +11,15 @@ import {
     Modal,
     Form,
     Select,
-    message,
     Typography,
     Tooltip,
     AutoComplete,
     Descriptions,
     Badge,
+    Alert,
+    Spin,
+    Progress,
+    App,
 } from 'antd';
 import {
     PlusOutlined,
@@ -25,17 +28,22 @@ import {
     CheckCircleOutlined,
     ClockCircleOutlined,
     ReloadOutlined,
+    RobotOutlined,
+    MedicineBoxOutlined,
+    CheckOutlined,
 } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
-import { visitApi, patientApi } from '@/lib/services';
-import type { Visit, Patient } from '@/types';
+import { visitApi, patientApi, departmentApi } from '@/lib/services';
+import type { Visit, Patient, Department } from '@/types';
+import TriageModal from './TriageModal';
 import dayjs from 'dayjs';
 
 const { Title, Text } = Typography;
+const { TextArea } = Input;
 
 /**
  * Reception Page
- * Tiếp nhận bệnh nhân và tạo lượt khám
+ * Tiếp nhận bệnh nhân, phân luồng AI, và xác nhận khoa hướng đến
  */
 
 const statusConfig: Record<string, { color: string; label: string }> = {
@@ -54,7 +62,14 @@ const priorityConfig: Record<string, { color: string; label: string }> = {
     EMERGENCY: { color: 'red', label: 'Cấp cứu' },
 };
 
+const triageCodeConfig: Record<string, { color: string; bg: string; label: string }> = {
+    CODE_RED: { color: '#ff4d4f', bg: '#fff1f0', label: 'Cấp cứu (RED)' },
+    CODE_YELLOW: { color: '#faad14', bg: '#fffbe6', label: 'Ưu tiên (YELLOW)' },
+    CODE_GREEN: { color: '#52c41a', bg: '#f6ffed', label: 'Bình thường (GREEN)' },
+};
+
 export default function ReceptionPage() {
+    const { message } = App.useApp();
     const [visits, setVisits] = useState<Visit[]>([]);
     const [loading, setLoading] = useState(false);
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -63,45 +78,67 @@ export default function ReceptionPage() {
     const [searchPatient, setSearchPatient] = useState('');
     const [form] = Form.useForm();
 
+    // --- Triage State (only open/close + visit ref, all other state is in TriageModal) ---
+    const [triageModalOpen, setTriageModalOpen] = useState(false);
+    const [triageVisit, setTriageVisit] = useState<Visit | null>(null);
+    const [departments, setDepartments] = useState<Department[]>([]);
+
     // Fetch visits
     const fetchVisits = useCallback(async () => {
         setLoading(true);
         try {
             const response = await visitApi.getAll();
-            setVisits(response.results || []);
+            const list = Array.isArray(response) ? response : (response.results || []);
+            setVisits(list);
         } catch (error) {
             console.error('Error fetching visits:', error);
             message.error('Không thể tải danh sách lượt khám');
         } finally {
             setLoading(false);
         }
+    }, [message]);
+
+    // Fetch departments
+    const fetchDepartments = useCallback(async () => {
+        try {
+            const depts = await departmentApi.getAll();
+            setDepartments(depts);
+        } catch (error) {
+            console.error('Error fetching departments:', error);
+        }
     }, []);
 
     useEffect(() => {
         fetchVisits();
-    }, [fetchVisits]);
+        fetchDepartments();
+    }, [fetchVisits, fetchDepartments]);
 
-    // Search patients for autocomplete
-    const handlePatientSearch = async (value: string) => {
+    // Debounce timer ref
+    const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    // Search patients with debounce (400ms)
+    const handlePatientSearch = useCallback((value: string) => {
         setSearchPatient(value);
+        if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
         if (value.length < 2) {
             setPatientOptions([]);
             return;
         }
-
-        try {
-            const patients = await patientApi.search(value);
-            setPatientOptions(
-                patients.map((p) => ({
-                    value: p.id,
-                    label: `${p.patient_code} - ${p.full_name || `${p.last_name} ${p.first_name}`}`,
-                    patient: p,
-                }))
-            );
-        } catch (error) {
-            console.error('Error searching patients:', error);
-        }
-    };
+        searchTimerRef.current = setTimeout(async () => {
+            try {
+                const patients = await patientApi.search(value);
+                setPatientOptions(
+                    patients.map((p) => ({
+                        value: p.id,
+                        label: `${p.patient_code} - ${p.full_name || `${p.last_name} ${p.first_name}`}`,
+                        patient: p,
+                    }))
+                );
+            } catch (error) {
+                console.error('Error searching patients:', error);
+            }
+        }, 400);
+    }, []);
 
     // Select patient
     const handlePatientSelect = (value: string, option: { patient: Patient }) => {
@@ -128,13 +165,36 @@ export default function ReceptionPage() {
         }
     };
 
+    // Mở modal phân luồng
+    const openTriageModal = (visit: Visit) => {
+        setTriageVisit(visit);
+        setTriageModalOpen(true);
+    };
+
+    // Callback khi triage thành công
+    const handleTriageSuccess = () => {
+        fetchVisits();
+    };
+
+    // Update visit status (for simple status changes)
+    const handleUpdateStatus = async (id: string, status: string) => {
+        try {
+            await visitApi.update(id, { status } as Partial<Visit>);
+            message.success('Cập nhật trạng thái thành công');
+            fetchVisits();
+        } catch (error) {
+            console.error('Error updating status:', error);
+            message.error('Không thể cập nhật trạng thái');
+        }
+    };
+
     // Table columns
     const columns: ColumnsType<Visit> = [
         {
             title: 'STT',
             dataIndex: 'queue_number',
             key: 'queue_number',
-            width: 80,
+            width: 70,
             render: (num: number) => (
                 <Badge
                     count={num}
@@ -154,10 +214,11 @@ export default function ReceptionPage() {
             title: 'Bệnh nhân',
             dataIndex: 'patient',
             key: 'patient',
-            render: (patient: Patient | string) => {
+            render: (_: unknown, record: Visit) => {
+                const patient = record.patient_detail || record.patient;
                 if (typeof patient === 'object' && patient) {
                     return (
-                        <Space direction="vertical" size={0}>
+                        <Space style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 0 }}>
                             <Text strong>{patient.full_name || `${patient.last_name} ${patient.first_name}`}</Text>
                             <Text type="secondary" className="text-xs">{patient.patient_code}</Text>
                         </Space>
@@ -170,7 +231,7 @@ export default function ReceptionPage() {
             title: 'Check-in',
             dataIndex: 'check_in_time',
             key: 'check_in_time',
-            width: 100,
+            width: 90,
             render: (time: string) => time ? dayjs(time).format('HH:mm') : '-',
         },
         {
@@ -194,20 +255,45 @@ export default function ReceptionPage() {
             },
         },
         {
+            title: 'Khoa hướng đến',
+            key: 'department',
+            width: 140,
+            render: (_: unknown, record: Visit) => {
+                if (record.confirmed_department_detail) {
+                    return <Tag color="blue" icon={<CheckOutlined />}>{record.confirmed_department_detail.name}</Tag>;
+                }
+                if (record.recommended_department_detail) {
+                    return <Tag color="orange">{record.recommended_department_detail.name} (AI)</Tag>;
+                }
+                return <Text type="secondary">-</Text>;
+            },
+        },
+        {
             title: 'Thao tác',
             key: 'actions',
             width: 150,
             render: (_: unknown, record: Visit) => (
                 <Space>
                     {record.status === 'CHECK_IN' && (
-                        <Tooltip title="Chuyển phân luồng">
+                        <Tooltip title="Phân luồng bằng AI">
                             <Button
                                 type="primary"
                                 size="small"
-                                icon={<ClockCircleOutlined />}
-                                onClick={() => handleUpdateStatus(record.id, 'TRIAGE')}
+                                icon={<RobotOutlined />}
+                                onClick={() => openTriageModal(record)}
                             >
                                 Phân luồng
+                            </Button>
+                        </Tooltip>
+                    )}
+                    {record.status === 'TRIAGE' && !record.confirmed_department && (
+                        <Tooltip title="Tiếp tục phân luồng">
+                            <Button
+                                size="small"
+                                icon={<MedicineBoxOutlined />}
+                                onClick={() => openTriageModal(record)}
+                            >
+                                Chốt khoa
                             </Button>
                         </Tooltip>
                     )}
@@ -220,18 +306,6 @@ export default function ReceptionPage() {
             ),
         },
     ];
-
-    // Update visit status
-    const handleUpdateStatus = async (id: string, status: string) => {
-        try {
-            await visitApi.update(id, { status } as Partial<Visit>);
-            message.success('Cập nhật trạng thái thành công');
-            fetchVisits();
-        } catch (error) {
-            console.error('Error updating status:', error);
-            message.error('Không thể cập nhật trạng thái');
-        }
-    };
 
     return (
         <div className="space-y-4">
@@ -311,7 +385,7 @@ export default function ReceptionPage() {
                     rowKey="id"
                     loading={loading}
                     pagination={{ pageSize: 10, showTotal: (t) => `Tổng ${t} lượt khám` }}
-                    scroll={{ x: 900 }}
+                    scroll={{ x: 1100 }}
                 />
             </Card>
 
@@ -375,6 +449,15 @@ export default function ReceptionPage() {
                     </div>
                 </Form>
             </Modal>
+
+            {/* Triage Modal */}
+            <TriageModal
+                visit={triageVisit}
+                open={triageModalOpen}
+                departments={departments}
+                onClose={() => setTriageModalOpen(false)}
+                onSuccess={handleTriageSuccess}
+            />
         </div>
     );
 }

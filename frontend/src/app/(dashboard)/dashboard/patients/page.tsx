@@ -12,7 +12,7 @@ import {
     Form,
     DatePicker,
     Select,
-    message,
+    App,
     Typography,
     Tooltip,
     Popconfirm,
@@ -57,17 +57,21 @@ export default function PatientsPage() {
     const [editingPatient, setEditingPatient] = useState<Patient | null>(null);
     const [pagination, setPagination] = useState({ current: 1, pageSize: 10, total: 0 });
     const [form] = Form.useForm();
+    const { message } = App.useApp();
 
     // Fetch patients
     const fetchPatients = async (page = 1, search = '') => {
         setLoading(true);
         try {
             const response = await patientApi.getAll({ page, search });
-            setPatients(response.results || []);
+            // Hỗ trợ cả response paginated ({count, results}) và non-paginated (array)
+            const list = Array.isArray(response) ? response : (response.results || []);
+            const total = Array.isArray(response) ? response.length : (response.count || 0);
+            setPatients(list);
             setPagination({
                 current: page,
                 pageSize: 10,
-                total: response.count || 0,
+                total,
             });
         } catch (error) {
             console.error('Error fetching patients:', error);
@@ -124,8 +128,9 @@ export default function PatientsPage() {
             }
 
             setIsModalOpen(false);
+            setEditingPatient(null);
             form.resetFields();
-            fetchPatients(pagination.current, searchText);
+            await fetchPatients(1, searchText);
         } catch (error) {
             console.error('Error saving patient:', error);
             message.error('Không thể lưu thông tin bệnh nhân');

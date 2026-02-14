@@ -140,7 +140,7 @@ export default function DisplayScreen() {
                         <Statistic
                             title={<span className="text-blue-200">Tổng chờ</span>}
                             value={totalWaiting}
-                            valueStyle={{ color: '#fff' }}
+                            styles={{ content: { color: '#fff' } }}
                             prefix={<UserOutlined />}
                         />
                     </Card>
@@ -150,7 +150,7 @@ export default function DisplayScreen() {
                         <Statistic
                             title={<span className="text-red-300">🚨 Cấp cứu</span>}
                             value={emergencyCount}
-                            valueStyle={{ color: emergencyCount > 0 ? '#ff4d4f' : '#8c8c8c' }}
+                            styles={{ content: { color: emergencyCount > 0 ? '#ff4d4f' : '#8c8c8c' } }}
                             prefix={<ThunderboltOutlined />}
                         />
                     </Card>
@@ -160,7 +160,7 @@ export default function DisplayScreen() {
                         <Statistic
                             title={<span className="text-blue-200">📱 Đặt lịch</span>}
                             value={bookingCount}
-                            valueStyle={{ color: '#1890ff' }}
+                            styles={{ content: { color: '#1890ff' } }}
                             prefix={<CalendarOutlined />}
                         />
                     </Card>
@@ -170,7 +170,7 @@ export default function DisplayScreen() {
                         <Statistic
                             title={<span className="text-blue-200">🚶 Vãng lai</span>}
                             value={walkinCount}
-                            valueStyle={{ color: '#d9d9d9' }}
+                            styles={{ content: { color: '#d9d9d9' } }}
                             prefix={<TeamOutlined />}
                         />
                     </Card>

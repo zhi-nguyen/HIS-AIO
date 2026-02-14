@@ -337,7 +337,7 @@ export default function QMSPage() {
                             title="Tổng chờ"
                             value={totalWaiting}
                             prefix={<ClockCircleOutlined />}
-                            valueStyle={{ color: '#faad14' }}
+                            styles={{ content: { color: '#faad14' } }}
                         />
                     </Card>
                 </Col>
@@ -346,7 +346,7 @@ export default function QMSPage() {
                         <Statistic
                             title={<><ThunderboltOutlined className="text-red-500" /> Cấp cứu</>}
                             value={emergencyCount}
-                            valueStyle={{ color: emergencyCount > 0 ? '#ff4d4f' : '#8c8c8c' }}
+                            styles={{ content: { color: emergencyCount > 0 ? '#ff4d4f' : '#8c8c8c' } }}
                         />
                     </Card>
                 </Col>
@@ -355,7 +355,7 @@ export default function QMSPage() {
                         <Statistic
                             title={<><CalendarOutlined className="text-blue-500" /> Đặt lịch</>}
                             value={bookingCount}
-                            valueStyle={{ color: '#1890ff' }}
+                            styles={{ content: { color: '#1890ff' } }}
                         />
                     </Card>
                 </Col>
@@ -382,7 +382,7 @@ export default function QMSPage() {
                     >
                         GỌI TIẾP
                     </Button>
-                    <Divider type="vertical" />
+                    <Divider orientation="vertical" />
                     <Tooltip title="Tiếp nhận vãng lai">
                         <Button
                             icon={<TeamOutlined />}
@@ -413,7 +413,7 @@ export default function QMSPage() {
                     </Tooltip>
                     {estimatedWait > 0 && (
                         <>
-                            <Divider type="vertical" />
+                            <Divider orientation="vertical" />
                             <Text type="secondary">
                                 ⏱ Chờ ~{estimatedWait} phút
                             </Text>

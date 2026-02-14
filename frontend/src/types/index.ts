@@ -90,6 +90,21 @@ export interface PatientCreateInput {
 // VISIT / RECEPTION TYPES
 // ============================================================================
 
+// ============================================================================
+// DEPARTMENT TYPES
+// ============================================================================
+
+export interface Department {
+    id: string;
+    code: string;
+    name: string;
+    is_active: boolean;
+}
+
+// ============================================================================
+// VISIT/RECEPTION TYPES
+// ============================================================================
+
 // Backend Visit status from reception/models.py
 export type VisitStatus = 'CHECK_IN' | 'TRIAGE' | 'WAITING' | 'IN_PROGRESS' | 'PENDING_RESULTS' | 'COMPLETED' | 'CANCELLED';
 export type VisitPriority = 'NORMAL' | 'ONLINE_BOOKING' | 'PRIORITY' | 'EMERGENCY';
@@ -98,12 +113,26 @@ export interface Visit {
     id: string;
     visit_code: string;
     patient: Patient | string;  // Can be nested or just ID
+    patient_detail?: Patient;
     status: VisitStatus;
     priority: VisitPriority;
     queue_number: number;
     check_in_time?: string;
     check_out_time?: string;
     assigned_staff?: string;
+    // Triage fields
+    chief_complaint?: string;
+    triage_code?: string;
+    triage_ai_response?: string;
+    triage_confidence?: number;
+    recommended_department?: string;
+    recommended_department_detail?: Department;
+    confirmed_department?: string;
+    confirmed_department_detail?: Department;
+    triage_confirmed_at?: string;
+    // Display helpers
+    status_display?: string;
+    priority_display?: string;
     created_at?: string;
     updated_at?: string;
 }

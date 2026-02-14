@@ -2,6 +2,7 @@ import api from './api';
 import type {
     Patient,
     Visit,
+    Department,
     QueueNumber,
     ServiceStation,
     PaginatedResponse,
@@ -101,7 +102,34 @@ export const visitApi = {
         });
         return response.data.results || response.data;
     },
+
+    // Gọi AI triage agent cho visit
+    triage: async (id: string, data: { chief_complaint: string }) => {
+        const response = await api.post(`/reception/visits/${id}/triage/`, data);
+        return response.data;
+    },
+
+    // Xác nhận kết quả phân luồng
+    confirmTriage: async (id: string, departmentId: string): Promise<Visit> => {
+        const response = await api.post(`/reception/visits/${id}/confirm-triage/`, {
+            department_id: departmentId,
+        });
+        return response.data;
+    },
 };
+
+/**
+ * Department API Services
+ * Danh sách khoa
+ */
+export const departmentApi = {
+    getAll: async (): Promise<Department[]> => {
+        const response = await api.get('/departments/');
+        // Handle both paginated and non-paginated
+        return Array.isArray(response.data) ? response.data : (response.data.results || []);
+    },
+};
+
 
 /**
  * Queue Management API Services

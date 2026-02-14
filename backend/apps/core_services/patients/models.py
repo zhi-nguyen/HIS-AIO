@@ -25,7 +25,6 @@ class Patient(UUIDModel):
         blank=True,
         related_name='merged_records'
     )
-
     first_name = models.CharField(max_length=50)
     last_name = models.CharField(max_length=50)
 
