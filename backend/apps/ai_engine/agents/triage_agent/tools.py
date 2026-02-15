@@ -174,3 +174,135 @@ def assess_vital_signs(
     result += f"\n{recommendations.get(code, '')}"
     
     return result
+
+
+@tool
+def lookup_department(symptoms: str) -> str:
+    """
+    Tra cứu khoa phòng phù hợp dựa trên triệu chứng bệnh nhân.
+    Trả về top 3 khoa phòng phù hợp nhất kèm mã khoa, tên, và lý do.
+    
+    SỬ DỤNG TOOL NÀY khi cần xác định chính xác khoa chuyển cho bệnh nhân.
+    
+    Args:
+        symptoms: Mô tả triệu chứng bệnh nhân (ví dụ: "đau ngực, khó thở, tức ngực")
+    
+    Returns:
+        Danh sách khoa phòng phù hợp nhất với triệu chứng.
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    try:
+        from apps.core_services.departments.models import Department
+        from django.db.models import Q
+        
+        # ---- Bước 1: Tìm kiếm text-based trong DB ----
+        keywords = [kw.strip() for kw in symptoms.lower().split(',') if kw.strip()]
+        
+        query = Q()
+        for kw in keywords[:5]:  # Giới hạn 5 keywords
+            query |= Q(typical_symptoms__icontains=kw)
+            query |= Q(specialties__icontains=kw)
+            query |= Q(description__icontains=kw)
+            query |= Q(name__icontains=kw)
+        
+        db_matches = list(
+            Department.objects.filter(query, is_active=True)
+            .distinct()[:5]
+        )
+        
+        # ---- Bước 2: Semantic search (nếu vector DB sẵn sàng) ----
+        vector_matches = []
+        try:
+            from apps.ai_engine.rag_service.embeddings import get_embedding
+            from apps.ai_engine.rag_service.vector_service import VectorService
+            
+            query_embedding = get_embedding(f"Triệu chứng: {symptoms}")
+            
+            if query_embedding:
+                import asyncio
+                
+                async def _search():
+                    vs = VectorService()
+                    return await vs.semantic_search(
+                        collection_name='departments',
+                        query_embedding=query_embedding,
+                        top_k=3
+                    )
+                
+                # Run in new event loop via thread
+                import concurrent.futures
+                def _run():
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    try:
+                        return loop.run_until_complete(_search())
+                    finally:
+                        loop.close()
+                
+                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                    future = executor.submit(_run)
+                    vector_matches = future.result(timeout=10)
+        except Exception as e:
+            logger.debug(f"Vector search skipped: {e}")
+        
+        # ---- Bước 3: Kết hợp kết quả ----
+        seen_codes = set()
+        results = []
+        
+        # Ưu tiên vector matches (semantic search chính xác hơn)
+        for match in vector_matches:
+            meta = match.get('metadata', {})
+            code = meta.get('code', '')
+            if code and code not in seen_codes:
+                seen_codes.add(code)
+                results.append({
+                    'code': code,
+                    'name': meta.get('name', ''),
+                    'specialties': meta.get('specialties', ''),
+                    'score': f"{match.get('similarity', 0):.2f}",
+                    'source': 'semantic'
+                })
+        
+        # Bổ sung từ DB text search
+        for dept in db_matches:
+            if dept.code not in seen_codes:
+                seen_codes.add(dept.code)
+                results.append({
+                    'code': dept.code,
+                    'name': dept.name,
+                    'specialties': dept.specialties,
+                    'score': 'text-match',
+                    'source': 'database'
+                })
+        
+        # Giới hạn top 3
+        results = results[:3]
+        
+        if not results:
+            # Fallback: trả về danh sách tất cả khoa lâm sàng
+            all_depts = Department.objects.filter(is_active=True).exclude(
+                code__in=['CDHA', 'XN', 'DUOC', 'GMHS']
+            ).order_by('code')
+            
+            result_text = "Không tìm thấy khoa phù hợp chính xác.\n\nDanh sách khoa lâm sàng:\n"
+            for d in all_depts:
+                result_text += f"- [{d.code}] {d.name}: {d.specialties}\n"
+            return result_text
+        
+        # Format kết quả
+        result_text = f"TOP KHOA PHÙ HỢP cho triệu chứng: \"{symptoms}\"\n\n"
+        for i, r in enumerate(results, 1):
+            result_text += (
+                f"{i}. [{r['code']}] {r['name']}\n"
+                f"   Chuyên khoa: {r['specialties']}\n"
+                f"   Độ phù hợp: {r['score']}\n\n"
+            )
+        
+        result_text += "GỢI Ý: Sử dụng mã khoa (code) trong ngoặc vuông để chỉ định."
+        return result_text
+        
+    except Exception as e:
+        logger.error(f"Error in lookup_department: {e}")
+        return f"Lỗi tra cứu khoa phòng: {str(e)}. Vui lòng chỉ định khoa dựa trên kinh nghiệm lâm sàng."

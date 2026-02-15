@@ -11,7 +11,7 @@ from datetime import datetime
 from asgiref.sync import sync_to_async
 
 from .vector_service import VectorService
-from .embeddings import EmbeddingService, embed_clinical_note, embed_icd10_code
+from .embeddings import EmbeddingService, embed_clinical_note, embed_icd10_code, embed_department
 from .pii_masking import mask_patient_id
 
 logger = logging.getLogger(__name__)
@@ -317,3 +317,92 @@ Chẩn đoán: {record.final_diagnosis}
     except Exception as e:
         logger.error(f"Error updating clinical record in vector DB: {e}")
         return False
+
+
+async def load_departments_to_vector_db(
+    vector_service: Optional[VectorService] = None,
+    embedding_service: Optional[EmbeddingService] = None
+) -> int:
+    """
+    Load departments vào vector database cho semantic search.
+    
+    Mỗi department được embed với: tên + mô tả + chuyên khoa + triệu chứng.
+    AI triage agent dùng semantic search để tìm khoa phù hợp theo triệu chứng.
+    
+    Args:
+        vector_service: VectorService instance (creates new if None)
+        embedding_service: EmbeddingService instance (creates new if None)
+        
+    Returns:
+        Number of departments loaded
+    """
+    from apps.core_services.departments.models import Department
+    
+    logger.info("Starting departments loading to vector DB")
+    
+    # Initialize services
+    if vector_service is None:
+        vector_service = VectorService()
+    if embedding_service is None:
+        embedding_service = EmbeddingService()
+    
+    # Get active departments
+    @sync_to_async
+    def _get_departments():
+        return list(Department.objects.filter(is_active=True))
+    
+    departments = await _get_departments()
+    total = len(departments)
+    
+    logger.info(f"Found {total} active departments to load")
+    
+    if total == 0:
+        return 0
+    
+    loaded_count = 0
+    
+    for dept in departments:
+        try:
+            # Create document text (rich context for search)
+            document_text = (
+                f"Khoa phòng: {dept.name} (Mã: {dept.code})\n"
+                f"Chức năng: {dept.description}\n"
+                f"Chuyên khoa: {dept.specialties}\n"
+                f"Triệu chứng điển hình: {dept.typical_symptoms}"
+            )
+            
+            # Generate embedding
+            embedding = await embed_department(
+                name=dept.name,
+                code=dept.code,
+                description=dept.description,
+                specialties=dept.specialties,
+                typical_symptoms=dept.typical_symptoms,
+                embedding_service=embedding_service
+            )
+            
+            # Metadata
+            metadata = {
+                'code': dept.code,
+                'name': dept.name,
+                'specialties': dept.specialties[:200],
+                'typical_symptoms': dept.typical_symptoms[:300],
+            }
+            
+            # Add to vector database
+            await vector_service.add_documents(
+                collection_name='departments',
+                documents=[document_text],
+                embeddings=[embedding],
+                ids=[str(dept.id)],
+                metadatas=[metadata]
+            )
+            
+            loaded_count += 1
+            logger.info(f"Loaded department: {dept.code} - {dept.name}")
+            
+        except Exception as e:
+            logger.error(f"Error loading department {dept.code}: {e}")
+    
+    logger.info(f"Completed loading {loaded_count} departments")
+    return loaded_count

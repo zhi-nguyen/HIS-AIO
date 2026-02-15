@@ -267,6 +267,8 @@ def build_agent_graph(
             AgentName.END: AgentName.END
         }
     )
+    # After tools execute, feed results back to triage for final analysis
+    builder.add_edge("triage_tools", AgentName.TRIAGE)
     
     builder.add_edge(AgentName.SUMMARIZE, AgentName.END)
     builder.add_edge(AgentName.MARKETING, AgentName.END)

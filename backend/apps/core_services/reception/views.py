@@ -110,12 +110,30 @@ YÊU CẦU:
             if not triage_code and metadata:
                 triage_code = metadata.get("triage_code") or "CODE_GREEN"
             
-            # Parse department và confidence từ AI text
-            recommended_dept = self._extract_department(ai_response)
+            # Parse department: prefer structured code, fallback to text extraction
+            department_code = (
+                result.get("department_code")
+                or metadata.get("department_code", "")
+            )
+            if department_code:
+                recommended_dept = self._find_department_by_code(department_code)
+            if not department_code or not recommended_dept:
+                recommended_dept = self._extract_department(ai_response)
+            
             confidence = self._extract_confidence(ai_response)
             
+            # Extract danh sách khoa phù hợp cho Reception xem xét
+            matched_departments = (
+                result.get("matched_departments")
+                or metadata.get("matched_departments")
+            )
+            # Fallback: parse từ ai_response text (nếu structured data trống)
+            if not matched_departments:
+                matched_departments = self._extract_matched_departments(ai_response)
+            
             logger.info(f"Triage result: code={triage_code}, dept={recommended_dept}, "
-                        f"confidence={confidence}, response_len={len(ai_response)}")
+                        f"confidence={confidence}, matched_depts={len(matched_departments)}, "
+                        f"response_len={len(ai_response)}")
             
             # Cập nhật Visit
             visit.chief_complaint = chief_complaint
@@ -136,6 +154,7 @@ YÊU CẦU:
                 'triage_code': triage_code,
                 'recommended_department_name': recommended_dept.name if recommended_dept else None,
                 'triage_confidence': confidence,
+                'matched_departments': matched_departments,
             })
             
         except Exception as e:
@@ -190,6 +209,14 @@ YÊU CẦU:
             return 'CODE_YELLOW'
         return 'CODE_GREEN'
     
+    def _find_department_by_code(self, code: str):
+        """Look up department by exact code (VD: NOI_TM, CC)."""
+        from apps.core_services.departments.models import Department
+        try:
+            return Department.objects.get(code=code.upper(), is_active=True)
+        except Department.DoesNotExist:
+            return None
+    
     def _extract_department(self, ai_response: str):
         """Try to match department name from AI response against DB."""
         from apps.core_services.departments.models import Department
@@ -213,3 +240,52 @@ YÊU CẦU:
                 if 0 <= num <= 100:
                     return num
         return 70  # Default confidence
+    
+    def _extract_matched_departments(self, ai_response: str) -> list:
+        """
+        Parse danh sách khoa phù hợp từ AI response text.
+        
+        Tìm tất cả mã khoa [CODE] trong response và enriches với DB data.
+        Đây là fallback khi structured_response không chứa matched_departments.
+        """
+        import re
+        from apps.core_services.departments.models import Department
+        
+        matched = []
+        seen_codes = set()
+        triage_codes = {"CODE_BLUE", "CODE_RED", "CODE_YELLOW", "CODE_GREEN"}
+        
+        # Pattern 1: Format tool output "1. [NOI_TQ] Khoa Nội Tổng Quát\n   Chuyên khoa: ...\n   Độ phù hợp: 0.69"
+        entries = re.findall(
+            r'\d+\.\s*\[(\w+)\]\s*(.+?)\n\s*Chuyên khoa:\s*(.+?)\n\s*Độ phù hợp:\s*(.+?)(?:\n|$)',
+            ai_response
+        )
+        for code, name, specialties, score in entries:
+            code = code.strip()
+            if code not in triage_codes and code not in seen_codes:
+                seen_codes.add(code)
+                matched.append({
+                    "code": code,
+                    "name": name.strip(),
+                    "specialties": specialties.strip(),
+                    "score": score.strip(),
+                })
+        
+        # Pattern 2: Fallback - tìm tất cả [DEPT_CODE] và lookup từ DB
+        if not matched:
+            all_codes = re.findall(r'\[([A-Z_]+)\]', ai_response)
+            for code in all_codes:
+                if code not in triage_codes and code not in seen_codes:
+                    seen_codes.add(code)
+                    try:
+                        dept = Department.objects.get(code=code, is_active=True)
+                        matched.append({
+                            "code": dept.code,
+                            "name": dept.name,
+                            "specialties": dept.specialties[:100] if dept.specialties else "",
+                            "score": "text-match",
+                        })
+                    except Department.DoesNotExist:
+                        pass
+        
+        return matched
