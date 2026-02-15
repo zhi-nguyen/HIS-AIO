@@ -411,3 +411,46 @@ async def embed_icd10_code(
         combined_text += f"\n{description}"
     
     return await embedding_service.embed_text(combined_text)
+
+
+async def embed_department(
+    name: str,
+    code: str,
+    description: str = '',
+    specialties: str = '',
+    typical_symptoms: str = '',
+    embedding_service: Optional[EmbeddingService] = None
+) -> List[float]:
+    """
+    Generate embedding for a department.
+    
+    Kết hợp tên khoa + mô tả + chuyên khoa + triệu chứng điển hình
+    để tạo embedding phong phú cho semantic search.
+    
+    Args:
+        name: Tên khoa phòng
+        code: Mã khoa
+        description: Mô tả chức năng
+        specialties: Danh sách chuyên khoa
+        typical_symptoms: Triệu chứng thường gặp
+        embedding_service: EmbeddingService instance
+        
+    Returns:
+        Embedding vector
+    """
+    if embedding_service is None:
+        embedding_service = EmbeddingService()
+        
+    parts = [f"Khoa phòng: {name} ({code})"]
+    
+    if description:
+        parts.append(f"Chức năng: {description}")
+        
+    if specialties:
+        parts.append(f"Chuyên khoa: {specialties}")
+        
+    if typical_symptoms:
+        parts.append(f"Triệu chứng điển hình: {typical_symptoms}")
+        
+    combined_text = "\n\n".join(parts)
+    return await embedding_service.embed_text(combined_text)

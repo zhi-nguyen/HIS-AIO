@@ -13,6 +13,7 @@ from apps.ai_engine.agents.pharmacist_agent.tools import (
 from apps.ai_engine.agents.triage_agent.tools import (
     trigger_emergency_alert,
     assess_vital_signs,
+    lookup_department,
 )
 from apps.ai_engine.agents.paraclinical_agent.tools import (
     receive_clinical_order,
@@ -64,7 +65,7 @@ llm_flash = ChatGoogleGenerativeAI(
 
 consultant_tools = [check_appointment_slots, open_booking_form]
 pharmacist_tools = [check_drug_interaction, suggest_drug_alternative]
-triage_tools = [trigger_emergency_alert, assess_vital_signs]
+triage_tools = [trigger_emergency_alert, assess_vital_signs, lookup_department]
 paraclinical_tools = [
     receive_clinical_order,
     check_contraindications,

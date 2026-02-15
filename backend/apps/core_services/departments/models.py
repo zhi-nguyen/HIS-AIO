@@ -4,6 +4,19 @@ from apps.core_services.core.models import UUIDModel
 class Department(UUIDModel):
     name = models.CharField(max_length=100)
     code = models.CharField(max_length=20, unique=True)
+    description = models.TextField(
+        blank=True, default='',
+        help_text='Mô tả chi tiết chức năng khoa phòng'
+    )
+    specialties = models.TextField(
+        blank=True, default='',
+        help_text='Danh sách chuyên khoa, ngăn bởi dấu phẩy'
+    )
+    typical_symptoms = models.TextField(
+        blank=True, default='',
+        help_text='Triệu chứng thường gặp để AI phân loại khoa phòng'
+    )
+
     def __str__(self):
         return f"{self.name} ({self.code})"
     
