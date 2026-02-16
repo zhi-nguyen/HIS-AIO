@@ -122,6 +122,7 @@ export interface Visit {
     assigned_staff?: string;
     // Triage fields
     chief_complaint?: string;
+    vital_signs?: VitalSigns;
     triage_code?: string;
     triage_ai_response?: string;
     triage_confidence?: number;

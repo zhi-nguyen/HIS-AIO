@@ -52,6 +52,9 @@ class VisitViewSet(viewsets.ModelViewSet):
         """
         visit = self.get_object()
         chief_complaint = request.data.get('chief_complaint', '')
+        vital_signs = request.data.get('vital_signs', {})
+        pain_scale = request.data.get('pain_scale')
+        consciousness = request.data.get('consciousness', '')
         
         if not chief_complaint:
             return Response(
@@ -63,6 +66,56 @@ class VisitViewSet(viewsets.ModelViewSet):
         patient = visit.patient
         patient_name = f"{patient.last_name} {patient.first_name}"
         
+        # Query bệnh án cũ (ClinicalRecord) để gửi cho AI
+        medical_history_text = ""
+        try:
+            from apps.medical_services.emr.models import ClinicalRecord
+            past_records = ClinicalRecord.objects.filter(
+                visit__patient=patient
+            ).exclude(visit=visit).order_by('-created_at')[:5]
+            
+            if past_records.exists():
+                history_parts = []
+                for rec in past_records:
+                    parts = []
+                    if rec.chief_complaint:
+                        parts.append(f"Lý do khám: {rec.chief_complaint}")
+                    if rec.final_diagnosis:
+                        parts.append(f"Chẩn đoán: {rec.final_diagnosis}")
+                    if rec.treatment_plan:
+                        parts.append(f"Điều trị: {rec.treatment_plan}")
+                    date_str = rec.created_at.strftime('%d/%m/%Y') if rec.created_at else "N/A"
+                    history_parts.append(f"[{date_str}] " + "; ".join(parts))
+                medical_history_text = "\n".join(history_parts)
+        except Exception as e:
+            logger.warning(f"Could not fetch medical history: {e}")
+        
+        # Format vital signs cho AI
+        vital_signs_text = ""
+        if vital_signs:
+            vs_parts = []
+            label_map = {
+                'heart_rate': 'Mạch',
+                'bp_systolic': 'HA tâm thu',
+                'bp_diastolic': 'HA tâm trương',
+                'respiratory_rate': 'Nhịp thở',
+                'temperature': 'Nhiệt độ',
+                'spo2': 'SpO2',
+                'weight': 'Cân nặng',
+                'height': 'Chiều cao',
+            }
+            for key, label in label_map.items():
+                val = vital_signs.get(key)
+                if val is not None:
+                    unit_map = {
+                        'heart_rate': 'bpm', 'bp_systolic': 'mmHg', 'bp_diastolic': 'mmHg',
+                        'respiratory_rate': '/phút', 'temperature': '°C', 'spo2': '%',
+                        'weight': 'kg', 'height': 'cm',
+                    }
+                    vs_parts.append(f"  - {label}: {val} {unit_map.get(key, '')}")
+            if vs_parts:
+                vital_signs_text = "\n".join(vs_parts)
+        
         # Build structured message cho AI triage agent
         structured_message = f"""[TRIAGE_ASSESSMENT_REQUEST]
 Mã bệnh nhân: {patient.patient_code}
@@ -72,12 +125,38 @@ Ngày sinh: {patient.date_of_birth}
 
 LÝ DO KHÁM:
 {chief_complaint}
-
+"""
+        
+        if vital_signs_text:
+            structured_message += f"""
+CHỈ SỐ SINH HIỆU:
+{vital_signs_text}
+"""
+        
+        if pain_scale is not None:
+            structured_message += f"  Thang đau: {pain_scale}/10\n"
+        if consciousness:
+            consciousness_map = {
+                'alert': 'Tỉnh táo (Alert)',
+                'verbal': 'Đáp ứng lời nói (Verbal)',
+                'pain': 'Đáp ứng đau (Pain)',
+                'unresponsive': 'Không đáp ứng (Unresponsive)',
+            }
+            structured_message += f"  Ý thức: {consciousness_map.get(consciousness, consciousness)}\n"
+        
+        if medical_history_text:
+            structured_message += f"""
+BỆNH ÁN CŨ:
+{medical_history_text}
+"""
+        
+        structured_message += """
 YÊU CẦU: 
 1. Đánh giá mức độ ưu tiên (triage code: CODE_RED/CODE_YELLOW/CODE_GREEN)
 2. Đề xuất khoa phù hợp nhất (chọn 1 trong các khoa có sẵn trong bệnh viện)
 3. Ước tính mức độ tin cậy (confidence) từ 0-100%
-4. Giải thích ngắn gọn lý do"""
+4. Giải thích ngắn gọn lý do
+5. Nếu có chỉ số sinh hiệu bất thường, hãy cảnh báo rõ ràng"""
 
         import time
         session_id = f"triage-{visit.visit_code}-{int(time.time())}"
@@ -137,6 +216,7 @@ YÊU CẦU:
             
             # Cập nhật Visit
             visit.chief_complaint = chief_complaint
+            visit.vital_signs = vital_signs if vital_signs else None
             visit.triage_code = triage_code
             visit.triage_ai_response = ai_response
             visit.triage_confidence = confidence

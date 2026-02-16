@@ -103,8 +103,22 @@ export const visitApi = {
         return response.data.results || response.data;
     },
 
-    // Gọi AI triage agent cho visit
-    triage: async (id: string, data: { chief_complaint: string }) => {
+    // Gọi AI triage agent cho visit (y tá gửi sinh hiệu + lý do khám)
+    triage: async (id: string, data: {
+        chief_complaint: string;
+        vital_signs?: {
+            heart_rate?: number;
+            bp_systolic?: number;
+            bp_diastolic?: number;
+            respiratory_rate?: number;
+            temperature?: number;
+            spo2?: number;
+            weight?: number;
+            height?: number;
+        };
+        pain_scale?: number;
+        consciousness?: string;
+    }) => {
         const response = await api.post(`/reception/visits/${id}/triage/`, data);
         return response.data;
     },

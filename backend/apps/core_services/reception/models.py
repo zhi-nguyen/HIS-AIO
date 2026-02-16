@@ -41,6 +41,7 @@ class Visit(UUIDModel):
 
     # --- Triage Result Fields ---
     chief_complaint = models.TextField(null=True, blank=True, verbose_name='Lý do khám')
+    vital_signs = models.JSONField(null=True, blank=True, verbose_name='Chỉ số sinh hiệu')
     triage_code = models.CharField(max_length=20, null=True, blank=True, verbose_name='Mã phân luồng')
     triage_ai_response = models.TextField(null=True, blank=True, verbose_name='Phản hồi AI')
     triage_confidence = models.IntegerField(null=True, blank=True, verbose_name='Độ tin cậy (%)')

@@ -1,220 +1,408 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import {
     Card,
-    Form,
     Input,
-    Select,
-    InputNumber,
     Button,
     Typography,
     Space,
-    Divider,
+    Steps,
+    Result,
     Alert,
-    message,
+    App,
     Spin,
+    Divider,
 } from 'antd';
 import {
-    AlertOutlined,
-    HeartOutlined,
-    ThunderboltOutlined,
+    QrcodeOutlined,
+    EditOutlined,
+    CheckCircleOutlined,
+    IdcardOutlined,
+    LoadingOutlined,
 } from '@ant-design/icons';
-import { aiApi } from '@/lib/services';
 
-const { Title, Text } = Typography;
+const { Title, Text, Paragraph } = Typography;
 const { TextArea } = Input;
 
 /**
- * Triage Assessment Form
- * Form đánh giá phân loại bệnh nhân với AI
+ * Kiosk Tự Phục Vụ — Bệnh nhân đăng ký khám
+ * 
+ * Luồng:
+ * 1. Quét QR CCCD/BHYT (hoặc nhập tay fallback)
+ * 2. Nhập lý do khám
+ * 3. Xác nhận → Nhận số thứ tự
+ * 
+ * Bảo vệ 3 Lớp (UI side):
+ * - Lớp 1: Ưu tiên quét QR, hạn chế nhập tay
+ * - Lớp 2: Kiểm tra lượt khám active trước khi đăng ký
+ * - Lớp 3: Cooldown sau submit (chống spam)
  */
 
-interface TriageResult {
-    triage_level: number;
-    triage_color: string;
-    triage_name: string;
-    reasoning: string;
-    recommendations: string[];
+interface KioskResult {
+    queue_number: string;
+    visit_code: string;
+    message: string;
 }
 
 interface TriageFormProps {
-    visitId: string;
-    patientName?: string;
-    onComplete?: (result: TriageResult) => void;
+    onComplete?: (result: KioskResult) => void;
 }
 
-const triageColors: Record<number, { color: string; bg: string; name: string }> = {
-    1: { color: '#ff4d4f', bg: '#fff1f0', name: 'Cấp cứu' },
-    2: { color: '#fa8c16', bg: '#fff7e6', name: 'Khẩn cấp' },
-    3: { color: '#fadb14', bg: '#fffbe6', name: 'Ưu tiên' },
-    4: { color: '#52c41a', bg: '#f6ffed', name: 'Thường' },
-    5: { color: '#1890ff', bg: '#e6f7ff', name: 'Không cấp' },
-};
+export default function TriageForm({ onComplete }: TriageFormProps) {
+    const { message: messageApi } = App.useApp();
 
-export default function TriageForm({ visitId, patientName, onComplete }: TriageFormProps) {
-    const [form] = Form.useForm();
-    const [loading, setLoading] = useState(false);
-    const [result, setResult] = useState<TriageResult | null>(null);
+    // --- Wizard step ---
+    const [currentStep, setCurrentStep] = useState(0);
 
-    const handleSubmit = async (values: Record<string, unknown>) => {
-        setLoading(true);
+    // --- Step 1: Xác thực danh tính ---
+    const [identityCode, setIdentityCode] = useState('');
+    const [identityMethod, setIdentityMethod] = useState<'qr' | 'manual'>('qr');
+    const [scanLoading, setScanLoading] = useState(false);
+    const [patientFound, setPatientFound] = useState<{
+        name: string;
+        patient_id: string;
+        dob?: string;
+        gender?: string;
+    } | null>(null);
+    const [identityError, setIdentityError] = useState('');
+
+    // --- Step 2: Lý do khám ---
+    const [chiefComplaint, setChiefComplaint] = useState('');
+
+    // --- Step 3: Kết quả ---
+    const [submitLoading, setSubmitLoading] = useState(false);
+    const [kioskResult, setKioskResult] = useState<KioskResult | null>(null);
+    const [cooldown, setCooldown] = useState(false);
+
+    // ========================================================================
+    // Step 1: Quét / Nhập CCCD/BHYT
+    // ========================================================================
+    const handleScanQR = useCallback(() => {
+        // Placeholder: Trong thực tế, sẽ kết nối đầu đọc QR/chip CCCD
+        setScanLoading(true);
+        messageApi.info('Vui lòng đưa CCCD/BHYT vào đầu đọc...');
+
+        // Simulate QR scan (sẽ thay bằng WebSocket/hardware API)
+        setTimeout(() => {
+            setScanLoading(false);
+            messageApi.warning('Chức năng quét QR sẽ được kết nối với phần cứng. Vui lòng nhập tay.');
+            setIdentityMethod('manual');
+        }, 2000);
+    }, [messageApi]);
+
+    const handleLookupIdentity = async () => {
+        if (!identityCode.trim()) {
+            messageApi.warning('Vui lòng nhập số CCCD hoặc mã BHYT');
+            return;
+        }
+
+        setIdentityError('');
+        setScanLoading(true);
+
         try {
-            const response = await aiApi.triageAssess({
-                visit_id: visitId,
-                chief_complaint: values.chief_complaint as string,
-                vital_signs: {
-                    heart_rate: values.heart_rate as number,
-                    blood_pressure_systolic: values.bp_systolic as number,
-                    blood_pressure_diastolic: values.bp_diastolic as number,
-                    respiratory_rate: values.respiratory_rate as number,
-                    temperature: values.temperature as number,
-                    spo2: values.spo2 as number,
-                },
-                pain_scale: values.pain_scale as number,
-                consciousness: values.consciousness as string,
-                onset: values.onset as string,
-            });
+            // TODO: Gọi API tìm bệnh nhân + kiểm tra lượt khám active (Lớp 2)
+            // const result = await patientApi.lookupByIdentity(identityCode);
+            // Lớp 2: Backend sẽ reject nếu đã có lượt khám active hôm nay
 
-            setResult(response);
-            message.success('Đánh giá hoàn tất');
-            onComplete?.(response);
-        } catch (error) {
-            console.error('Triage error:', error);
-            message.error('Không thể đánh giá. Vui lòng thử lại.');
+            // Mock response — sẽ thay bằng API call thật
+            await new Promise(resolve => setTimeout(resolve, 1000));
+
+            // Simulate: tìm thấy bệnh nhân
+            setPatientFound({
+                name: 'Nguyễn Văn A',
+                patient_id: 'mock-patient-id',
+                dob: '1990-01-15',
+                gender: 'Nam',
+            });
+            setCurrentStep(1);
+            messageApi.success('Đã xác thực danh tính thành công!');
+        } catch (err: unknown) {
+            const error = err as { response?: { data?: { message?: string } } };
+            const errorMsg = error?.response?.data?.message || 'Không thể tra cứu. Vui lòng thử lại.';
+            setIdentityError(errorMsg);
+            messageApi.error(errorMsg);
         } finally {
-            setLoading(false);
+            setScanLoading(false);
         }
     };
 
+    // ========================================================================
+    // Step 2 → 3: Submit đăng ký khám
+    // ========================================================================
+    const handleSubmitRegistration = async () => {
+        if (!chiefComplaint.trim()) {
+            messageApi.warning('Vui lòng nhập lý do khám');
+            return;
+        }
+        if (!patientFound) return;
+
+        // Lớp 3: Cooldown chống spam
+        if (cooldown) {
+            messageApi.warning('Vui lòng đợi trước khi đăng ký lại');
+            return;
+        }
+
+        setSubmitLoading(true);
+        try {
+            // TODO: Gọi API đăng ký khám
+            // const result = await visitApi.kioskRegister({
+            //     patient_id: patientFound.patient_id,
+            //     chief_complaint: chiefComplaint,
+            // });
+
+            // Mock response
+            await new Promise(resolve => setTimeout(resolve, 1500));
+
+            const result: KioskResult = {
+                queue_number: 'A-042',
+                visit_code: 'V20260216-ABC123',
+                message: 'Đăng ký thành công! Vui lòng chờ gọi số để đo sinh hiệu.',
+            };
+
+            setKioskResult(result);
+            setCurrentStep(2);
+            onComplete?.(result);
+
+            // Lớp 3: Enable cooldown 5s
+            setCooldown(true);
+            setTimeout(() => setCooldown(false), 5000);
+        } catch (err: unknown) {
+            const error = err as { response?: { data?: { message?: string } } };
+            const errorMsg = error?.response?.data?.message || 'Không thể đăng ký. Vui lòng thử lại.';
+            messageApi.error(errorMsg);
+        } finally {
+            setSubmitLoading(false);
+        }
+    };
+
+    // --- Reset toàn bộ ---
+    const handleReset = () => {
+        setCurrentStep(0);
+        setIdentityCode('');
+        setIdentityMethod('qr');
+        setPatientFound(null);
+        setIdentityError('');
+        setChiefComplaint('');
+        setKioskResult(null);
+    };
+
+    // ========================================================================
+    // RENDER
+    // ========================================================================
     return (
-        <Card className="max-w-2xl mx-auto">
-            <Title level={4}>
-                <Space>
-                    <AlertOutlined className="text-red-500" />
-                    Đánh giá phân loại (Triage)
-                </Space>
+        <Card
+            className="max-w-2xl mx-auto"
+            style={{
+                borderRadius: 16,
+                boxShadow: '0 4px 24px rgba(0,0,0,0.08)',
+            }}
+        >
+            <Title level={3} style={{ textAlign: 'center', marginBottom: 8 }}>
+                <IdcardOutlined style={{ color: '#1677ff', marginRight: 8 }} />
+                Đăng Ký Khám Bệnh
             </Title>
-            {patientName && <Text type="secondary">Bệnh nhân: {patientName}</Text>}
+            <Paragraph type="secondary" style={{ textAlign: 'center', marginBottom: 24 }}>
+                Kiosk tự phục vụ — Quét CCCD/BHYT để bắt đầu
+            </Paragraph>
 
-            <Divider />
+            {/* Progress Steps */}
+            <Steps
+                current={currentStep}
+                style={{ marginBottom: 32 }}
+                items={[
+                    { title: 'Xác thực', description: 'Quét CCCD/BHYT' },
+                    { title: 'Lý do khám', description: 'Mô tả triệu chứng' },
+                    { title: 'Hoàn tất', description: 'Nhận số thứ tự' },
+                ]}
+            />
 
-            <Form form={form} layout="vertical" onFinish={handleSubmit}>
-                {/* Chief Complaint */}
-                <Form.Item
-                    name="chief_complaint"
-                    label="Lý do đến khám / Triệu chứng chính"
-                    rules={[{ required: true, message: 'Vui lòng nhập triệu chứng' }]}
-                >
-                    <TextArea rows={3} placeholder="Mô tả triệu chứng chính của bệnh nhân..." />
-                </Form.Item>
+            {/* ============ STEP 1: Xác thực danh tính ============ */}
+            {currentStep === 0 && (
+                <div>
+                    {/* Quét QR (ưu tiên — Lớp 1 Hardware) */}
+                    <Card
+                        size="small"
+                        style={{
+                            textAlign: 'center',
+                            border: identityMethod === 'qr' ? '2px solid #1677ff' : '1px solid #f0f0f0',
+                            borderRadius: 12,
+                            marginBottom: 16,
+                            padding: '24px 16px',
+                            cursor: 'pointer',
+                            background: identityMethod === 'qr' ? '#e6f4ff' : '#fafafa',
+                        }}
+                        onClick={() => setIdentityMethod('qr')}
+                    >
+                        <QrcodeOutlined style={{ fontSize: 48, color: '#1677ff' }} />
+                        <Title level={5} style={{ marginTop: 8, marginBottom: 4 }}>
+                            Quét mã QR trên CCCD/BHYT
+                        </Title>
+                        <Text type="secondary">Nhanh chóng, chính xác 100%</Text>
+                        {identityMethod === 'qr' && (
+                            <div style={{ marginTop: 16 }}>
+                                <Button
+                                    type="primary"
+                                    size="large"
+                                    icon={scanLoading ? <LoadingOutlined /> : <QrcodeOutlined />}
+                                    onClick={(e) => { e.stopPropagation(); handleScanQR(); }}
+                                    loading={scanLoading}
+                                    style={{ height: 56, fontSize: 18, paddingInline: 40 }}
+                                >
+                                    {scanLoading ? 'Đang quét...' : 'Bắt đầu quét'}
+                                </Button>
+                            </div>
+                        )}
+                    </Card>
 
-                {/* Vital Signs */}
-                <Title level={5}>
-                    <HeartOutlined className="text-pink-500 mr-2" />
-                    Sinh hiệu
-                </Title>
-                <div className="grid grid-cols-3 gap-4">
-                    <Form.Item name="heart_rate" label="Mạch (bpm)">
-                        <InputNumber className="w-full" min={0} max={300} placeholder="72" />
-                    </Form.Item>
-                    <Form.Item label="Huyết áp (mmHg)">
-                        <Space.Compact className="w-full">
-                            <Form.Item name="bp_systolic" noStyle>
-                                <InputNumber placeholder="120" min={0} max={300} />
-                            </Form.Item>
-                            <span className="px-2 py-1 bg-gray-100">/</span>
-                            <Form.Item name="bp_diastolic" noStyle>
-                                <InputNumber placeholder="80" min={0} max={200} />
-                            </Form.Item>
-                        </Space.Compact>
-                    </Form.Item>
-                    <Form.Item name="respiratory_rate" label="Nhịp thở (/phút)">
-                        <InputNumber className="w-full" min={0} max={60} placeholder="16" />
-                    </Form.Item>
-                    <Form.Item name="temperature" label="Nhiệt độ (°C)">
-                        <InputNumber className="w-full" min={30} max={45} step={0.1} placeholder="37.0" />
-                    </Form.Item>
-                    <Form.Item name="spo2" label="SpO2 (%)">
-                        <InputNumber className="w-full" min={0} max={100} placeholder="98" />
-                    </Form.Item>
-                    <Form.Item name="pain_scale" label="Đau (0-10)">
-                        <InputNumber className="w-full" min={0} max={10} placeholder="0" />
-                    </Form.Item>
-                </div>
+                    <Divider>hoặc</Divider>
 
-                {/* Clinical Status */}
-                <Title level={5}>
-                    <ThunderboltOutlined className="text-yellow-500 mr-2" />
-                    Trạng thái lâm sàng
-                </Title>
-                <div className="grid grid-cols-2 gap-4">
-                    <Form.Item name="consciousness" label="Ý thức">
-                        <Select placeholder="Chọn trạng thái">
-                            <Select.Option value="alert">Tỉnh táo (Alert)</Select.Option>
-                            <Select.Option value="verbal">Đáp ứng lời nói (Verbal)</Select.Option>
-                            <Select.Option value="pain">Đáp ứng đau (Pain)</Select.Option>
-                            <Select.Option value="unresponsive">Không đáp ứng (Unresponsive)</Select.Option>
-                        </Select>
-                    </Form.Item>
-                    <Form.Item name="onset" label="Thời gian khởi phát">
-                        <Select placeholder="Chọn thời gian">
-                            <Select.Option value="minutes">Vài phút trước</Select.Option>
-                            <Select.Option value="hours">Vài giờ trước</Select.Option>
-                            <Select.Option value="today">Hôm nay</Select.Option>
-                            <Select.Option value="days">Vài ngày trước</Select.Option>
-                            <Select.Option value="weeks">Hơn 1 tuần</Select.Option>
-                        </Select>
-                    </Form.Item>
-                </div>
+                    {/* Nhập tay (fallback) */}
+                    <Card
+                        size="small"
+                        style={{
+                            border: identityMethod === 'manual' ? '2px solid #1677ff' : '1px solid #f0f0f0',
+                            borderRadius: 12,
+                            cursor: 'pointer',
+                            background: identityMethod === 'manual' ? '#e6f4ff' : '#fafafa',
+                        }}
+                        onClick={() => setIdentityMethod('manual')}
+                    >
+                        <Space size={8} align="center" style={{ marginBottom: 12 }}>
+                            <EditOutlined style={{ color: '#8c8c8c' }} />
+                            <Text strong>Nhập tay số CCCD / Mã BHYT</Text>
+                            <Text type="secondary" style={{ fontSize: 12 }}>(Nếu không quét được)</Text>
+                        </Space>
 
-                <Form.Item className="mt-4">
-                    <Button type="primary" htmlType="submit" loading={loading} block size="large">
-                        Đánh giá với AI
-                    </Button>
-                </Form.Item>
-            </Form>
+                        {identityMethod === 'manual' && (
+                            <div>
+                                <Input
+                                    size="large"
+                                    placeholder="Nhập 12 số CCCD hoặc mã BHYT..."
+                                    value={identityCode}
+                                    onChange={e => setIdentityCode(e.target.value)}
+                                    maxLength={15}
+                                    style={{ fontSize: 18, height: 56, marginBottom: 12 }}
+                                    onPressEnter={handleLookupIdentity}
+                                />
+                                <Button
+                                    type="primary"
+                                    size="large"
+                                    block
+                                    onClick={handleLookupIdentity}
+                                    loading={scanLoading}
+                                    style={{ height: 52, fontSize: 16 }}
+                                >
+                                    Tra cứu
+                                </Button>
+                            </div>
+                        )}
+                    </Card>
 
-            {/* Result */}
-            {loading && (
-                <div className="text-center py-4">
-                    <Spin />
-                    <div className="mt-2">Đang phân tích...</div>
+                    {identityError && (
+                        <Alert
+                            type="error"
+                            showIcon
+                            message={identityError}
+                            style={{ marginTop: 16, borderRadius: 8 }}
+                        />
+                    )}
                 </div>
             )}
 
-            {result && (
-                <Alert
-                    type={result.triage_level <= 2 ? 'error' : result.triage_level === 3 ? 'warning' : 'success'}
-                    showIcon
-                    message={
-                        <Space>
-                            <span
-                                className="inline-block w-4 h-4 rounded-full"
-                                style={{ backgroundColor: triageColors[result.triage_level]?.color }}
-                            />
-                            <Text strong>
-                                Mức {result.triage_level}: {triageColors[result.triage_level]?.name}
+            {/* ============ STEP 2: Nhập lý do khám ============ */}
+            {currentStep === 1 && patientFound && (
+                <div>
+                    {/* Thông tin bệnh nhân đã xác thực */}
+                    <Alert
+                        type="success"
+                        showIcon
+                        icon={<CheckCircleOutlined />}
+                        message={
+                            <Text strong>Xin chào, {patientFound.name}</Text>
+                        }
+                        description={
+                            <Space>
+                                {patientFound.dob && <Text type="secondary">Sinh: {patientFound.dob}</Text>}
+                                {patientFound.gender && <Text type="secondary">| {patientFound.gender}</Text>}
+                            </Space>
+                        }
+                        style={{ marginBottom: 20, borderRadius: 8 }}
+                    />
+
+                    <Title level={5}>Vui lòng mô tả triệu chứng / lý do khám:</Title>
+                    <TextArea
+                        rows={5}
+                        placeholder="Ví dụ: Đau đầu kéo dài 3 ngày, kèm buồn nôn, sốt nhẹ..."
+                        value={chiefComplaint}
+                        onChange={e => setChiefComplaint(e.target.value)}
+                        style={{ fontSize: 16, marginBottom: 16, borderRadius: 8 }}
+                        maxLength={1000}
+                        showCount
+                    />
+
+                    <Space style={{ width: '100%', justifyContent: 'space-between' }}>
+                        <Button size="large" onClick={() => setCurrentStep(0)}>
+                            ← Quay lại
+                        </Button>
+                        <Button
+                            type="primary"
+                            size="large"
+                            onClick={handleSubmitRegistration}
+                            loading={submitLoading}
+                            disabled={!chiefComplaint.trim() || cooldown}
+                            style={{ height: 52, fontSize: 16, paddingInline: 40 }}
+                        >
+                            {submitLoading ? 'Đang đăng ký...' : 'Xác nhận đăng ký'}
+                        </Button>
+                    </Space>
+                </div>
+            )}
+
+            {/* ============ STEP 3: Kết quả — Số thứ tự ============ */}
+            {currentStep === 2 && kioskResult && (
+                <Result
+                    status="success"
+                    icon={
+                        <div style={{
+                            width: 120,
+                            height: 120,
+                            borderRadius: '50%',
+                            background: 'linear-gradient(135deg, #1677ff, #36cfc9)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            margin: '0 auto',
+                        }}>
+                            <Text style={{ fontSize: 36, fontWeight: 700, color: '#fff' }}>
+                                {kioskResult.queue_number}
                             </Text>
-                        </Space>
-                    }
-                    description={
-                        <div className="mt-2 space-y-2">
-                            <div>
-                                <Text strong>Lý do: </Text>
-                                <Text>{result.reasoning}</Text>
-                            </div>
-                            {result.recommendations?.length > 0 && (
-                                <div>
-                                    <Text strong>Khuyến nghị:</Text>
-                                    <ul className="list-disc ml-5 mt-1">
-                                        {result.recommendations.map((r, i) => (
-                                            <li key={i}><Text>{r}</Text></li>
-                                        ))}
-                                    </ul>
-                                </div>
-                            )}
                         </div>
+                    }
+                    title={
+                        <span style={{ fontSize: 24 }}>
+                            Số thứ tự của bạn: <strong>{kioskResult.queue_number}</strong>
+                        </span>
+                    }
+                    subTitle={
+                        <div>
+                            <p>{kioskResult.message}</p>
+                            <p style={{ color: '#faad14', fontWeight: 600, marginTop: 8 }}>
+                                ⚠️ Vui lòng chờ gọi số để được đo sinh hiệu
+                            </p>
+                            <Text type="secondary">Mã khám: {kioskResult.visit_code}</Text>
+                        </div>
+                    }
+                    extra={
+                        <Button
+                            size="large"
+                            type="primary"
+                            onClick={handleReset}
+                            disabled={cooldown}
+                            style={{ height: 52, fontSize: 16, paddingInline: 40 }}
+                        >
+                            Đăng ký người tiếp theo
+                        </Button>
                     }
                 />
             )}
