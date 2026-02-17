@@ -58,6 +58,7 @@ INSTALLED_APPS = [
     'apps.core_services.reception',
     'apps.core_services.qms',  # Queue Management System
     'apps.core_services.billing',  # Billing & Payment
+    'apps.core_services.kiosk',  # Kiosk Tự Phục Vụ
 ]
 
 MIDDLEWARE = [
@@ -199,6 +200,10 @@ REST_FRAMEWORK = {
     ),
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 20,
+    # Layer 3: Rate Limiting cho Kiosk endpoints
+    'DEFAULT_THROTTLE_RATES': {
+        'kiosk': '10/min',  # Max 10 requests/phút per IP
+    },
 }
 
 from datetime import timedelta

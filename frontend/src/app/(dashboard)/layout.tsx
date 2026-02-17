@@ -144,7 +144,15 @@ export default function DashboardLayout({
                 collapsible
                 collapsed={collapsed}
                 width={240}
-                className="fixed left-0 top-0 bottom-0 z-50 overflow-auto"
+                style={{
+                    overflow: 'auto',
+                    height: '100vh',
+                    position: 'fixed',
+                    left: 0,
+                    top: 0,
+                    bottom: 0,
+                    zIndex: 50,
+                }}
             >
                 {/* Logo */}
                 <div className="h-16 flex items-center justify-center border-b border-white/10">

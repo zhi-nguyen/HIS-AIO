@@ -22,6 +22,7 @@ class VectorDocument(UUIDModel):
         DRUGS = 'drugs', 'Drugs & Interactions'
         MEDICAL_PROTOCOLS = 'medical_protocols', 'Medical Protocols'
         HOSPITAL_PROCESS = 'hospital_process', 'Hospital Process Q&A'
+        DEPARTMENTS = 'departments', 'Departments'
     
     # Collection info
     collection = models.CharField(

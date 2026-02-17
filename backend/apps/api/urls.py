@@ -16,6 +16,7 @@ from . import views
 from . import data_views
 from apps.core_services.appointments import booking_api as booking_views
 from apps.core_services.qms import views as qms_views
+from apps.core_services.kiosk import views as kiosk_views
 from .routers import router
 
 app_name = 'api'
@@ -71,6 +72,12 @@ urlpatterns = [
     path('qms/doctor/call-next/', qms_views.doctor_call_next, name='qms_doctor_call_next'),
     path('qms/queue/board/', qms_views.queue_board, name='qms_queue_board'),
     
+    # ==========================================================================
+    # SELF-SERVICE KIOSK ENDPOINTS (3-Layer Protection)
+    # ==========================================================================
+    path('kiosk/identify/', kiosk_views.kiosk_identify, name='kiosk_identify'),
+    path('kiosk/register/', kiosk_views.kiosk_register, name='kiosk_register'),
+
     # ==========================================================================
     # INSURANCE MOCK ENDPOINTS
     # ==========================================================================
