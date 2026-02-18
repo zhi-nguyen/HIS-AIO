@@ -11,13 +11,13 @@ import {
     Typography,
     Descriptions,
     Divider,
-    message,
     Alert,
     Spin,
     InputNumber,
     Row,
     Col,
     Tabs,
+    App,
 } from 'antd';
 import {
     SaveOutlined,
@@ -68,6 +68,7 @@ interface ClinicalRecord {
 }
 
 export default function ClinicalExamPage() {
+    const { message } = App.useApp();
     const router = useRouter();
     const params = useParams();
     const visitId = params.visitId as string;
@@ -107,7 +108,7 @@ export default function ClinicalExamPage() {
         } finally {
             setLoading(false);
         }
-    }, [visitId, form]);
+    }, [visitId, form, message]);
 
     useEffect(() => {
         if (visitId) fetchData();

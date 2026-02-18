@@ -35,12 +35,30 @@ def extract_thinking_steps(text: str) -> List[str]:
 
 
 def extract_triage_code(text: str) -> str:
-    """Extract triage code từ text."""
+    """
+    Extract triage code từ text.
+    
+    Lấy code CUỐI CÙNG được nhắc đến trong text (= kết luận của AI),
+    không lấy code ĐẦU TIÊN (thường từ thinking/giải thích).
+    
+    VD: "Đây không phải CODE_RED... → Kết luận: [CODE_GREEN]"
+         → Trả về CODE_GREEN (cuối), không phải CODE_RED (đầu)
+    """
     codes = ["CODE_BLUE", "CODE_RED", "CODE_YELLOW", "CODE_GREEN"]
+    text_upper = text.upper()
+    
+    # Tìm TẤT CẢ vị trí xuất hiện của các code, lấy code CÓ VỊ TRÍ CUỐI CÙNG
+    last_pos = -1
+    last_code = "CODE_GREEN"  # Default
+    
     for code in codes:
-        if code in text.upper():
-            return code
-    return "CODE_GREEN"  # Default
+        # Tìm vị trí cuối cùng của code này trong text
+        pos = text_upper.rfind(code)
+        if pos > last_pos:
+            last_pos = pos
+            last_code = code
+    
+    return last_code
 
 
 def should_trigger_alert(text: str) -> bool:
@@ -104,6 +122,131 @@ def extract_matched_departments(messages: list) -> List[Dict[str, str]]:
                         })
     
     return matched
+
+
+def extract_key_factors(text: str, triage_code: str, vital_override_reason: str = None) -> List[str]:
+    """
+    Trích xuất các yếu tố chính (key factors) từ AI thinking text.
+    
+    Trả về 2-4 bullet points cho Reception xem nhanh:
+    - Yếu tố chính: triệu chứng/chỉ số quan trọng nhất
+    - Dấu hiệu loại trừ: chỉ số bình thường (nếu triage không quá nặng)
+    - Cảnh báo: chỉ số bất thường cần theo dõi
+    
+    KHÔNG truncate text — để frontend tự word-wrap.
+    """
+    factors = []
+    
+    # ---- Helper: parse 1 Bước từ text ----
+    def _get_step(step_num: int) -> str:
+        """Trích nội dung Bước N từ thinking text."""
+        pattern = rf'\*\*Bước\s*{step_num}[^*]*\*\*:?\s*(.+?)(?=\*\*Bước|\*\*Kết luận|$)'
+        m = re.search(pattern, text, re.DOTALL | re.IGNORECASE)
+        return m.group(1).strip() if m else ""
+    
+    def _get_conclusion() -> str:
+        m = re.search(r'\*\*Kết luận[^*]*\*\*:?\s*(.+?)$', text, re.DOTALL | re.IGNORECASE)
+        return m.group(1).strip() if m else ""
+    
+    def _clean_lines(block: str) -> List[str]:
+        """Tách block thành list dòng sạch (bỏ bullet, markdown bold)."""
+        out = []
+        for line in block.split('\n'):
+            clean = line.strip().lstrip('-•*').strip()
+            # Bỏ markdown bold wrappers
+            clean = re.sub(r'\*\*([^*]+)\*\*', r'\1', clean)
+            if clean:
+                out.append(clean)
+        return out
+    
+    # ============================================================
+    # 1. Yếu tố chính — từ Bước 3 (triệu chứng) hoặc Kết luận
+    # ============================================================
+    step3 = _get_step(3)
+    if step3:
+        lines = _clean_lines(step3)
+        # Ghép tối đa 2 dòng đầu (đủ ngắn gọn mà vẫn đầy đủ)
+        main_text = '; '.join(lines[:2]) if lines else ""
+        if main_text:
+            factors.append(f"Yếu tố chính: {main_text}")
+    
+    if not factors:
+        concl = _get_conclusion()
+        if concl:
+            first_line = _clean_lines(concl)[0] if _clean_lines(concl) else concl
+            factors.append(f"Yếu tố chính: {first_line}")
+    
+    # ============================================================
+    # 2. Dấu hiệu loại trừ — chỉ số bình thường (CODE_GREEN/YELLOW)
+    # ============================================================
+    if triage_code in ('CODE_GREEN', 'CODE_YELLOW'):
+        # Quét Bước 1 + Bước 2 tìm chỉ số bình thường
+        normal_keywords = [
+            'bình thường', 'ổn định', 'trong giới hạn', 'an toàn',
+            'không bất thường', 'không vượt ngưỡng', 'không nguy',
+            'nằm trong', 'giới hạn bình thường', 'chấp nhận',
+        ]
+        normal_signs = []
+        for step_num in (1, 2):
+            step_text = _get_step(step_num)
+            if step_text:
+                for line in _clean_lines(step_text):
+                    line_lower = line.lower()
+                    if any(kw in line_lower for kw in normal_keywords):
+                        normal_signs.append(line)
+        if normal_signs:
+            factors.append(f"Dấu hiệu loại trừ: {'; '.join(normal_signs[:3])}")
+    
+    # ============================================================
+    # 3. Cảnh báo — chỉ số bất thường hoặc safety override
+    # ============================================================
+    if vital_override_reason:
+        factors.append(f"⚠ Cảnh báo: {vital_override_reason}")
+    else:
+        warning_keywords = [
+            'vượt ngưỡng', 'nguy kịch', 'bất thường', 'tăng cao',
+            'cảnh báo', 'lưu ý', 'theo dõi',
+            'nguy hiểm', 'suy', 'nặng', 'cấp cứu',
+        ]
+        # Từ phủ định → dòng mang nghĩa tích cực, không phải cảnh báo
+        negation_words = [
+            'không', 'chưa', 'không có', 'không bất thường',
+            'không vượt', 'chưa có', 'không nguy',
+        ]
+        
+        def _is_negated(line_lower: str) -> bool:
+            """Kiểm tra câu có phủ định không (VD: 'Không có chỉ số vượt ngưỡng')."""
+            for neg in negation_words:
+                if neg in line_lower:
+                    return True
+            return False
+        
+        warnings = []
+        for step_num in (1, 2):
+            step_text = _get_step(step_num)
+            if step_text:
+                for line in _clean_lines(step_text):
+                    line_lower = line.lower()
+                    if any(kw in line_lower for kw in warning_keywords):
+                        # Bỏ qua câu phủ định (VD: "Không có chỉ số vượt ngưỡng")
+                        if not _is_negated(line_lower):
+                            warnings.append(line)
+        if warnings:
+            factors.append(f"⚠ Cảnh báo: {warnings[0]}")
+    
+    # ============================================================
+    # Fallback nếu không extract được gì
+    # ============================================================
+    if not factors:
+        code_labels = {
+            'CODE_BLUE': 'Hồi sức cấp cứu',
+            'CODE_RED': 'Cấp cứu khẩn',
+            'CODE_YELLOW': 'Khẩn cấp',
+            'CODE_GREEN': 'Không khẩn cấp',
+        }
+        factors.append(f"Phân loại: {code_labels.get(triage_code, triage_code)}")
+    
+    return factors
 
 
 def _check_critical_vitals(text: str) -> Optional[str]:
@@ -226,6 +369,11 @@ def triage_node(state: AgentState) -> Dict[str, Any]:
         department_code = extract_department_code(text_analysis)
         
         # ============================================================
+        # Extract key factors cho Reception (ngắn gọn, dễ đọc)
+        # ============================================================
+        vitals_override = None
+        
+        # ============================================================
         # SAFETY NET: Override CODE nếu chỉ số sinh hiệu vượt ngưỡng
         # Dù LLM nói gì, code-level đảm bảo CODE_RED khi vitals nguy kịch
         # ============================================================
@@ -246,6 +394,8 @@ def triage_node(state: AgentState) -> Dict[str, Any]:
                 triage_code = "CODE_RED"
                 trigger_alert = True
         
+        key_factors = extract_key_factors(text_analysis, triage_code, vitals_override)
+        
         # ============================================================
         # LOGIC: CODE_RED/BLUE → Cấp Cứu (CC)
         # Ca nặng luôn chỉ định thẳng khoa Cấp Cứu
@@ -263,6 +413,7 @@ def triage_node(state: AgentState) -> Dict[str, Any]:
         print(f"[TRIAGE] Thinking steps: {len(thinking_steps)}")
         print(f"[TRIAGE] Triage code: {triage_code}")
         print(f"[TRIAGE] Department code: {department_code}")
+        print(f"[TRIAGE] Key factors: {key_factors}")
         print(f"[TRIAGE] Matched departments: {len(matched_departments)}")
         print(f"[TRIAGE] Trigger alert: {trigger_alert}")
         
@@ -275,6 +426,7 @@ def triage_node(state: AgentState) -> Dict[str, Any]:
             "department_code": department_code,
             "matched_departments": matched_departments,
             "trigger_alert": trigger_alert,
+            "key_factors": key_factors,
         }
         
         message = AIMessage(
@@ -286,6 +438,7 @@ def triage_node(state: AgentState) -> Dict[str, Any]:
                 "triage_code": triage_code,
                 "department_code": department_code,
                 "matched_departments": matched_departments,
+                "key_factors": key_factors,
             }
         )
         

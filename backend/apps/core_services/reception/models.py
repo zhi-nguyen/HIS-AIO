@@ -17,6 +17,10 @@ class Visit(UUIDModel):
         PRIORITY = 'PRIORITY', 'Ưu tiên (Người già/Trẻ em)'
         EMERGENCY = 'EMERGENCY', 'Cấp cứu (Code Red)'
 
+    class TriageMethod(models.TextChoices):
+        AI = 'AI', 'AI phân luồng'
+        MANUAL = 'MANUAL', 'Thủ công (Reception)'
+
     visit_code = models.CharField(max_length=20, unique=True)
     
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.CHECK_IN)
@@ -45,6 +49,8 @@ class Visit(UUIDModel):
     triage_code = models.CharField(max_length=20, null=True, blank=True, verbose_name='Mã phân luồng')
     triage_ai_response = models.TextField(null=True, blank=True, verbose_name='Phản hồi AI')
     triage_confidence = models.IntegerField(null=True, blank=True, verbose_name='Độ tin cậy (%)')
+    triage_key_factors = models.JSONField(null=True, blank=True, verbose_name='Cơ sở phân luồng')
+    triage_matched_departments = models.JSONField(null=True, blank=True, verbose_name='Khoa phù hợp (AI)')
     recommended_department = models.ForeignKey(
         'departments.Department',
         on_delete=models.SET_NULL,
@@ -60,6 +66,12 @@ class Visit(UUIDModel):
         verbose_name='Khoa xác nhận'
     )
     triage_confirmed_at = models.DateTimeField(null=True, blank=True)
+    triage_method = models.CharField(
+        max_length=10,
+        choices=TriageMethod.choices,
+        null=True, blank=True,
+        verbose_name='Cách phân luồng'
+    )
 
     queue_number = models.IntegerField()
 
