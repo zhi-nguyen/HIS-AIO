@@ -123,11 +123,17 @@ export const visitApi = {
         return response.data;
     },
 
-    // Xác nhận kết quả phân luồng
-    confirmTriage: async (id: string, departmentId: string): Promise<Visit> => {
-        const response = await api.post(`/reception/visits/${id}/confirm-triage/`, {
-            department_id: departmentId,
-        });
+    // Xác nhận kết quả phân luồng (AI hoặc thủ công)
+    confirmTriage: async (id: string, data: {
+        department_id: string;
+        triage_method: 'AI' | 'MANUAL';
+        triage_code?: string;
+        chief_complaint?: string;
+        vital_signs?: Record<string, number | undefined>;
+        triage_confidence?: number;
+        triage_ai_response?: string;
+    }): Promise<Visit> => {
+        const response = await api.post(`/reception/visits/${id}/confirm-triage/`, data);
         return response.data;
     },
 };
@@ -668,3 +674,48 @@ export const billingApi = {
         return response.data;
     },
 };
+
+/**
+ * Kiosk Self-Service API
+ * Public endpoints (AllowAny) — KHÔNG dùng JWT auth
+ * Sử dụng axios raw thay vì api instance (có JWT interceptor)
+ */
+import axios from 'axios';
+import type {
+    KioskSelfServiceIdentifyResponse,
+    KioskSelfServiceRegisterResponse,
+} from '@/types';
+
+const KIOSK_BASE_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1');
+
+export const kioskApi = {
+    /**
+     * Bước 1: Quét QR CCCD/BHYT → Xác thực bệnh nhân
+     * POST /api/kiosk/identify/
+     */
+    identify: async (scanData: string): Promise<KioskSelfServiceIdentifyResponse> => {
+        const response = await axios.post(`${KIOSK_BASE_URL}/kiosk/identify/`, {
+            scan_data: scanData,
+        }, {
+            headers: { 'Content-Type': 'application/json' },
+            timeout: 15000,
+        });
+        return response.data;
+    },
+
+    /**
+     * Bước 2: Đăng ký lượt khám → Lấy số thứ tự
+     * POST /api/kiosk/register/
+     */
+    register: async (patientId: string, chiefComplaint: string): Promise<KioskSelfServiceRegisterResponse> => {
+        const response = await axios.post(`${KIOSK_BASE_URL}/kiosk/register/`, {
+            patient_id: patientId,
+            chief_complaint: chiefComplaint,
+        }, {
+            headers: { 'Content-Type': 'application/json' },
+            timeout: 15000,
+        });
+        return response.data;
+    },
+};
+

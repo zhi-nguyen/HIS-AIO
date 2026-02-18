@@ -126,11 +126,14 @@ export interface Visit {
     triage_code?: string;
     triage_ai_response?: string;
     triage_confidence?: number;
+    triage_key_factors?: string[];
+    triage_matched_departments?: Array<{ code: string; name: string; score: string; specialties: string }>;
     recommended_department?: string;
     recommended_department_detail?: Department;
     confirmed_department?: string;
     confirmed_department_detail?: Department;
     triage_confirmed_at?: string;
+    triage_method?: 'AI' | 'MANUAL';
     // Display helpers
     status_display?: string;
     priority_display?: string;
@@ -452,6 +455,53 @@ export interface DrugInteractionResult {
 }
 
 // ============================================================================
+// KIOSK SELF-SERVICE TYPES
+// ============================================================================
+
+/** Response từ POST /api/kiosk/identify/ */
+export interface KioskSelfServiceIdentifyResponse {
+    success: boolean;
+    patient: {
+        id: string;
+        patient_code: string;
+        full_name: string;
+        date_of_birth: string | null;
+        gender: string;
+        is_new_patient: boolean;
+    };
+    insurance_info: {
+        insurance_code: string;
+        patient_name: string;
+        dob: string;
+        gender: string;
+        benefit_rate: number;
+        registered_hospital_name: string;
+        registered_hospital_code: string;
+        valid_from: string;
+        valid_to: string;
+    } | null;
+    has_active_visit: boolean;
+    active_visit_code: string | null;
+}
+
+/** Response từ POST /api/kiosk/register/ */
+export interface KioskSelfServiceRegisterResponse {
+    success: boolean;
+    visit_code: string;
+    queue_number: string;
+    daily_sequence: number;
+    estimated_wait_minutes: number;
+    message: string;
+}
+
+/** Error response từ kiosk API */
+export interface KioskErrorResponse {
+    error: string;
+    code: 'VALIDATION_ERROR' | 'INVALID_SCAN_DATA' | 'PATIENT_NOT_FOUND' | 'ACTIVE_VISIT_EXISTS' | 'SERVER_ERROR';
+    active_visit_code?: string;
+}
+
+// ============================================================================
 // API RESPONSE TYPES
 // ============================================================================
 
@@ -467,3 +517,4 @@ export interface ApiError {
     message?: string;
     errors?: Record<string, string[]>;
 }
+

@@ -221,6 +221,25 @@ MOCK_RECORDS = [
             "is_5_years_consecutive": True,
         }
     },
+    {
+        "cccd": "091204007940",
+        "insurance_code": "CK3610000006789",
+        "insurance_short": "0000006789",
+        "data": {
+            "patient_name": "NGUYEN CHI NGUYEN",
+            "insurance_code": "CK3610000006789",
+            "dob": "2004-01-20",
+            "gender": "male",
+            "address": "Phường Đông Thành, TP Ninh Bình, Tỉnh Ninh Bình",
+            "card_issue_date": "2020-01-01",
+            "card_expire_date": "2027-12-31",
+            "benefit_rate": 80,
+            "benefit_code": "CK",
+            "registered_hospital_code": "36001",
+            "registered_hospital_name": "Bệnh viện Đa khoa Ninh Bình",
+            "is_5_years_consecutive": True,
+        }
+    },
 ]
 
 

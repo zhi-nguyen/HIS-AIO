@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import {
     Modal,
     Card,
@@ -18,7 +18,6 @@ import {
     App,
     Tooltip,
     Badge,
-    Divider,
 } from 'antd';
 import {
     RobotOutlined,
@@ -27,6 +26,9 @@ import {
     HeartOutlined,
     ThunderboltOutlined,
     EditOutlined,
+    InfoCircleOutlined,
+    DownOutlined,
+    UpOutlined,
 } from '@ant-design/icons';
 import { visitApi } from '@/lib/services';
 import type { Visit, Department } from '@/types';
@@ -74,6 +76,174 @@ interface TriageModalProps {
 }
 
 // ============================================================================
+// Sub-components (Memoized)
+// ============================================================================
+
+interface VitalSignsCardProps {
+    vitalSigns: VitalSignsForm;
+    painScale?: number;
+    consciousness: string;
+    loading: boolean;
+    onUpdateVitalSign: (key: keyof VitalSignsForm, value: number | null) => void;
+    onUpdatePainScale: (value: number | null) => void;
+    onUpdateConsciousness: (value: string) => void;
+}
+
+const VitalSignsCard = React.memo(({
+    vitalSigns,
+    painScale,
+    consciousness,
+    loading,
+    onUpdateVitalSign,
+    onUpdatePainScale,
+    onUpdateConsciousness
+}: VitalSignsCardProps) => {
+    return (
+        <Card
+            size="small"
+            style={{ marginTop: 12 }}
+            title={
+                <Space size={4}>
+                    <HeartOutlined style={{ color: '#eb2f96' }} />
+                    <Text strong style={{ fontSize: 14 }}>Chỉ số sinh hiệu</Text>
+                    <Tag style={{ marginLeft: 4, fontSize: 11 }}>Tùy chọn</Tag>
+                </Space>
+            }
+            styles={{
+                header: { padding: '8px 12px', minHeight: 'auto' },
+                body: { padding: '12px' },
+            }}
+        >
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px 16px' }}>
+                {/* Mạch */}
+                <div>
+                    <Text type="secondary" style={{ fontSize: 12 }}>Mạch (bpm)</Text>
+                    <InputNumber
+                        className="w-full"
+                        min={0} max={300}
+                        value={vitalSigns.heart_rate}
+                        onChange={v => onUpdateVitalSign('heart_rate', v)}
+                        disabled={loading}
+                    />
+                </div>
+                {/* Huyết áp tâm thu */}
+                <div>
+                    <Text type="secondary" style={{ fontSize: 12 }}>HA tâm thu (mmHg)</Text>
+                    <InputNumber
+                        className="w-full"
+                        min={0} max={300}
+                        value={vitalSigns.bp_systolic}
+                        onChange={v => onUpdateVitalSign('bp_systolic', v)}
+                        disabled={loading}
+                    />
+                </div>
+                {/* Huyết áp tâm trương */}
+                <div>
+                    <Text type="secondary" style={{ fontSize: 12 }}>HA tâm trương (mmHg)</Text>
+                    <InputNumber
+                        className="w-full"
+                        min={0} max={200}
+                        value={vitalSigns.bp_diastolic}
+                        onChange={v => onUpdateVitalSign('bp_diastolic', v)}
+                        disabled={loading}
+                    />
+                </div>
+                {/* Nhịp thở */}
+                <div>
+                    <Text type="secondary" style={{ fontSize: 12 }}>Nhịp thở (/phút)</Text>
+                    <InputNumber
+                        className="w-full"
+                        min={0} max={60}
+                        value={vitalSigns.respiratory_rate}
+                        onChange={v => onUpdateVitalSign('respiratory_rate', v)}
+                        disabled={loading}
+                    />
+                </div>
+                {/* Nhiệt độ */}
+                <div>
+                    <Text type="secondary" style={{ fontSize: 12 }}>Nhiệt độ (°C)</Text>
+                    <InputNumber
+                        className="w-full"
+                        min={30} max={45} step={0.1}
+                        value={vitalSigns.temperature}
+                        onChange={v => onUpdateVitalSign('temperature', v)}
+                        disabled={loading}
+                    />
+                </div>
+                {/* SpO2 */}
+                <div>
+                    <Text type="secondary" style={{ fontSize: 12 }}>SpO2 (%)</Text>
+                    <InputNumber
+                        className="w-full"
+                        min={0} max={100}
+                        value={vitalSigns.spo2}
+                        onChange={v => onUpdateVitalSign('spo2', v)}
+                        disabled={loading}
+                    />
+                </div>
+                {/* Cân nặng */}
+                <div>
+                    <Text type="secondary" style={{ fontSize: 12 }}>Cân nặng (kg)</Text>
+                    <InputNumber
+                        className="w-full"
+                        min={0} max={300} step={0.1}
+                        value={vitalSigns.weight}
+                        onChange={v => onUpdateVitalSign('weight', v)}
+                        disabled={loading}
+                    />
+                </div>
+                {/* Chiều cao */}
+                <div>
+                    <Text type="secondary" style={{ fontSize: 12 }}>Chiều cao (cm)</Text>
+                    <InputNumber
+                        className="w-full"
+                        min={0} max={250}
+                        value={vitalSigns.height}
+                        onChange={v => onUpdateVitalSign('height', v)}
+                        disabled={loading}
+                    />
+                </div>
+                {/* Thang đau */}
+                <div>
+                    <Text type="secondary" style={{ fontSize: 12 }}>Thang đau (0-10)</Text>
+                    <InputNumber
+                        className="w-full"
+                        min={0} max={10}
+                        value={painScale}
+                        onChange={v => onUpdatePainScale(v)}
+                        disabled={loading}
+                    />
+                </div>
+            </div>
+
+            {/* Ý thức (AVPU) */}
+            <div style={{ marginTop: 10 }}>
+                <Space size={8} align="center">
+                    <ThunderboltOutlined style={{ color: '#faad14' }} />
+                    <Text type="secondary" style={{ fontSize: 12 }}>Ý thức (AVPU)</Text>
+                </Space>
+                <Select
+                    className="w-full"
+                    placeholder="Chọn trạng thái ý thức"
+                    value={consciousness || undefined}
+                    onChange={onUpdateConsciousness}
+                    disabled={loading}
+                    allowClear
+                    style={{ marginTop: 4 }}
+                    options={[
+                        { value: 'alert', label: 'Tỉnh táo (Alert)' },
+                        { value: 'verbal', label: 'Đáp ứng lời nói (Verbal)' },
+                        { value: 'pain', label: 'Đáp ứng đau (Pain)' },
+                        { value: 'unresponsive', label: 'Không đáp ứng (Unresponsive)' },
+                    ]}
+                />
+            </div>
+        </Card>
+    );
+});
+VitalSignsCard.displayName = 'VitalSignsCard';
+
+// ============================================================================
 // Component chính
 // ============================================================================
 export default function TriageModal({ visit, open, departments, onClose, onSuccess }: TriageModalProps) {
@@ -93,30 +263,85 @@ export default function TriageModal({ visit, open, departments, onClose, onSucce
         recommended_department_name: string | null;
         triage_confidence: number;
         matched_departments: MatchedDepartment[];
+        key_factors: string[];
     } | null>(null);
     const [selectedDeptId, setSelectedDeptId] = useState<string | null>(null);
     const [confirmLoading, setConfirmLoading] = useState(false);
+    const [showFullAnalysis, setShowFullAnalysis] = useState(false);
 
-    // Reset state khi mở modal
+    // Reset state khi mở modal — nếu visit đã có data từ AI, restore lại
     const handleAfterOpenChange = useCallback((isOpen: boolean) => {
         if (isOpen && visit) {
-            // Nếu bệnh nhân đã nhập lý do khám từ Kiosk, hiển thị sẵn
+            // Luôn set chief complaint từ visit (Kiosk hoặc đã nhập trước)
             setChiefComplaint(visit.chief_complaint || '');
-            setVitalSigns({});
-            setPainScale(undefined);
-            setConsciousness('');
-            setTriageResult(null);
-            setSelectedDeptId(null);
+            setShowFullAnalysis(false);
+            setConfirmLoading(false);
+
+            // Nếu visit đã qua AI (status TRIAGE), restore tất cả state đã lưu
+            if (visit.status === 'TRIAGE' && visit.triage_code) {
+                // Restore vital signs
+                if (visit.vital_signs && typeof visit.vital_signs === 'object') {
+                    const vs = visit.vital_signs as Record<string, unknown>;
+                    setVitalSigns({
+                        heart_rate: vs.heart_rate as number | undefined,
+                        bp_systolic: vs.bp_systolic as number | undefined,
+                        bp_diastolic: vs.bp_diastolic as number | undefined,
+                        respiratory_rate: vs.respiratory_rate as number | undefined,
+                        temperature: vs.temperature as number | undefined,
+                        spo2: vs.spo2 as number | undefined,
+                        weight: vs.weight as number | undefined,
+                        height: vs.height as number | undefined,
+                    });
+                    setPainScale(vs.pain_scale as number | undefined);
+                    setConsciousness((vs.consciousness as string) || '');
+                } else {
+                    setVitalSigns({});
+                    setPainScale(undefined);
+                    setConsciousness('');
+                }
+
+                // Restore AI result (từ dữ liệu đã lưu trên Visit)
+                setTriageResult({
+                    ai_response: visit.triage_ai_response || '',
+                    triage_code: visit.triage_code,
+                    recommended_department_name:
+                        visit.recommended_department_detail?.name || null,
+                    triage_confidence: visit.triage_confidence || 0,
+                    matched_departments: visit.triage_matched_departments || [],
+                    key_factors: visit.triage_key_factors || [],
+                });
+
+                // Pre-select khoa AI đề xuất
+                if (visit.recommended_department_detail) {
+                    setSelectedDeptId(visit.recommended_department_detail.id);
+                } else if (typeof visit.recommended_department === 'string') {
+                    setSelectedDeptId(visit.recommended_department);
+                } else {
+                    setSelectedDeptId(null);
+                }
+            } else {
+                // Visit mới (CHECK_IN) — reset tất cả
+                setVitalSigns({});
+                setPainScale(undefined);
+                setConsciousness('');
+                setTriageResult(null);
+                setSelectedDeptId(null);
+            }
         }
     }, [visit]);
 
-    // --- Helper: cập nhật 1 field sinh hiệu ---
-    const updateVitalSign = (key: keyof VitalSignsForm, value: number | null) => {
+    // --- Helper: cập nhật 1 field sinh hiệu (Memoized) ---
+    const updateVitalSign = useCallback((key: keyof VitalSignsForm, value: number | null) => {
         setVitalSigns(prev => ({ ...prev, [key]: value ?? undefined }));
-    };
+    }, []);
 
-    // --- Kiểm tra có ít nhất 1 sinh hiệu được nhập ---
-    const hasAnyVitalSign = Object.values(vitalSigns).some(v => v !== undefined && v !== null);
+    const updatePainScale = useCallback((value: number | null) => {
+        setPainScale(value ?? undefined);
+    }, []);
+
+    const updateConsciousness = useCallback((value: string) => {
+        setConsciousness(value);
+    }, []);
 
     // ========================================================================
     // Gọi AI phân luồng
@@ -127,11 +352,6 @@ export default function TriageModal({ visit, open, departments, onClose, onSucce
         // Validate: cần ít nhất lý do khám
         if (!chiefComplaint.trim()) {
             message.warning('Vui lòng nhập lý do khám');
-            return;
-        }
-        // Validate: nên có sinh hiệu
-        if (!hasAnyVitalSign) {
-            message.warning('Vui lòng nhập ít nhất 1 chỉ số sinh hiệu');
             return;
         }
 
@@ -149,6 +369,7 @@ export default function TriageModal({ visit, open, departments, onClose, onSucce
                 recommended_department_name: result.recommended_department_name,
                 triage_confidence: result.triage_confidence || 70,
                 matched_departments: result.matched_departments || [],
+                key_factors: result.key_factors || [],
             });
             if (result.recommended_department) {
                 setSelectedDeptId(result.recommended_department);
@@ -159,6 +380,8 @@ export default function TriageModal({ visit, open, departments, onClose, onSucce
                 if (match) setSelectedDeptId(match.id);
             }
             message.success('AI đã hoàn tất phân luồng!');
+            // Refresh bảng visits ở parent để nút "Chốt khoa" hiện đúng
+            onSuccess();
         } catch (error) {
             console.error('Triage error:', error);
             message.error('Không thể gọi AI phân luồng');
@@ -177,7 +400,31 @@ export default function TriageModal({ visit, open, departments, onClose, onSucce
         }
         setConfirmLoading(true);
         try {
-            await visitApi.confirmTriage(visit.id, selectedDeptId);
+            // Lọc vital signs: chỉ gửi field có giá trị thật
+            const cleanVitalSigns: Record<string, number> = {};
+            for (const [key, val] of Object.entries(vitalSigns)) {
+                if (val !== undefined && val !== null) {
+                    cleanVitalSigns[key] = val;
+                }
+            }
+            // Thêm painScale + consciousness nếu có
+            if (painScale !== undefined) cleanVitalSigns.pain_scale = painScale;
+            if (consciousness) (cleanVitalSigns as Record<string, unknown>).consciousness = consciousness;
+
+            const hasVitals = Object.keys(cleanVitalSigns).length > 0;
+
+            // Xác định triage_method: có kết quả AI → 'AI', ngược lại → 'MANUAL'
+            const triageMethod = triageResult ? 'AI' as const : 'MANUAL' as const;
+
+            await visitApi.confirmTriage(visit.id, {
+                department_id: selectedDeptId,
+                triage_method: triageMethod,
+                triage_code: triageResult?.triage_code,
+                chief_complaint: chiefComplaint || undefined,
+                vital_signs: hasVitals ? cleanVitalSigns : undefined,
+                triage_confidence: triageResult?.triage_confidence,
+                triage_ai_response: triageResult?.ai_response,
+            });
             message.success('Đã xác nhận phân luồng thành công!');
             onClose();
             onSuccess();
@@ -199,7 +446,7 @@ export default function TriageModal({ visit, open, departments, onClose, onSucce
     };
 
     // --- Lấy tên bệnh nhân ---
-    const getPatientName = () => {
+    const getPatientName = useCallback(() => {
         if (!visit) return '';
         if (visit.patient_detail) {
             return visit.patient_detail.full_name || `${visit.patient_detail.last_name} ${visit.patient_detail.first_name}`;
@@ -208,7 +455,7 @@ export default function TriageModal({ visit, open, departments, onClose, onSucce
             return visit.patient.full_name || `${visit.patient.last_name} ${visit.patient.first_name}`;
         }
         return String(visit.patient);
-    };
+    }, [visit]);
 
     const hasMatchedDepts = triageResult && triageResult.matched_departments.length > 0;
 
@@ -220,20 +467,20 @@ export default function TriageModal({ visit, open, departments, onClose, onSucce
             title={
                 <Space>
                     <RobotOutlined className="text-orange-500" />
-                    <span style={{ fontSize: 16 }}>Phân luồng AI — {visit?.visit_code}</span>
+                    <span style={{ fontSize: 16 }}>Phân luồng — {visit?.visit_code}</span>
                 </Space>
             }
             open={open}
             onCancel={onClose}
             afterOpenChange={handleAfterOpenChange}
             footer={null}
-            width={hasMatchedDepts ? 1100 : 800}
+            width={1100}
             destroyOnClose
         >
             {visit && (
                 <div style={{ display: 'flex', gap: 16, marginTop: 16 }}>
                     {/* ========== CỘT TRÁI: Sinh hiệu + Lý do khám + Kết quả AI ========== */}
-                    <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ flex: 1, minWidth: 0, maxHeight: '75vh', overflowY: 'auto', paddingRight: 4 }}>
                         {/* --- Thông tin bệnh nhân --- */}
                         <Card size="small" className="bg-gray-50">
                             <Descriptions size="small" column={2} style={{ fontSize: 14 }}>
@@ -243,155 +490,15 @@ export default function TriageModal({ visit, open, departments, onClose, onSucce
                         </Card>
 
                         {/* --- SINH HIỆU (Y tá nhập) --- */}
-                        <Card
-                            size="small"
-                            style={{ marginTop: 12 }}
-                            title={
-                                <Space size={4}>
-                                    <HeartOutlined style={{ color: '#eb2f96' }} />
-                                    <Text strong style={{ fontSize: 14 }}>Chỉ số sinh hiệu</Text>
-                                    <Tag color="red" style={{ marginLeft: 4, fontSize: 11 }}>Bắt buộc</Tag>
-                                </Space>
-                            }
-                            styles={{
-                                header: { padding: '8px 12px', minHeight: 'auto' },
-                                body: { padding: '12px' },
-                            }}
-                        >
-                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px 16px' }}>
-                                {/* Mạch */}
-                                <div>
-                                    <Text type="secondary" style={{ fontSize: 12 }}>Mạch (bpm)</Text>
-                                    <InputNumber
-                                        className="w-full"
-                                        min={0} max={300}
-
-                                        value={vitalSigns.heart_rate}
-                                        onChange={v => updateVitalSign('heart_rate', v)}
-                                        disabled={triageLoading}
-                                    />
-                                </div>
-                                {/* Huyết áp tâm thu */}
-                                <div>
-                                    <Text type="secondary" style={{ fontSize: 12 }}>HA tâm thu (mmHg)</Text>
-                                    <InputNumber
-                                        className="w-full"
-                                        min={0} max={300}
-
-                                        value={vitalSigns.bp_systolic}
-                                        onChange={v => updateVitalSign('bp_systolic', v)}
-                                        disabled={triageLoading}
-                                    />
-                                </div>
-                                {/* Huyết áp tâm trương */}
-                                <div>
-                                    <Text type="secondary" style={{ fontSize: 12 }}>HA tâm trương (mmHg)</Text>
-                                    <InputNumber
-                                        className="w-full"
-                                        min={0} max={200}
-
-                                        value={vitalSigns.bp_diastolic}
-                                        onChange={v => updateVitalSign('bp_diastolic', v)}
-                                        disabled={triageLoading}
-                                    />
-                                </div>
-                                {/* Nhịp thở */}
-                                <div>
-                                    <Text type="secondary" style={{ fontSize: 12 }}>Nhịp thở (/phút)</Text>
-                                    <InputNumber
-                                        className="w-full"
-                                        min={0} max={60}
-
-                                        value={vitalSigns.respiratory_rate}
-                                        onChange={v => updateVitalSign('respiratory_rate', v)}
-                                        disabled={triageLoading}
-                                    />
-                                </div>
-                                {/* Nhiệt độ */}
-                                <div>
-                                    <Text type="secondary" style={{ fontSize: 12 }}>Nhiệt độ (°C)</Text>
-                                    <InputNumber
-                                        className="w-full"
-                                        min={30} max={45} step={0.1}
-
-                                        value={vitalSigns.temperature}
-                                        onChange={v => updateVitalSign('temperature', v)}
-                                        disabled={triageLoading}
-                                    />
-                                </div>
-                                {/* SpO2 */}
-                                <div>
-                                    <Text type="secondary" style={{ fontSize: 12 }}>SpO2 (%)</Text>
-                                    <InputNumber
-                                        className="w-full"
-                                        min={0} max={100}
-
-                                        value={vitalSigns.spo2}
-                                        onChange={v => updateVitalSign('spo2', v)}
-                                        disabled={triageLoading}
-                                    />
-                                </div>
-                                {/* Cân nặng */}
-                                <div>
-                                    <Text type="secondary" style={{ fontSize: 12 }}>Cân nặng (kg)</Text>
-                                    <InputNumber
-                                        className="w-full"
-                                        min={0} max={300} step={0.1}
-
-                                        value={vitalSigns.weight}
-                                        onChange={v => updateVitalSign('weight', v)}
-                                        disabled={triageLoading}
-                                    />
-                                </div>
-                                {/* Chiều cao */}
-                                <div>
-                                    <Text type="secondary" style={{ fontSize: 12 }}>Chiều cao (cm)</Text>
-                                    <InputNumber
-                                        className="w-full"
-                                        min={0} max={250}
-
-                                        value={vitalSigns.height}
-                                        onChange={v => updateVitalSign('height', v)}
-                                        disabled={triageLoading}
-                                    />
-                                </div>
-                                {/* Thang đau */}
-                                <div>
-                                    <Text type="secondary" style={{ fontSize: 12 }}>Thang đau (0-10)</Text>
-                                    <InputNumber
-                                        className="w-full"
-                                        min={0} max={10}
-
-                                        value={painScale}
-                                        onChange={v => setPainScale(v ?? undefined)}
-                                        disabled={triageLoading}
-                                    />
-                                </div>
-                            </div>
-
-                            {/* Ý thức (AVPU) */}
-                            <div style={{ marginTop: 10 }}>
-                                <Space size={8} align="center">
-                                    <ThunderboltOutlined style={{ color: '#faad14' }} />
-                                    <Text type="secondary" style={{ fontSize: 12 }}>Ý thức (AVPU)</Text>
-                                </Space>
-                                <Select
-                                    className="w-full"
-                                    placeholder="Chọn trạng thái ý thức"
-                                    value={consciousness || undefined}
-                                    onChange={val => setConsciousness(val)}
-                                    disabled={triageLoading}
-                                    allowClear
-                                    style={{ marginTop: 4 }}
-                                    options={[
-                                        { value: 'alert', label: 'Tỉnh táo (Alert)' },
-                                        { value: 'verbal', label: 'Đáp ứng lời nói (Verbal)' },
-                                        { value: 'pain', label: 'Đáp ứng đau (Pain)' },
-                                        { value: 'unresponsive', label: 'Không đáp ứng (Unresponsive)' },
-                                    ]}
-                                />
-                            </div>
-                        </Card>
+                        <VitalSignsCard
+                            vitalSigns={vitalSigns}
+                            painScale={painScale}
+                            consciousness={consciousness}
+                            loading={triageLoading}
+                            onUpdateVitalSign={updateVitalSign}
+                            onUpdatePainScale={updatePainScale}
+                            onUpdateConsciousness={updateConsciousness}
+                        />
 
                         {/* --- LÝ DO KHÁM (Editable — y tá có thể sửa) --- */}
                         <div style={{ marginTop: 12 }}>
@@ -423,7 +530,7 @@ export default function TriageModal({ visit, open, departments, onClose, onSucce
                             style={{ marginTop: 12 }}
                             block
                             size="large"
-                            disabled={!chiefComplaint.trim() || !hasAnyVitalSign}
+                            disabled={!chiefComplaint.trim()}
                         >
                             {triageLoading ? 'AI đang phân tích...' : 'AI Phân luồng'}
                         </Button>
@@ -479,38 +586,96 @@ export default function TriageModal({ visit, open, departments, onClose, onSucce
                                     }
                                 />
 
-                                {/* AI Reasoning */}
-                                <Card
-                                    size="small"
-                                    title={<Text type="secondary" style={{ fontSize: 14 }}><RobotOutlined /> Phân tích AI</Text>}
-                                    className="bg-blue-50"
-                                    styles={{ body: { maxHeight: 200, overflow: 'auto' } }}
-                                >
-                                    <div style={{ whiteSpace: 'pre-wrap', fontSize: 14 }}>
-                                        {triageResult.ai_response}
+                                {/* 🔍 Key Factors (Cơ sở phân luồng - ngắn gọn) */}
+                                {triageResult.key_factors.length > 0 && (
+                                    <div
+                                        style={{
+                                            padding: '10px 14px',
+                                            borderRadius: 8,
+                                            background: '#f6f8fa',
+                                            border: '1px solid #e8e8e8',
+                                        }}
+                                    >
+                                        <Space size={6} align="center" style={{ marginBottom: 6 }}>
+                                            <InfoCircleOutlined style={{ color: '#1677ff', fontSize: 15 }} />
+                                            <Text strong style={{ fontSize: 14, color: '#1677ff' }}>
+                                                Cơ sở phân luồng
+                                            </Text>
+                                        </Space>
+                                        <ul style={{
+                                            margin: '4px 0 0 0',
+                                            paddingLeft: 18,
+                                            listStyle: 'disc',
+                                            fontSize: 14,
+                                            lineHeight: 1.7,
+                                            color: '#333',
+                                        }}>
+                                            {triageResult.key_factors.map((factor, idx) => (
+                                                <li key={idx} style={{
+                                                    fontWeight: factor.startsWith('⚠') ? 600 : 400,
+                                                    color: factor.startsWith('⚠') ? '#d4380d' : '#333',
+                                                }}>
+                                                    {factor}
+                                                </li>
+                                            ))}
+                                        </ul>
                                     </div>
-                                </Card>
+                                )}
+
+                                {/* Toggle: Xem phân tích đầy đủ */}
+                                <div
+                                    onClick={() => setShowFullAnalysis(!showFullAnalysis)}
+                                    style={{
+                                        cursor: 'pointer',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: 6,
+                                        padding: '6px 0',
+                                        fontSize: 13,
+                                        color: '#8c8c8c',
+                                        userSelect: 'none',
+                                    }}
+                                >
+                                    {showFullAnalysis ? <UpOutlined style={{ fontSize: 11 }} /> : <DownOutlined style={{ fontSize: 11 }} />}
+                                    <span>{showFullAnalysis ? 'Ẩn phân tích đầy đủ' : 'Xem phân tích đầy đủ'}</span>
+                                </div>
+
+                                {/* AI Full Reasoning (ẩn/hiện) */}
+                                {showFullAnalysis && (
+                                    <Card
+                                        size="small"
+                                        title={<Text type="secondary" style={{ fontSize: 13 }}><RobotOutlined /> Phân luồng</Text>}
+                                        className="bg-blue-50"
+                                        styles={{ body: { maxHeight: 200, overflow: 'auto' } }}
+                                    >
+                                        <div style={{ whiteSpace: 'pre-wrap', fontSize: 13, color: '#555' }}>
+                                            {triageResult.ai_response}
+                                        </div>
+                                    </Card>
+                                )}
                             </div>
                         )}
                     </div>
 
-                    {/* ========== CỘT PHẢI: Khoa phù hợp + Xác nhận ========== */}
-                    {hasMatchedDepts && (
-                        <div style={{
-                            width: 320,
-                            flexShrink: 0,
-                            display: 'flex',
-                            flexDirection: 'column',
-                            gap: 12,
-                        }}>
-                            {/* Danh sách khoa phù hợp */}
+                    {/* ========== CỘT PHẢI: Chốt khoa (luôn hiện) ========== */}
+                    <div style={{
+                        width: 340,
+                        flexShrink: 0,
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: 12,
+                        maxHeight: '75vh',
+                        overflowY: 'auto',
+                    }}>
+                        {/* --- SECTION 1: Khoa AI đề xuất (chỉ sau khi AI chạy) --- */}
+                        {hasMatchedDepts && (
                             <Card
                                 size="small"
                                 title={
                                     <Space size={4}>
-                                        <MedicineBoxOutlined style={{ color: '#1677ff' }} />
-                                        <Text strong style={{ fontSize: 14 }}>Khoa phù hợp theo triệu chứng</Text>
-                                        <Tag color="blue" style={{ marginLeft: 4, fontSize: 13 }}>
+                                        <RobotOutlined style={{ color: '#722ed1' }} />
+                                        <Text strong style={{ fontSize: 14 }}>Khoa AI đề xuất</Text>
+                                        <Tag color="purple" style={{ marginLeft: 4, fontSize: 13 }}>
                                             {triageResult!.matched_departments.length} kết quả
                                         </Tag>
                                     </Space>
@@ -536,9 +701,9 @@ export default function TriageModal({ visit, open, departments, onClose, onSucce
                                                         padding: '8px 10px',
                                                         borderRadius: 8,
                                                         border: isSelected
-                                                            ? '2px solid #1677ff'
+                                                            ? '2px solid #722ed1'
                                                             : '1px solid #f0f0f0',
-                                                        background: isSelected ? '#e6f4ff' : '#fafafa',
+                                                        background: isSelected ? '#f9f0ff' : '#fafafa',
                                                         cursor: 'pointer',
                                                         transition: 'all 0.2s',
                                                         display: 'flex',
@@ -547,8 +712,8 @@ export default function TriageModal({ visit, open, departments, onClose, onSucce
                                                     }}
                                                     onMouseEnter={(e) => {
                                                         if (!isSelected) {
-                                                            e.currentTarget.style.borderColor = '#1677ff';
-                                                            e.currentTarget.style.background = '#f0f7ff';
+                                                            e.currentTarget.style.borderColor = '#722ed1';
+                                                            e.currentTarget.style.background = '#faf5ff';
                                                         }
                                                     }}
                                                     onMouseLeave={(e) => {
@@ -562,7 +727,7 @@ export default function TriageModal({ visit, open, departments, onClose, onSucce
                                                     <Badge
                                                         count={idx + 1}
                                                         style={{
-                                                            backgroundColor: idx === 0 ? '#1677ff' : '#d9d9d9',
+                                                            backgroundColor: idx === 0 ? '#722ed1' : '#d9d9d9',
                                                             fontSize: 14,
                                                             minWidth: 18,
                                                             height: 18,
@@ -623,18 +788,30 @@ export default function TriageModal({ visit, open, departments, onClose, onSucce
                                     })}
                                 </div>
                             </Card>
+                        )}
 
-                            {/* Xác nhận khoa */}
-                            <Card
-                                size="small"
-                                title={<Text strong style={{ fontSize: 14 }}>Xác nhận khoa hướng đến</Text>}
-                                styles={{
-                                    header: { padding: '8px 12px', minHeight: 'auto' },
-                                    body: { padding: '8px 12px' },
-                                }}
-                                style={{ border: '2px solid #1677ff' }}
-                            >
-                                <Space direction="vertical" className="w-full" size={8}>
+                        {/* --- SECTION 2: Chốt khoa + Xác nhận (luôn hiện) --- */}
+                        <Card
+                            size="small"
+                            title={
+                                <Text strong style={{ fontSize: 14 }}>
+                                    <MedicineBoxOutlined style={{ marginRight: 6 }} />
+                                    Chốt khoa hướng đến
+                                </Text>
+                            }
+                            styles={{
+                                header: { padding: '8px 12px', minHeight: 'auto' },
+                                body: { padding: '10px 12px' },
+                            }}
+                            style={{ border: '2px solid #52c41a' }}
+                        >
+                            <Space direction="vertical" className="w-full" size={10}>
+                                <div>
+                                    <Text type="secondary" style={{ fontSize: 12, marginBottom: 4, display: 'block' }}>
+                                        {triageResult
+                                            ? 'Khoa đã được AI đề xuất, bạn có thể thay đổi:'
+                                            : 'Chọn khoa trực tiếp (không cần qua AI):'}
+                                    </Text>
                                     <Select
                                         placeholder="Chọn khoa..."
                                         value={selectedDeptId}
@@ -642,26 +819,41 @@ export default function TriageModal({ visit, open, departments, onClose, onSucce
                                         className="w-full"
                                         showSearch
                                         optionFilterProp="label"
+                                        size="large"
                                         options={departments.map(d => ({
                                             value: d.id,
                                             label: `${d.code} — ${d.name}`,
                                         }))}
                                     />
-                                    <Button
-                                        type="primary"
-                                        icon={<CheckOutlined />}
-                                        onClick={handleConfirmTriage}
-                                        loading={confirmLoading}
-                                        block
-                                        disabled={!selectedDeptId}
-                                        style={{ backgroundColor: '#52c41a', borderColor: '#52c41a', fontSize: 20, height: 70 }}
-                                    >
-                                        Xác nhận phân luồng
-                                    </Button>
-                                </Space>
-                            </Card>
-                        </div>
-                    )}
+                                </div>
+                                <Button
+                                    type="primary"
+                                    icon={<CheckOutlined />}
+                                    onClick={handleConfirmTriage}
+                                    loading={confirmLoading}
+                                    block
+                                    disabled={!selectedDeptId}
+                                    size="large"
+                                    style={{
+                                        backgroundColor: '#52c41a',
+                                        borderColor: '#52c41a',
+                                        fontSize: 16,
+                                        height: 52,
+                                        fontWeight: 600,
+                                    }}
+                                >
+                                    Xác nhận phân luồng
+                                </Button>
+                            </Space>
+                        </Card>
+
+                        {/* Ghi chú nhỏ */}
+                        {!triageResult && (
+                            <Text type="secondary" style={{ fontSize: 12, textAlign: 'center', padding: '0 8px' }}>
+                                Bạn có thể chốt khoa ngay mà không cần chạy AI, hoặc chạy AI trước để nhận đề xuất.
+                            </Text>
+                        )}
+                    </div>
                 </div>
             )}
         </Modal>

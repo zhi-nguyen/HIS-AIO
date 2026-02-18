@@ -16,9 +16,6 @@ import {
     AutoComplete,
     Descriptions,
     Badge,
-    Alert,
-    Spin,
-    Progress,
     App,
 } from 'antd';
 import {
@@ -26,7 +23,6 @@ import {
     SearchOutlined,
     UserAddOutlined,
     CheckCircleOutlined,
-    ClockCircleOutlined,
     ReloadOutlined,
     RobotOutlined,
     MedicineBoxOutlined,
@@ -39,7 +35,6 @@ import TriageModal from './TriageModal';
 import dayjs from 'dayjs';
 
 const { Title, Text } = Typography;
-const { TextArea } = Input;
 
 /**
  * Reception Page
@@ -60,12 +55,6 @@ const priorityConfig: Record<string, { color: string; label: string }> = {
     NORMAL: { color: 'default', label: 'Bình thường' },
     PRIORITY: { color: 'orange', label: 'Ưu tiên' },
     EMERGENCY: { color: 'red', label: 'Cấp cứu' },
-};
-
-const triageCodeConfig: Record<string, { color: string; bg: string; label: string }> = {
-    CODE_RED: { color: '#ff4d4f', bg: '#fff1f0', label: 'Cấp cứu (RED)' },
-    CODE_YELLOW: { color: '#faad14', bg: '#fffbe6', label: 'Ưu tiên (YELLOW)' },
-    CODE_GREEN: { color: '#52c41a', bg: '#f6ffed', label: 'Bình thường (GREEN)' },
 };
 
 export default function ReceptionPage() {
@@ -165,31 +154,42 @@ export default function ReceptionPage() {
         }
     };
 
-    // Mở modal phân luồng
-    const openTriageModal = (visit: Visit) => {
-        setTriageVisit(visit);
+    // Mở modal phân luồng — LUÔN fetch fresh data từ backend
+    const openTriageModal = useCallback(async (visit: Visit) => {
+        try {
+            // Nếu visit đã qua AI (TRIAGE), phải fetch fresh để lấy đúng state
+            if (visit.status === 'TRIAGE') {
+                const freshVisit = await visitApi.getById(visit.id);
+                setTriageVisit(freshVisit);
+            } else {
+                // CHECK_IN: chưa có data triage, dùng record từ table cũng đúng
+                setTriageVisit(visit);
+            }
+        } catch (error) {
+            console.error('Error fetching visit:', error);
+            // Fallback: dùng record cũ nếu fetch thất bại
+            setTriageVisit(visit);
+        }
         setTriageModalOpen(true);
-    };
+    }, []);
 
     // Callback khi triage thành công
-    const handleTriageSuccess = () => {
+    const handleTriageSuccess = useCallback(() => {
         fetchVisits();
-    };
+    }, [fetchVisits]);
 
-    // Update visit status (for simple status changes)
-    const handleUpdateStatus = async (id: string, status: string) => {
-        try {
-            await visitApi.update(id, { status } as Partial<Visit>);
-            message.success('Cập nhật trạng thái thành công');
-            fetchVisits();
-        } catch (error) {
-            console.error('Error updating status:', error);
-            message.error('Không thể cập nhật trạng thái');
-        }
-    };
+    // Computed Stats (Memoized)
+    const stats = useMemo(() => {
+        return {
+            total: visits.length,
+            waiting: visits.filter((v) => ['CHECK_IN', 'TRIAGE', 'WAITING'].includes(v.status)).length,
+            inProgress: visits.filter((v) => v.status === 'IN_PROGRESS').length,
+            completed: visits.filter((v) => v.status === 'COMPLETED').length,
+        };
+    }, [visits]);
 
-    // Table columns
-    const columns: ColumnsType<Visit> = [
+    // Table columns (Memoized)
+    const columns: ColumnsType<Visit> = useMemo(() => [
         {
             title: 'STT',
             dataIndex: 'queue_number',
@@ -305,7 +305,7 @@ export default function ReceptionPage() {
                 </Space>
             ),
         },
-    ];
+    ], [openTriageModal]);
 
     return (
         <div className="space-y-4">
@@ -325,31 +325,25 @@ export default function ReceptionPage() {
                 <Card size="small">
                     <div className="text-center">
                         <Text type="secondary">Tổng hôm nay</Text>
-                        <div className="text-2xl font-bold text-blue-600">{visits.length}</div>
+                        <div className="text-2xl font-bold text-blue-600">{stats.total}</div>
                     </div>
                 </Card>
                 <Card size="small">
                     <div className="text-center">
                         <Text type="secondary">Đang chờ</Text>
-                        <div className="text-2xl font-bold text-orange-500">
-                            {visits.filter((v) => ['CHECK_IN', 'TRIAGE', 'WAITING'].includes(v.status)).length}
-                        </div>
+                        <div className="text-2xl font-bold text-orange-500">{stats.waiting}</div>
                     </div>
                 </Card>
                 <Card size="small">
                     <div className="text-center">
                         <Text type="secondary">Đang khám</Text>
-                        <div className="text-2xl font-bold text-blue-500">
-                            {visits.filter((v) => v.status === 'IN_PROGRESS').length}
-                        </div>
+                        <div className="text-2xl font-bold text-blue-500">{stats.inProgress}</div>
                     </div>
                 </Card>
                 <Card size="small">
                     <div className="text-center">
                         <Text type="secondary">Hoàn thành</Text>
-                        <div className="text-2xl font-bold text-green-500">
-                            {visits.filter((v) => v.status === 'COMPLETED').length}
-                        </div>
+                        <div className="text-2xl font-bold text-green-500">{stats.completed}</div>
                     </div>
                 </Card>
             </div>

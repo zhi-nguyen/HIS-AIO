@@ -221,6 +221,11 @@ Bạn là trợ lý format dữ liệu. Nhiệm vụ: chuyển đổi phân lo�
   "confidence_score": 0.0-1.0,
   "triage_code": "CODE_GREEN|CODE_YELLOW|CODE_RED|CODE_BLUE",
   "vital_signs_analysis": "Phân tích chỉ số sinh hiệu",
+  "key_factors": [
+      "Yếu tố chính: Mô tả triệu chứng/chỉ số quan trọng nhất dẫn đến phân loại",
+      "Dấu hiệu loại trừ: Các chỉ số bình thường giúp loại trừ cấp cứu (nếu có)",
+      "Cảnh báo: Chỉ số bất thường hoặc triệu chứng cần theo dõi (nếu có)"
+  ],
   "recommended_department": "Mã khoa (VD: NOI_TM, CC)",
   "recommended_department_name": "Tên khoa đầy đủ",
   "time_to_treatment": "Thời gian xử lý",

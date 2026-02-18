@@ -13,7 +13,7 @@ import type { NextRequest } from 'next/server';
 const protectedRoutes = ['/dashboard'];
 
 // Public routes - không cần đăng nhập
-const publicRoutes = ['/login', '/register'];
+const publicRoutes = ['/login', '/register', '/kiosk'];
 
 export function middleware(request: NextRequest) {
     const { pathname } = request.nextUrl;

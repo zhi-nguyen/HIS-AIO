@@ -214,12 +214,26 @@ YÊU CẦU:
                         f"confidence={confidence}, matched_depts={len(matched_departments)}, "
                         f"response_len={len(ai_response)}")
             
+            # Extract key factors cho Reception xem nhanh
+            key_factors = (
+                result.get("key_factors")
+                or metadata.get("key_factors")
+                or []
+            )
+            # Fallback: tạo key_factors cơ bản nếu structured data trống
+            if not key_factors:
+                key_factors = self._extract_key_factors_fallback(
+                    ai_response, triage_code
+                )
+            
             # Cập nhật Visit
             visit.chief_complaint = chief_complaint
             visit.vital_signs = vital_signs if vital_signs else None
             visit.triage_code = triage_code
             visit.triage_ai_response = ai_response
             visit.triage_confidence = confidence
+            visit.triage_key_factors = key_factors if key_factors else None
+            visit.triage_matched_departments = matched_departments if matched_departments else None
             visit.status = Visit.Status.TRIAGE
             
             if recommended_dept:
@@ -235,6 +249,7 @@ YÊU CẦU:
                 'recommended_department_name': recommended_dept.name if recommended_dept else None,
                 'triage_confidence': confidence,
                 'matched_departments': matched_departments,
+                'key_factors': key_factors,
             })
             
         except Exception as e:
@@ -250,7 +265,15 @@ YÊU CẦU:
         Xác nhận kết quả phân luồng, chốt khoa hướng đến.
         
         POST /reception/visits/{id}/confirm-triage/
-        Body: { "department_id": "uuid-of-department" }
+        Body: {
+            "department_id": "uuid-of-department",        // bắt buộc
+            "triage_method": "AI" | "MANUAL",              // bắt buộc
+            "triage_code": "CODE_GREEN",                  // optional
+            "chief_complaint": "Đau bụng...",             // optional
+            "vital_signs": {...},                          // optional
+            "triage_confidence": 85,                       // optional
+            "triage_ai_response": "...",                   // optional
+        }
         """
         visit = self.get_object()
         department_id = request.data.get('department_id')
@@ -270,10 +293,53 @@ YÊU CẦU:
                 status=status.HTTP_404_NOT_FOUND
             )
         
+        # --- Lưu thông tin phân luồng ---
+        # Chief complaint: luôn lưu nếu frontend gửi (kể cả rỗng thay thế cũ)
+        if 'chief_complaint' in request.data:
+            visit.chief_complaint = request.data['chief_complaint'] or visit.chief_complaint
+        
+        # Vital signs: luôn lưu nếu frontend gửi (dict non-empty)
+        vs = request.data.get('vital_signs')
+        if vs and isinstance(vs, dict) and any(v is not None for v in vs.values()):
+            visit.vital_signs = vs
+        
+        # Triage code: từ AI hoặc manual
+        if request.data.get('triage_code'):
+            visit.triage_code = request.data['triage_code']
+        
+        # AI confidence + AI response
+        confidence = request.data.get('triage_confidence')
+        if confidence is not None:
+            visit.triage_confidence = confidence
+        ai_response = request.data.get('triage_ai_response')
+        if ai_response:
+            visit.triage_ai_response = ai_response
+        
+        # --- Triage Method Flag ---
+        triage_method = request.data.get('triage_method', '').upper()
+        if triage_method in ('AI', 'MANUAL'):
+            visit.triage_method = triage_method
+        else:
+            # Tự suy luận: nếu có AI response → AI, ngược lại → MANUAL
+            visit.triage_method = 'AI' if visit.triage_ai_response else 'MANUAL'
+        
+        # Nếu manual triage (chưa có triage_code), đánh dấu CODE_GREEN mặc định
+        if not visit.triage_code:
+            visit.triage_code = 'CODE_GREEN'
+        
+        # Chốt khoa + trạng thái
         visit.confirmed_department = department
+        if not visit.recommended_department:
+            visit.recommended_department = department
         visit.triage_confirmed_at = timezone.now()
         visit.status = Visit.Status.WAITING
         visit.save()
+        
+        logger.info(
+            f"Triage confirmed: visit={visit.visit_code}, "
+            f"dept={department.code}, triage_code={visit.triage_code}, "
+            f"method={visit.triage_method}"
+        )
         
         serializer = self.get_serializer(visit)
         return Response(serializer.data)
@@ -281,13 +347,25 @@ YÊU CẦU:
     # --- Helper methods for parsing AI response ---
     
     def _extract_triage_code(self, ai_response: str) -> str:
-        """Extract CODE_RED/CODE_YELLOW/CODE_GREEN from AI response."""
+        """
+        Extract CODE_RED/CODE_YELLOW/CODE_GREEN from AI response.
+        
+        Lấy code CUỐI CÙNG trong text (= kết luận), không phải đầu tiên
+        (tránh false positive từ thinking steps nhắc đến CODE_RED).
+        """
         text = ai_response.upper()
-        if 'CODE_RED' in text or 'CODE RED' in text:
-            return 'CODE_RED'
-        elif 'CODE_YELLOW' in text or 'CODE YELLOW' in text:
-            return 'CODE_YELLOW'
-        return 'CODE_GREEN'
+        codes = ['CODE_BLUE', 'CODE_RED', 'CODE_YELLOW', 'CODE_GREEN']
+        
+        last_pos = -1
+        last_code = 'CODE_GREEN'  # Default
+        
+        for code in codes:
+            pos = text.rfind(code)
+            if pos > last_pos:
+                last_pos = pos
+                last_code = code
+        
+        return last_code
     
     def _find_department_by_code(self, code: str):
         """Look up department by exact code (VD: NOI_TM, CC)."""
@@ -369,3 +447,35 @@ YÊU CẦU:
                         pass
         
         return matched
+    
+    def _extract_key_factors_fallback(self, ai_response: str, triage_code: str) -> list:
+        """
+        Fallback: tạo key_factors cơ bản từ ai_response text khi structured data trống.
+        
+        Dùng khi triage_node không trả về key_factors (VD: lỗi, legacy flow).
+        """
+        import re
+        factors = []
+        
+        # Tìm Kết luận phân loại
+        conclusion = re.search(
+            r'\*\*Kết luận[^*]*\*\*:?\s*(.+?)$',
+            ai_response, re.DOTALL | re.IGNORECASE
+        )
+        if conclusion:
+            concl_text = conclusion.group(1).strip().split('\n')[0]
+            if len(concl_text) > 80:
+                concl_text = concl_text[:80] + '...'
+            factors.append(f"Yếu tố chính: {concl_text}")
+        
+        # Label theo triage code
+        code_labels = {
+            'CODE_BLUE': 'Hồi sức cấp cứu — xử lý ngay lập tức',
+            'CODE_RED': 'Cấp cứu khẩn — dưới 10 phút',
+            'CODE_YELLOW': 'Khẩn cấp — dưới 60 phút',
+            'CODE_GREEN': 'Không khẩn cấp — có thể chờ',
+        }
+        if not factors:
+            factors.append(f"Phân loại: {code_labels.get(triage_code, triage_code)}")
+        
+        return factors
