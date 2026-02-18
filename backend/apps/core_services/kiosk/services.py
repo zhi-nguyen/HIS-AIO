@@ -16,7 +16,6 @@ from django.db import transaction
 
 from apps.core_services.patients.models import Patient
 from apps.core_services.reception.models import Visit
-from apps.core_services.reception.services import ReceptionService
 from apps.core_services.qms.models import ServiceStation, StationType
 from apps.core_services.qms.services import ClinicalQueueService, QueueService
 from apps.core_services.insurance_mock.mock_data import (
@@ -302,9 +301,12 @@ class KioskService:
         Flow:
         1. Tìm Patient
         2. Check active visit (Layer 2)
-        3. Tạo Visit + ClinicalRecord
-        4. Tạo QueueNumber + QueueEntry
+        3. Gọi ClinicalQueueService.checkin_walkin() — tạo Visit + Queue trong 1 lần
+        4. Cập nhật Visit.chief_complaint (để reception thấy lý do khám)
         5. Trigger AI summarize (background)
+        
+        ⚠️ CHÚ Ý: KHÔNG gọi ReceptionService.create_visit() riêng!
+           checkin_walkin() đã gọi create_visit() bên trong rồi.
         
         Returns:
             {
@@ -328,14 +330,7 @@ class KioskService:
         # 2. Check active visit (Layer 2)
         cls.check_active_visit(patient)
         
-        # 3. Tạo Visit
-        visit = ReceptionService.create_visit(
-            patient=patient,
-            reason=chief_complaint,
-            priority='NORMAL',
-        )
-        
-        # 4. Tạo QueueNumber tại station RECEPTION mặc định
+        # 3. Tạo Visit + Queue bằng checkin_walkin (1 lần duy nhất)
         station = cls._get_default_reception_station()
         
         result = ClinicalQueueService.checkin_walkin(
@@ -345,11 +340,19 @@ class KioskService:
             extra_priority=0,
         )
         
+        visit = result['visit']
+        
+        # 4. Cập nhật Visit.chief_complaint để reception frontend thấy
+        #    (ReceptionService.create_visit chỉ set ClinicalRecord.chief_complaint,
+        #     nhưng TriageModal đọc từ visit.chief_complaint)
+        visit.chief_complaint = chief_complaint
+        visit.save(update_fields=['chief_complaint'])
+        
         # 5. Ước tính thời gian chờ
         estimated_wait = QueueService.get_estimated_wait_time(station)
         
         # 6. Trigger AI summarize (background - fire-and-forget)
-        cls._trigger_ai_summary_async(visit)
+        cls._trigger_ai_summary_async(visit, chief_complaint)
         
         logger.info(
             f"[KIOSK] Register: {patient.patient_code} | "
@@ -392,9 +395,10 @@ class KioskService:
     # AI SUMMARY (Background Task)
     # ------------------------------------------------------------------
     @staticmethod
-    def _trigger_ai_summary_async(visit: Visit):
+    def _trigger_ai_summary_async(visit: Visit, chief_complaint: str):
         """
-        Chạy AI Summarize Agent trong thread riêng (fire-and-forget).
+        Gọi AI Summarize Agent trong thread riêng (fire-and-forget).
+        Kết hợp lý do khám + bệnh án cũ → tóm tắt cho agent Phân Luồng.
         Không block response cho bệnh nhân.
         """
         def _run_summary():
@@ -403,15 +407,10 @@ class KioskService:
                 
                 from apps.medical_services.emr.models import ClinicalRecord
                 
-                # Lấy chief_complaint từ ClinicalRecord
-                try:
-                    record = ClinicalRecord.objects.get(visit=visit)
-                    chief_complaint = record.chief_complaint or ''
-                except ClinicalRecord.DoesNotExist:
-                    chief_complaint = ''
+                # Lấy thông tin bệnh nhân
+                patient = visit.patient
                 
                 # Lấy lịch sử khám cũ
-                patient = visit.patient
                 past_visits = Visit.objects.filter(
                     patient=patient,
                     status=Visit.Status.COMPLETED,
@@ -419,35 +418,83 @@ class KioskService:
                     id=visit.id
                 ).order_by('-check_in_time')[:5]
                 
-                # Build context
+                # Build context từ bệnh án cũ
                 history_lines = []
                 for pv in past_visits:
-                    history_lines.append(
-                        f"- {pv.check_in_time.strftime('%d/%m/%Y') if pv.check_in_time else 'N/A'}: "
-                        f"{pv.chief_complaint or 'Không rõ lý do'} "
-                        f"(Khoa: {pv.confirmed_department.name if pv.confirmed_department else 'N/A'})"
-                    )
+                    pv_complaint = pv.chief_complaint or ''
+                    # Thử lấy thêm từ ClinicalRecord
+                    if not pv_complaint:
+                        try:
+                            cr = ClinicalRecord.objects.get(visit=pv)
+                            pv_complaint = cr.chief_complaint or 'Không rõ lý do'
+                        except ClinicalRecord.DoesNotExist:
+                            pv_complaint = 'Không rõ lý do'
+                    
+                    dept = pv.confirmed_department.name if pv.confirmed_department else 'N/A'
+                    date = pv.check_in_time.strftime('%d/%m/%Y') if pv.check_in_time else 'N/A'
+                    history_lines.append(f"- {date}: {pv_complaint} (Khoa: {dept})")
                 
                 history_text = '\n'.join(history_lines) if history_lines else 'Chưa có lịch sử khám.'
                 
-                summary_text = (
-                    f"📋 TÓM TẮT KIOSK CHECK-IN\n"
-                    f"━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-                    f"👤 Bệnh nhân: {patient.full_name} ({patient.patient_code})\n"
-                    f"🎂 Ngày sinh: {patient.date_of_birth or 'N/A'}\n"
-                    f"📝 Lý do khám hôm nay: {chief_complaint}\n\n"
-                    f"📜 Lịch sử khám gần đây:\n{history_text}\n\n"
-                    f"⚠️ Lưu ý: Chờ đo sinh hiệu trước khi vào phòng khám."
+                # Build message cho Summarize Agent
+                age = ''
+                if patient.date_of_birth:
+                    from datetime import date as date_type
+                    today = date_type.today()
+                    age = today.year - patient.date_of_birth.year
+                    if (today.month, today.day) < (patient.date_of_birth.month, patient.date_of_birth.day):
+                        age -= 1
+                
+                structured_message = (
+                    f"[KIOSK_CHECKIN_SUMMARY]\n"
+                    f"THÔNG TIN BỆNH NHÂN:\n"
+                    f"Mã BN: {patient.patient_code}\n"
+                    f"Họ tên: {patient.full_name}\n"
+                    f"Tuổi: {age or 'N/A'} | Giới: {patient.gender}\n"
+                    f"Ngày sinh: {patient.date_of_birth or 'N/A'}\n\n"
+                    f"LÝ DO KHÁM HÔM NAY:\n{chief_complaint}\n\n"
+                    f"LỊCH SỬ KHÁM GẦN ĐÂY:\n{history_text}\n\n"
+                    f"YÊU CẦU: Tóm tắt thông tin bệnh nhân, kết hợp lý do khám hôm nay "
+                    f"với bệnh án cũ. Đưa ra các chỉ số cần lưu ý khi đo sinh hiệu "
+                    f"và gợi ý cho agent Phân Luồng."
                 )
                 
-                # Lưu vào Visit
-                visit.triage_ai_response = summary_text
-                visit.save(update_fields=['triage_ai_response'])
+                # Gọi summarize_node trực tiếp
+                from langchain_core.messages import HumanMessage
+                from apps.ai_engine.agents.summarize_agent.node import summarize_node
                 
-                logger.info(f"[KIOSK] AI Summary completed for visit: {visit.visit_code}")
+                state = {
+                    "messages": [HumanMessage(content=structured_message)],
+                    "current_agent": "summarize",
+                }
+                
+                result = summarize_node(state)
+                
+                # Lấy kết quả từ AI
+                ai_messages = result.get("messages", [])
+                if ai_messages:
+                    ai_content = ai_messages[0].content
+                    # Lưu vào Visit.triage_ai_response để reception / triage agent thấy
+                    visit.refresh_from_db()
+                    visit.triage_ai_response = ai_content
+                    visit.save(update_fields=['triage_ai_response'])
+                    logger.info(f"[KIOSK] AI Summary completed for visit: {visit.visit_code}")
+                else:
+                    logger.warning(f"[KIOSK] AI Summary returned empty for visit: {visit.visit_code}")
                 
             except Exception as e:
                 logger.error(f"[KIOSK] AI Summary error for visit {visit.visit_code}: {e}")
+                # Fallback: lưu text đơn giản nếu AI fail
+                try:
+                    visit.refresh_from_db()
+                    visit.triage_ai_response = (
+                        f"[Tóm tắt tự động - Kiosk]\n"
+                        f"Lý do khám: {chief_complaint}\n"
+                        f"(AI tóm tắt không khả dụng, vui lòng xem chi tiết tại quầy.)"
+                    )
+                    visit.save(update_fields=['triage_ai_response'])
+                except Exception:
+                    pass
         
         thread = threading.Thread(target=_run_summary, daemon=True)
         thread.start()

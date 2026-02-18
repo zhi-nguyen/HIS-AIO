@@ -8,6 +8,7 @@ class UUIDModel(models.Model):
     is_active = models.BooleanField(default=True)
     version = models.IntegerField(default=1)
 
+
     class Meta:
         abstract = True
 
