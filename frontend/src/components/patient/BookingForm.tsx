@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { Input, Button, Select, Typography } from 'antd';
 import {
     CalendarOutlined,
@@ -51,20 +51,20 @@ export default function BookingForm({
     onSubmitted,
     onCancel,
 }: BookingFormProps) {
-    const [patientName, setPatientName] = useState('');
-    const [phone, setPhone] = useState('');
+    const patientNameRef = useRef('');
+    const phoneRef = useRef('');
+    const reasonRef = useRef(patientNote);
     const [selectedTime, setSelectedTime] = useState<string>(suggestedTimes[0] || '');
-    const [reason, setReason] = useState(patientNote);
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState('');
 
     const handleSubmit = async () => {
         // Validate
-        if (!patientName.trim()) {
+        if (!patientNameRef.current.trim()) {
             setError('Vui lòng nhập họ tên');
             return;
         }
-        if (!phone.trim() || phone.length < 9) {
+        if (!phoneRef.current.trim() || phoneRef.current.length < 9) {
             setError('Vui lòng nhập số điện thoại hợp lệ');
             return;
         }
@@ -82,12 +82,12 @@ export default function BookingForm({
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    patient_name: patientName.trim(),
-                    phone: phone.trim(),
+                    patient_name: patientNameRef.current.trim(),
+                    phone: phoneRef.current.trim(),
                     department,
                     date,
                     time: selectedTime,
-                    reason: reason.trim(),
+                    reason: reasonRef.current.trim(),
                 }),
             });
 
@@ -170,8 +170,8 @@ export default function BookingForm({
                     <Input
                         prefix={<UserOutlined style={{ color: '#bbb' }} />}
                         placeholder="Nguyễn Văn A"
-                        value={patientName}
-                        onChange={(e) => setPatientName(e.target.value)}
+                        defaultValue=""
+                        onChange={(e) => { patientNameRef.current = e.target.value; }}
                         size="small"
                         style={{ borderRadius: '6px' }}
                     />
@@ -184,8 +184,8 @@ export default function BookingForm({
                     <Input
                         prefix={<PhoneOutlined style={{ color: '#bbb' }} />}
                         placeholder="0901234567"
-                        value={phone}
-                        onChange={(e) => setPhone(e.target.value)}
+                        defaultValue=""
+                        onChange={(e) => { phoneRef.current = e.target.value; }}
                         size="small"
                         style={{ borderRadius: '6px' }}
                         maxLength={11}
@@ -218,8 +218,8 @@ export default function BookingForm({
                     </Text>
                     <Input.TextArea
                         placeholder="Mô tả triệu chứng hoặc lý do khám..."
-                        value={reason}
-                        onChange={(e) => setReason(e.target.value)}
+                        defaultValue={patientNote}
+                        onChange={(e) => { reasonRef.current = e.target.value; }}
                         rows={2}
                         style={{ borderRadius: '6px', fontSize: '13px' }}
                     />

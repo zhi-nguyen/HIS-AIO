@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import {
     Card,
     Input,
@@ -56,7 +56,7 @@ export default function TriageForm({ onComplete }: TriageFormProps) {
     const [currentStep, setCurrentStep] = useState(0);
 
     // --- Step 1: Xác thực danh tính ---
-    const [identityCode, setIdentityCode] = useState('');
+    const identityCodeRef = useRef('');
     const [identityMethod, setIdentityMethod] = useState<'qr' | 'manual'>('qr');
     const [scanLoading, setScanLoading] = useState(false);
     const [patientFound, setPatientFound] = useState<{
@@ -67,8 +67,9 @@ export default function TriageForm({ onComplete }: TriageFormProps) {
     } | null>(null);
     const [identityError, setIdentityError] = useState('');
 
-    // --- Step 2: Lý do khám ---
-    const [chiefComplaint, setChiefComplaint] = useState('');
+    // --- Step 2: Lý do khám (uncontrolled — chỉ đọc khi submit) ---
+    const chiefComplaintRef = useRef('');
+    const [hasComplaint, setHasComplaint] = useState(false);
 
     // --- Step 3: Kết quả ---
     const [submitLoading, setSubmitLoading] = useState(false);
@@ -92,7 +93,7 @@ export default function TriageForm({ onComplete }: TriageFormProps) {
     }, [messageApi]);
 
     const handleLookupIdentity = async () => {
-        if (!identityCode.trim()) {
+        if (!identityCodeRef.current.trim()) {
             messageApi.warning('Vui lòng nhập số CCCD hoặc mã BHYT');
             return;
         }
@@ -131,7 +132,7 @@ export default function TriageForm({ onComplete }: TriageFormProps) {
     // Step 2 → 3: Submit đăng ký khám
     // ========================================================================
     const handleSubmitRegistration = async () => {
-        if (!chiefComplaint.trim()) {
+        if (!chiefComplaintRef.current.trim()) {
             messageApi.warning('Vui lòng nhập lý do khám');
             return;
         }
@@ -179,11 +180,12 @@ export default function TriageForm({ onComplete }: TriageFormProps) {
     // --- Reset toàn bộ ---
     const handleReset = () => {
         setCurrentStep(0);
-        setIdentityCode('');
+        identityCodeRef.current = '';
         setIdentityMethod('qr');
         setPatientFound(null);
         setIdentityError('');
-        setChiefComplaint('');
+        chiefComplaintRef.current = '';
+        setHasComplaint(false);
         setKioskResult(null);
     };
 
@@ -279,8 +281,8 @@ export default function TriageForm({ onComplete }: TriageFormProps) {
                                 <Input
                                     size="large"
                                     placeholder="Nhập 12 số CCCD hoặc mã BHYT..."
-                                    value={identityCode}
-                                    onChange={e => setIdentityCode(e.target.value)}
+                                    defaultValue=""
+                                    onChange={e => { identityCodeRef.current = e.target.value; }}
                                     maxLength={15}
                                     style={{ fontSize: 18, height: 56, marginBottom: 12 }}
                                     onPressEnter={handleLookupIdentity}
@@ -334,8 +336,11 @@ export default function TriageForm({ onComplete }: TriageFormProps) {
                     <TextArea
                         rows={5}
                         placeholder="Ví dụ: Đau đầu kéo dài 3 ngày, kèm buồn nôn, sốt nhẹ..."
-                        value={chiefComplaint}
-                        onChange={e => setChiefComplaint(e.target.value)}
+                        defaultValue=""
+                        onChange={e => {
+                            chiefComplaintRef.current = e.target.value;
+                            setHasComplaint(!!e.target.value.trim());
+                        }}
                         style={{ fontSize: 16, marginBottom: 16, borderRadius: 8 }}
                         maxLength={1000}
                         showCount
@@ -350,7 +355,7 @@ export default function TriageForm({ onComplete }: TriageFormProps) {
                             size="large"
                             onClick={handleSubmitRegistration}
                             loading={submitLoading}
-                            disabled={!chiefComplaint.trim() || cooldown}
+                            disabled={!hasComplaint || cooldown}
                             style={{ height: 52, fontSize: 16, paddingInline: 40 }}
                         >
                             {submitLoading ? 'Đang đăng ký...' : 'Xác nhận đăng ký'}
