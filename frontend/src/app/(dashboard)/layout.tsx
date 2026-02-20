@@ -22,6 +22,8 @@ import {
 import type { MenuProps } from 'antd';
 import { useAuth } from '@/contexts/AuthContext';
 import { getMenuItems, roleConfig, StaffRole, canAccessRoute, getDefaultRoute } from '@/lib/roles';
+import { useRemoteScanner } from '@/hooks/useRemoteScanner';
+import ScannerStatus from '@/components/common/ScannerStatus';
 
 const { Header, Sider, Content } = Layout;
 const { Text } = Typography;
@@ -52,6 +54,9 @@ export default function DashboardLayout({
     const pathname = usePathname();
     const { user, logout, isAuthenticated, isLoading } = useAuth();
     const [collapsed, setCollapsed] = useState(false);
+
+    // Remote Scanner hook
+    const { isConnected: scannerConnected, stationId: scannerStation, lastScan, setStationId: setScannerStation, disconnect: disconnectScanner } = useRemoteScanner();
 
     const userRole = (user?.staff_profile?.role as StaffRole) || 'RECEPTIONIST';
     const roleInfo = roleConfig[userRole];
@@ -198,6 +203,15 @@ export default function DashboardLayout({
                     </Space>
 
                     <Space size="middle">
+                        {/* Scanner Status */}
+                        <ScannerStatus
+                            isConnected={scannerConnected}
+                            stationId={scannerStation}
+                            lastScan={lastScan}
+                            onSetStationId={setScannerStation}
+                            onDisconnect={disconnectScanner}
+                        />
+
                         {/* Notifications */}
                         <Button type="text" icon={<BellOutlined />} className="text-lg" />
 

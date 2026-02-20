@@ -25,13 +25,28 @@ import {
     CheckOutlined,
 } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
-import { visitApi, departmentApi } from '@/lib/services';
+import { visitApi, departmentApi, patientApi } from '@/lib/services';
 import type { Visit, Department } from '@/types';
 import TriageModal from './TriageModal';
 import CreateVisitModal from './CreateVisitModal';
 import dayjs from 'dayjs';
 
 const { Title, Text } = Typography;
+
+/**
+ * Helpers: Detect CCCD / BHYT from raw scanned string
+ */
+function isCCCD(raw: string): boolean {
+    // CCCD: exactly 12 digits
+    return /^\d{12}$/.test(raw.trim());
+}
+
+function isBHYT(raw: string): boolean {
+    // BHYT new format: 10 chars alphanumeric (e.g. DN4950001234)
+    // Or 15-char legacy format
+    const trimmed = raw.trim();
+    return /^[A-Z]{2}\d{8,13}$/.test(trimmed) || /^\d{10,15}$/.test(trimmed);
+}
 
 /**
  * Reception Page
@@ -64,6 +79,7 @@ export default function ReceptionPage() {
     const [triageModalOpen, setTriageModalOpen] = useState(false);
     const [triageVisit, setTriageVisit] = useState<Visit | null>(null);
     const [departments, setDepartments] = useState<Department[]>([]);
+    const [scannedPatientId, setScannedPatientId] = useState<string | null>(null);
 
     // Fetch visits
     const fetchVisits = useCallback(async () => {
@@ -94,6 +110,49 @@ export default function ReceptionPage() {
         fetchVisits();
         fetchDepartments();
     }, [fetchVisits, fetchDepartments]);
+
+    // ===== REMOTE SCANNER: Listen for HIS_SCANNED_DATA =====
+    useEffect(() => {
+        const handleScan = async (e: Event) => {
+            const rawData = (e as CustomEvent).detail as string;
+            if (!rawData) return;
+
+            try {
+                if (isCCCD(rawData)) {
+                    // Search patient by citizen ID (CCCD)
+                    message.loading({ content: `Đang tra cứu CCCD: ${rawData}...`, key: 'scan' });
+                    const patients = await patientApi.search(rawData);
+                    if (patients.length > 0) {
+                        message.success({ content: `Tìm thấy: ${patients[0].full_name || patients[0].last_name + ' ' + patients[0].first_name}`, key: 'scan' });
+                        // Auto open create visit with the found patient
+                        setScannedPatientId(patients[0].id);
+                        setIsModalOpen(true);
+                    } else {
+                        message.warning({ content: `Không tìm thấy bệnh nhân với CCCD: ${rawData}`, key: 'scan' });
+                    }
+                } else if (isBHYT(rawData)) {
+                    // Search by BHYT code
+                    message.loading({ content: `Đang tra cứu BHYT: ${rawData}...`, key: 'scan' });
+                    const patients = await patientApi.search(rawData);
+                    if (patients.length > 0) {
+                        message.success({ content: `Tìm thấy: ${patients[0].full_name || patients[0].last_name + ' ' + patients[0].first_name}`, key: 'scan' });
+                        setScannedPatientId(patients[0].id);
+                        setIsModalOpen(true);
+                    } else {
+                        message.warning({ content: `Không tìm thấy bệnh nhân với BHYT: ${rawData}`, key: 'scan' });
+                    }
+                } else {
+                    message.info({ content: `Mã quét: ${rawData.substring(0, 30)}${rawData.length > 30 ? '...' : ''}`, key: 'scan', duration: 3 });
+                }
+            } catch (error) {
+                console.error('Error processing scan:', error);
+                message.error({ content: 'Lỗi tra cứu dữ liệu quét', key: 'scan' });
+            }
+        };
+
+        window.addEventListener('HIS_SCANNED_DATA', handleScan);
+        return () => window.removeEventListener('HIS_SCANNED_DATA', handleScan);
+    }, [message]);
 
 
     // Mở modal phân luồng — LUÔN fetch fresh data từ backend
