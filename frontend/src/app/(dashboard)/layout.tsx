@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { Layout, Menu, Avatar, Dropdown, Space, Typography, Spin, Button, Tag } from 'antd';
+import { Toaster } from 'sonner';
 import {
     DashboardOutlined,
     UserOutlined,
@@ -232,6 +233,7 @@ export default function DashboardLayout({
                     {children}
                 </Content>
             </Layout>
+            <Toaster position="bottom-right" richColors closeButton duration={3000} />
         </Layout>
     );
 }

@@ -1,0 +1,38 @@
+/* ── Reception page animations ─────────────────────────────── */
+
+/* Row highlight: bg-green-100 fading to transparent over 3s */
+@keyframes highlight-row {
+    0% {
+        background-color: #dcfce7;
+        /* green-100 */
+    }
+
+    70% {
+        background-color: #dcfce7;
+    }
+
+    100% {
+        background-color: transparent;
+    }
+}
+
+.reception-highlight-row>td {
+    animation: highlight-row 3s ease-out forwards;
+}
+
+/* Badge pulse */
+@keyframes badge-pulse {
+
+    0%,
+    100% {
+        transform: scale(1);
+    }
+
+    50% {
+        transform: scale(1.25);
+    }
+}
+
+.badge-pulse .ant-badge-count {
+    animation: badge-pulse 0.6s ease-in-out 3;
+}
