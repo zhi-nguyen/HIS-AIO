@@ -33,6 +33,7 @@ ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='localhost,127.0.0.1', cast=Csv(
 # Application definition
 
 INSTALLED_APPS = [
+    'daphne',  # ASGI server — must be before django.contrib.staticfiles
     'corsheaders',
     'django.contrib.admin',
     'django.contrib.auth',
@@ -40,6 +41,7 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'channels',  # Django Channels for WebSocket
     'apps.api',  # Streaming API 
     'apps.ai_engine.agents',
     'apps.ai_engine.rag_service',
@@ -59,6 +61,7 @@ INSTALLED_APPS = [
     'apps.core_services.qms',  # Queue Management System
     'apps.core_services.billing',  # Billing & Payment
     'apps.core_services.kiosk',  # Kiosk Tự Phục Vụ
+    'apps.core_services.scanner',  # Remote Scanner WebSocket
 ]
 
 MIDDLEWARE = [
@@ -108,6 +111,8 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = 'config.wsgi.application'
+ASGI_APPLICATION = 'config.asgi.application'
+
 
 
 # Database
@@ -132,6 +137,16 @@ REDIS_HOST = config('REDIS_HOST', default='localhost')
 REDIS_PORT = config('REDIS_PORT', default=6379, cast=int)
 REDIS_DB = config('REDIS_DB', default=0, cast=int)
 REDIS_AGENT_MEMORY_TTL = config('REDIS_AGENT_MEMORY_TTL', default=86400, cast=int)
+
+# Django Channels — Channel Layers (uses Redis above)
+CHANNEL_LAYERS = {
+    'default': {
+        'BACKEND': 'channels_redis.core.RedisChannelLayer',
+        'CONFIG': {
+            'hosts': [(REDIS_HOST, REDIS_PORT)],
+        },
+    },
+}
 
 # RAG Service Configuration
 import os

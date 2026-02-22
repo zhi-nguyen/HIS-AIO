@@ -13,4 +13,18 @@ from django.core.asgi import get_asgi_application
 
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings')
 
-application = get_asgi_application()
+# Initialize Django ASGI application early to ensure AppRegistry is populated
+# before importing consumers or routing.
+django_asgi_app = get_asgi_application()
+
+from channels.routing import ProtocolTypeRouter, URLRouter
+from apps.core_services.scanner import routing as scanner_routing
+from apps.core_services.reception import routing as reception_routing
+
+application = ProtocolTypeRouter({
+    "http": django_asgi_app,
+    "websocket": URLRouter(
+        scanner_routing.websocket_urlpatterns
+        + reception_routing.websocket_urlpatterns
+    ),
+})

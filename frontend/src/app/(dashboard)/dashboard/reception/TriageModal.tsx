@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useRef } from 'react';
 import {
     Modal,
     Card,
@@ -250,7 +250,8 @@ export default function TriageModal({ visit, open, departments, onClose, onSucce
     const { message } = App.useApp();
 
     // --- Form state ---
-    const [chiefComplaint, setChiefComplaint] = useState('');
+    const chiefComplaintRef = useRef('');
+    const [hasComplaint, setHasComplaint] = useState(false);
     const [vitalSigns, setVitalSigns] = useState<VitalSignsForm>({});
     const [painScale, setPainScale] = useState<number | undefined>(undefined);
     const [consciousness, setConsciousness] = useState<string>('');
@@ -273,7 +274,8 @@ export default function TriageModal({ visit, open, departments, onClose, onSucce
     const handleAfterOpenChange = useCallback((isOpen: boolean) => {
         if (isOpen && visit) {
             // Luôn set chief complaint từ visit (Kiosk hoặc đã nhập trước)
-            setChiefComplaint(visit.chief_complaint || '');
+            chiefComplaintRef.current = visit.chief_complaint || '';
+            setHasComplaint(!!visit.chief_complaint);
             setShowFullAnalysis(false);
             setConfirmLoading(false);
 
@@ -350,7 +352,7 @@ export default function TriageModal({ visit, open, departments, onClose, onSucce
         if (!visit) return;
 
         // Validate: cần ít nhất lý do khám
-        if (!chiefComplaint.trim()) {
+        if (!chiefComplaintRef.current.trim()) {
             message.warning('Vui lòng nhập lý do khám');
             return;
         }
@@ -358,7 +360,7 @@ export default function TriageModal({ visit, open, departments, onClose, onSucce
         setTriageLoading(true);
         try {
             const result = await visitApi.triage(visit.id, {
-                chief_complaint: chiefComplaint,
+                chief_complaint: chiefComplaintRef.current,
                 vital_signs: vitalSigns,
                 pain_scale: painScale,
                 consciousness: consciousness || undefined,
@@ -420,7 +422,7 @@ export default function TriageModal({ visit, open, departments, onClose, onSucce
                 department_id: selectedDeptId,
                 triage_method: triageMethod,
                 triage_code: triageResult?.triage_code,
-                chief_complaint: chiefComplaint || undefined,
+                chief_complaint: chiefComplaintRef.current || undefined,
                 vital_signs: hasVitals ? cleanVitalSigns : undefined,
                 triage_confidence: triageResult?.triage_confidence,
                 triage_ai_response: triageResult?.ai_response,
@@ -514,8 +516,12 @@ export default function TriageModal({ visit, open, departments, onClose, onSucce
                             <TextArea
                                 rows={2}
                                 placeholder="Nhập hoặc chỉnh sửa lý do khám, triệu chứng chính..."
-                                value={chiefComplaint}
-                                onChange={(e) => setChiefComplaint(e.target.value)}
+                                defaultValue={visit.chief_complaint || ''}
+                                key={visit.id}
+                                onChange={(e) => {
+                                    chiefComplaintRef.current = e.target.value;
+                                    setHasComplaint(!!e.target.value.trim());
+                                }}
                                 disabled={triageLoading}
                                 style={{ marginTop: 6, fontSize: 14 }}
                             />
@@ -530,7 +536,7 @@ export default function TriageModal({ visit, open, departments, onClose, onSucce
                             style={{ marginTop: 12 }}
                             block
                             size="large"
-                            disabled={!chiefComplaint.trim()}
+                            disabled={!hasComplaint}
                         >
                             {triageLoading ? 'AI đang phân tích...' : 'AI Phân luồng'}
                         </Button>
