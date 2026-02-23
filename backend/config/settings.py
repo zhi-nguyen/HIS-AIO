@@ -62,6 +62,7 @@ INSTALLED_APPS = [
     'apps.core_services.billing',  # Billing & Payment
     'apps.core_services.kiosk',  # Kiosk Tự Phục Vụ
     'apps.core_services.scanner',  # Remote Scanner WebSocket
+    'apps.interoperability',  # Liên thông Y tế (FHIR / DICOM)
 ]
 
 MIDDLEWARE = [
@@ -163,6 +164,11 @@ GOOGLE_API_KEY = config('GOOGLE_API_KEY', default='')
 # SSE Streaming Configuration
 SSE_KEEPALIVE_INTERVAL = config('SSE_KEEPALIVE_INTERVAL', default=15, cast=int)  # seconds
 SSE_MAX_STREAM_DURATION = config('SSE_MAX_STREAM_DURATION', default=120, cast=int)  # seconds
+
+# Interoperability Settings (FHIR / DICOM)
+FHIR_SERVER_URL = config('FHIR_SERVER_URL', default='')
+PACS_SERVER_URL = config('PACS_SERVER_URL', default='')
+INTEROP_MOCK_MODE = config('INTEROP_MOCK_MODE', default=True, cast=bool)
 
 
 # Password validation
