@@ -1,32 +1,17 @@
-# Build stage
-FROM node:20-alpine AS builder
-
-WORKDIR /app
-
-# Copy package files
-COPY package*.json ./
-
-# Install dependencies
-RUN npm install
-
-# Copy source code
-COPY . .
-
-# Build the application
-# Use npm run build if you have a build script, otherwise for dev just copy
-# RUN npm run build
-
-# Production stage (or Dev stage for now)
+# Dev-friendly single-stage Dockerfile
 FROM node:20-alpine
 
 WORKDIR /app
 
-# Copy from builder
-COPY --from=builder /app /app
+# Copy package files and install dependencies
+COPY package*.json ./
+RUN npm install
+
+# Copy source code (will be overridden by volume mount in dev)
+COPY . .
 
 # Expose port
 EXPOSE 3000
 
-# Start command
-# Adjust this based on your package.json scripts (e.g., 'dev', 'start')
+# Start dev server
 CMD ["npm", "run", "dev"]

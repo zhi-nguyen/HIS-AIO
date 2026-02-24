@@ -178,26 +178,44 @@ export const qmsApi = {
     },
 
     // Hoàn thành số hiện tại
-    completeQueue: async (queueId: string): Promise<QueueNumber> => {
-        const response = await api.patch(`/qms/queues/${queueId}/`, {
+    completeQueue: async (entryId: string): Promise<QueueNumber> => {
+        const response = await api.patch(`/qms/entries/${entryId}/status/`, {
             status: 'COMPLETED',
         });
         return response.data;
     },
 
     // Bỏ qua số
-    skipQueue: async (queueId: string): Promise<QueueNumber> => {
-        const response = await api.patch(`/qms/queues/${queueId}/`, {
+    skipQueue: async (entryId: string): Promise<QueueNumber> => {
+        const response = await api.patch(`/qms/entries/${entryId}/status/`, {
             status: 'SKIPPED',
+        });
+        return response.data;
+    },
+
+    // Đã gọi nhưng không có mặt
+    noShowQueue: async (entryId: string): Promise<QueueNumber> => {
+        const response = await api.patch(`/qms/entries/${entryId}/status/`, {
+            status: 'NO_SHOW',
+        });
+        return response.data;
+    },
+
+    // Gọi lại bệnh nhân vắng
+    recallQueue: async (entryId: string): Promise<QueueNumber> => {
+        const response = await api.patch(`/qms/entries/${entryId}/status/`, {
+            status: 'CALLED',
         });
         return response.data;
     },
 
     // === Service Stations ===
 
-    // Lấy danh sách stations
-    getStations: async (): Promise<ServiceStation[]> => {
-        const response = await api.get('/qms/stations/');
+    // Lấy danh sách stations (hỗ trợ filter station_type)
+    getStations: async (stationType?: string): Promise<ServiceStation[]> => {
+        const params: Record<string, string> = {};
+        if (stationType) params.station_type = stationType;
+        const response = await api.get('/qms/stations/', { params });
         return response.data.results || response.data;
     },
 

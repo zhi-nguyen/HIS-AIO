@@ -85,6 +85,7 @@ uuid_utils==0.14.0
 websockets==15.0.1
 xxhash==3.6.0
 zstandard==0.25.0
-channels>=4.0
-channels-redis>=4.2
-daphne>=4.0
+channels==4.2.0
+channels-redis==4.2.1
+daphne==4.1.2
+uvicorn[standard]==0.34.0
