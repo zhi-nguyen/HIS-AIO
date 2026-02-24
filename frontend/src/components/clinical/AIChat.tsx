@@ -5,7 +5,7 @@ import { Card, Input, Button, Space, Typography, Avatar, Spin, Tooltip } from 'a
 const { TextArea } = Input;
 import {
     SendOutlined,
-    RobotOutlined,
+    MedicineBoxOutlined,
     UserOutlined,
     CloseOutlined,
     CopyOutlined,
@@ -403,7 +403,7 @@ export default function AIChat({ visitId, patientContext, onClose }: AIChatProps
         <Card
             title={
                 <Space>
-                    <RobotOutlined className="text-blue-500" />
+                    <MedicineBoxOutlined className="text-blue-500" />
                     <span>Trợ lý AI</span>
                 </Space>
             }
@@ -428,7 +428,7 @@ export default function AIChat({ visitId, patientContext, onClose }: AIChatProps
                         className={`flex gap-2 ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}
                     >
                         <Avatar
-                            icon={msg.role === 'user' ? <UserOutlined /> : <RobotOutlined />}
+                            icon={msg.role === 'user' ? <UserOutlined /> : <MedicineBoxOutlined />}
                             className={msg.role === 'user' ? 'bg-blue-500' : 'bg-green-500'}
                             size="small"
                         />
@@ -471,7 +471,7 @@ export default function AIChat({ visitId, patientContext, onClose }: AIChatProps
                 ))}
                 {loading && messages[messages.length - 1]?.content === '' && !messages[messages.length - 1]?.isThinking && (
                     <div className="flex gap-2">
-                        <Avatar icon={<RobotOutlined />} className="bg-green-500" size="small" />
+                        <Avatar icon={<MedicineBoxOutlined />} className="bg-green-500" size="small" />
                         <div className="bg-gray-100 p-2 rounded-lg">
                             <Spin size="small" />
                         </div>

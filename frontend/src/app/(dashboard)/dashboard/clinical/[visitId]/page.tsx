@@ -21,7 +21,6 @@ import {
 } from 'antd';
 import {
     SaveOutlined,
-    RobotOutlined,
     HeartOutlined,
     FileTextOutlined,
     MedicineBoxOutlined,
@@ -310,7 +309,7 @@ export default function ClinicalExamPage() {
                                     extra={
                                         <Button
                                             type="primary"
-                                            icon={<RobotOutlined />}
+                                            icon={<MedicineBoxOutlined />}
                                             onClick={handleAssessVitals}
                                             loading={aiLoading}
                                         >
@@ -373,7 +372,7 @@ export default function ClinicalExamPage() {
                                             }
                                             type="info"
                                             showIcon
-                                            icon={<RobotOutlined />}
+                                            icon={<MedicineBoxOutlined />}
                                             className="mt-4"
                                         />
                                     )}
@@ -410,7 +409,7 @@ export default function ClinicalExamPage() {
 
             {/* AI Suggestions */}
             {record?.ai_suggestion_json && (
-                <Card title={<><RobotOutlined /> Gợi ý từ AI</>} size="small">
+                <Card title={<><MedicineBoxOutlined /> Gợi ý từ AI</>} size="small">
                     <pre className="text-sm bg-gray-50 p-3 rounded">
                         {JSON.stringify(record.ai_suggestion_json, null, 2)}
                     </pre>

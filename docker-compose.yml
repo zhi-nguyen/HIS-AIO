@@ -19,6 +19,18 @@ services:
       timeout: 5s
       retries: 5
 
+  redis:
+    image: redis:7-alpine
+    container_name: his_redis
+    ports:
+      - "6379:6379"
+    restart: always
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
   backend:
     build:
       context: ./backend
@@ -34,11 +46,16 @@ services:
       - PYTHONUNBUFFERED=1
       # Database settings from .env will be used, but explicit override here guarantees connection to docker service
       - POSTGRES_HOST=db
+      - REDIS_HOST=redis
       # RAG Settings can be removed here if they are in .env, or kept as overrides
     depends_on:
       db:
         condition: service_healthy
-    command: python manage.py runserver 0.0.0.0:8000
+      redis:
+        condition: service_healthy
+    command: >
+      sh -c "python manage.py migrate --noinput &&
+             uvicorn config.asgi:application --host 0.0.0.0 --port 8000 --reload --reload-dir /app"
     restart: always
 
   frontend:
@@ -55,6 +72,7 @@ services:
       - NODE_ENV=development
       - WATCHPACK_POLLING=true
       - CHOKIDAR_USEPOLLING=true
+      - WATCHPACK_POLL_INTERVAL_DEFAULT=1000
       - NEXT_PUBLIC_API_URL=http://localhost:8000/api/v1
     stdin_open: true
     tty: true
