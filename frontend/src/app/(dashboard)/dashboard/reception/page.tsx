@@ -15,25 +15,30 @@ import {
     App,
     Descriptions,
     Empty,
+    Divider,
 } from 'antd';
 import {
     PlusOutlined,
     SearchOutlined,
     UserAddOutlined,
-    CheckCircleOutlined,
-    ReloadOutlined,
-    RobotOutlined,
     MedicineBoxOutlined,
+    ReloadOutlined,
     CheckOutlined,
     SoundOutlined,
     CloseCircleOutlined,
+    ForwardOutlined,
+    EyeInvisibleOutlined,
+    TeamOutlined,
+    PhoneOutlined,
+    AlertOutlined,
 } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
-import { visitApi, departmentApi, patientApi } from '@/lib/services';
-import type { Visit, Department } from '@/types';
+import { visitApi, departmentApi, patientApi, qmsApi } from '@/lib/services';
+import type { Visit, Department, CalledPatient, ServiceStation, NoShowEntry } from '@/types';
 import TriageModal from './TriageModal';
 import CreateVisitModal from './CreateVisitModal';
 import { useReceptionSocket, WsVisitPayload } from '@/hooks/useReceptionSocket';
+import { useQmsSocket } from '@/hooks/useQmsSocket';
 import { toast } from 'sonner';
 import dayjs from 'dayjs';
 import './reception-highlight.css';
@@ -104,12 +109,13 @@ const priorityConfig: Record<string, { color: string; label: string }> = {
     EMERGENCY: { color: 'red', label: 'Cấp cứu' },
 };
 
-const PRIORITY_ORDER: Record<string, number> = {
-    EMERGENCY: 0,
-    PRIORITY: 1,
-    ONLINE_BOOKING: 2,
-    NORMAL: 3,
+const sourceConfig: Record<string, { color: string; label: string }> = {
+    EMERGENCY: { color: 'red', label: 'Cấp cứu' },
+    ONLINE_BOOKING: { color: 'blue', label: 'Đặt lịch' },
+    WALK_IN: { color: 'default', label: 'Vãng lai' },
 };
+
+const MAX_CONCURRENT = 3;
 
 // ── Component ────────────────────────────────────────────────
 
@@ -118,9 +124,7 @@ export default function ReceptionPage() {
     const [visits, setVisits] = useState<Visit[]>([]);
     const [loading, setLoading] = useState(false);
     const [isModalOpen, setIsModalOpen] = useState(false);
-
-    // Current patient (receptionist is working on)
-    const [currentVisit, setCurrentVisit] = useState<Visit | null>(null);
+    const [isEmergencyModalOpen, setIsEmergencyModalOpen] = useState(false);
 
     // Triage
     const [triageModalOpen, setTriageModalOpen] = useState(false);
@@ -133,6 +137,14 @@ export default function ReceptionPage() {
     const [soundEnabled, setSoundEnabled] = useState(true);
     const [badgePulse, setBadgePulse] = useState(false);
     const highlightTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+
+    // QMS state
+    const [stations, setStations] = useState<ServiceStation[]>([]);
+    const [selectedStation, setSelectedStation] = useState<string | null>(null);
+    const [currentlyServing, setCurrentlyServing] = useState<CalledPatient[]>([]);
+    const [noShowList, setNoShowList] = useState<NoShowEntry[]>([]);
+    const [callLoading, setCallLoading] = useState(false);
+    const [pendingEntryId, setPendingEntryId] = useState<string | null>(null);
 
     // Load sound preference
     useEffect(() => {
@@ -164,37 +176,68 @@ export default function ReceptionPage() {
         }
     }, []);
 
+    const fetchStations = useCallback(async () => {
+        try {
+            // Chỉ lấy stations loại RECEPTION — khớp với station mà kiosk tạo entry
+            const data = await qmsApi.getStations('RECEPTION');
+            setStations(data);
+            if (data.length > 0 && !selectedStation) {
+                setSelectedStation(data[0].id);
+            }
+        } catch (error) {
+            console.error('Error fetching stations:', error);
+        }
+    }, [selectedStation]);
+
+    const fetchQueueBoard = useCallback(async () => {
+        if (!selectedStation) return;
+        try {
+            const data = await qmsApi.getQueueBoard(selectedStation);
+            setCurrentlyServing(data.currently_serving || []);
+            setNoShowList(data.no_show_list || []);
+        } catch (err) {
+            console.error('fetchQueueBoard failed:', err);
+            setCurrentlyServing([]);
+            setNoShowList([]);
+        }
+    }, [selectedStation]);
+
     useEffect(() => {
         fetchVisits();
         fetchDepartments();
-    }, [fetchVisits, fetchDepartments]);
+        fetchStations();
+    }, [fetchVisits, fetchDepartments, fetchStations]);
+
+    // Queue board via WebSocket (replaces polling)
+    useQmsSocket({
+        stationId: selectedStation,
+        onBoardUpdate: useCallback((data) => {
+            setCurrentlyServing(data.currently_serving || []);
+            setNoShowList(data.no_show_list || []);
+        }, []),
+    });
 
     // ── WebSocket: Real-time new visits ──────────────────────
 
     const handleNewVisitWs = useCallback((wsVisit: WsVisitPayload) => {
         const patientName = wsVisit.patient?.full_name || 'Bệnh nhân';
 
-        // Toast notification
         toast.success(`${patientName} vừa đăng ký thành công`, {
             description: `Mã: ${wsVisit.visit_code} — STT: ${wsVisit.queue_number}`,
         });
 
-        // Sound
         if (soundEnabled) {
             playTing();
         }
 
-        // Re-fetch visits (to get full serialized data with patient_detail etc.)
         fetchVisits();
 
-        // Highlight the new row
         setHighlightedIds((prev) => {
             const next = new Set(prev);
             next.add(wsVisit.id);
             return next;
         });
 
-        // Clear highlight after 3s
         const timer = setTimeout(() => {
             setHighlightedIds((prev) => {
                 const next = new Set(prev);
@@ -205,7 +248,6 @@ export default function ReceptionPage() {
         }, 3000);
         highlightTimersRef.current.set(wsVisit.id, timer);
 
-        // Badge pulse
         setBadgePulse(true);
         setTimeout(() => setBadgePulse(false), 2000);
     }, [soundEnabled, fetchVisits]);
@@ -219,7 +261,6 @@ export default function ReceptionPage() {
         onVisitUpdated: handleVisitUpdatedWs,
     });
 
-    // Cleanup highlight timers on unmount
     useEffect(() => {
         return () => {
             highlightTimersRef.current.forEach((t) => clearTimeout(t));
@@ -284,9 +325,19 @@ export default function ReceptionPage() {
         setTriageModalOpen(true);
     }, []);
 
-    const handleTriageSuccess = useCallback(() => {
+    const handleTriageSuccess = useCallback(async () => {
         fetchVisits();
-    }, [fetchVisits]);
+        // Auto-complete QMS entry after triage is confirmed
+        if (pendingEntryId) {
+            try {
+                await qmsApi.completeQueue(pendingEntryId);
+            } catch (e) {
+                console.error('Failed to complete QMS entry:', e);
+            }
+            setPendingEntryId(null);
+        }
+        fetchQueueBoard();
+    }, [fetchVisits, fetchQueueBoard, pendingEntryId]);
 
     // ── Sound toggle ─────────────────────────────────────────
 
@@ -294,37 +345,89 @@ export default function ReceptionPage() {
         setSoundEnabled((prev) => {
             const next = !prev;
             localStorage.setItem(SOUND_KEY, next ? 'on' : 'off');
-            if (next) playTing(); // preview
+            if (next) playTing();
             return next;
         });
     }, []);
 
-    // ── Select current patient ───────────────────────────────
+    // ── QMS Actions ──────────────────────────────────────────
 
-    const selectCurrentVisit = useCallback((visit: Visit) => {
-        setCurrentVisit(visit);
-    }, []);
+    const handleCallNext = async () => {
+        if (!selectedStation) return;
+        setCallLoading(true);
+        try {
+            const result = await qmsApi.doctorCallNext(selectedStation);
+            if (result.success && result.called_patient) {
+                const p = result.called_patient;
+                if ('speechSynthesis' in window) {
+                    const utterance = new SpeechSynthesisUtterance(
+                        `Mời số ${p.daily_sequence}, ${p.patient_name || ''}, đến ${p.station_name}`
+                    );
+                    utterance.lang = 'vi-VN';
+                    utterance.rate = 0.9;
+                    speechSynthesis.speak(utterance);
+                }
+                message.success(`Đã gọi: ${p.queue_number} — ${p.patient_name}`);
+                fetchQueueBoard();
+            } else {
+                message.info(result.message || 'Không còn bệnh nhân trong hàng đợi');
+            }
+        } catch (error: unknown) {
+            const err = error as { response?: { status?: number; data?: { message?: string } } };
+            if (err?.response?.status === 429) {
+                message.warning(err.response.data?.message || `Đã đạt tối đa ${MAX_CONCURRENT} số đang gọi`);
+            } else {
+                message.error('Không thể gọi bệnh nhân tiếp theo');
+            }
+        } finally {
+            setCallLoading(false);
+        }
+    };
 
-    const clearCurrentVisit = useCallback(() => {
-        setCurrentVisit(null);
-    }, []);
+    const handleTriageFromCall = useCallback(async (patient: CalledPatient) => {
+        try {
+            setPendingEntryId(patient.entry_id);
+            const visit = await visitApi.getById(patient.visit_id);
+            openTriageModal(visit);
+        } catch {
+            setPendingEntryId(null);
+            message.error('Không thể mở phân luồng');
+        }
+    }, [message, openTriageModal]);
+
+    const handleNoShow = async (entryId: string) => {
+        try {
+            await qmsApi.noShowQueue(entryId);
+            message.warning('Đã gọi nhưng không có mặt');
+            fetchQueueBoard();
+        } catch {
+            message.error('Không thể cập nhật');
+        }
+    };
+
+    const handleRecall = async (entry: NoShowEntry) => {
+        try {
+            await qmsApi.recallQueue(entry.entry_id);
+            if ('speechSynthesis' in window) {
+                const utterance = new SpeechSynthesisUtterance(
+                    `Mời số ${entry.daily_sequence}, ${entry.patient_name || ''}, vui lòng quay lại quầy tiếp đón`
+                );
+                utterance.lang = 'vi-VN';
+                utterance.rate = 0.9;
+                speechSynthesis.speak(utterance);
+            }
+            message.success(`Đã gọi lại: ${entry.queue_number} — ${entry.patient_name}`);
+            fetchQueueBoard();
+        } catch {
+            message.error('Không thể gọi lại bệnh nhân');
+        }
+    };
 
     // ── Computed Data ────────────────────────────────────────
 
-    const queueVisits = useMemo(() => {
-        return visits
-            .filter((v) => ['CHECK_IN', 'TRIAGE', 'WAITING'].includes(v.status))
-            .filter((v) => v.id !== currentVisit?.id)
-            .sort((a, b) => {
-                const pa = PRIORITY_ORDER[a.priority] ?? 99;
-                const pb = PRIORITY_ORDER[b.priority] ?? 99;
-                if (pa !== pb) return pa - pb;
-                // FIFO within same priority
-                const ta = a.check_in_time ? new Date(a.check_in_time).getTime() : 0;
-                const tb = b.check_in_time ? new Date(b.check_in_time).getTime() : 0;
-                return ta - tb;
-            });
-    }, [visits, currentVisit]);
+    const todayVisits = useMemo(() => {
+        return visits.filter((v) => ['CHECK_IN', 'TRIAGE', 'WAITING', 'IN_PROGRESS'].includes(v.status));
+    }, [visits]);
 
     const stats = useMemo(() => ({
         total: visits.length,
@@ -395,13 +498,13 @@ export default function ReceptionPage() {
             dataIndex: 'status',
             key: 'status',
             width: 120,
-            render: (status: string) => {
-                const config = statusConfig[status] || { color: 'default', label: status };
+            render: (s: string) => {
+                const config = statusConfig[s] || { color: 'default', label: s };
                 return <Tag color={config.color}>{config.label}</Tag>;
             },
         },
         {
-            title: 'Khoa hướng đến',
+            title: 'Khoa',
             key: 'department',
             width: 140,
             render: (_: unknown, record: Visit) => {
@@ -415,67 +518,23 @@ export default function ReceptionPage() {
             },
         },
         {
-            title: 'Thao tác',
-            key: 'actions',
-            width: 200,
-            render: (_: unknown, record: Visit) => (
-                <Space>
-                    <Tooltip title="Chọn xử lý">
-                        <Button
-                            size="small"
-                            onClick={() => selectCurrentVisit(record)}
-                        >
-                            Chọn
-                        </Button>
-                    </Tooltip>
-                    {record.status === 'CHECK_IN' && (
-                        <Tooltip title="Phân luồng bằng AI">
-                            <Button
-                                type="primary"
-                                size="small"
-                                icon={<RobotOutlined />}
-                                onClick={() => openTriageModal(record)}
-                            >
-                                Phân luồng
-                            </Button>
-                        </Tooltip>
-                    )}
-                    {record.status === 'TRIAGE' && !record.confirmed_department && (
-                        <Tooltip title="Tiếp tục phân luồng">
-                            <Button
-                                size="small"
-                                icon={<MedicineBoxOutlined />}
-                                onClick={() => openTriageModal(record)}
-                            >
-                                Chốt khoa
-                            </Button>
-                        </Tooltip>
-                    )}
-                    {record.status === 'COMPLETED' && (
-                        <Tag icon={<CheckCircleOutlined />} color="success">
-                            Xong
-                        </Tag>
-                    )}
-                </Space>
-            ),
+            title: 'Trạng thái',
+            key: 'status_display',
+            width: 160,
+            render: (_: unknown, record: Visit) => {
+                const config = statusConfig[record.status] || { color: 'default', label: record.status };
+                if (record.confirmed_department_detail) {
+                    return (
+                        <Space direction="vertical" size={2}>
+                            <Tag color={config.color}>{config.label}</Tag>
+                            <Tag color="blue" icon={<CheckOutlined />}>{record.confirmed_department_detail.name}</Tag>
+                        </Space>
+                    );
+                }
+                return <Tag color={config.color}>{config.label}</Tag>;
+            },
         },
-    ], [openTriageModal, selectCurrentVisit]);
-
-    // ── Helper: get patient display info ─────────────────────
-
-    const getPatientInfo = (visit: Visit) => {
-        const patient = visit.patient_detail || visit.patient;
-        if (typeof patient === 'object' && patient) {
-            return {
-                name: patient.full_name || `${patient.last_name} ${patient.first_name}`,
-                code: patient.patient_code,
-                dob: patient.date_of_birth,
-                gender: patient.gender,
-                phone: patient.contact_number,
-            };
-        }
-        return { name: String(patient || '-'), code: '-' };
-    };
+    ], []);
 
     // ── Render ───────────────────────────────────────────────
 
@@ -488,7 +547,36 @@ export default function ReceptionPage() {
                     <Text type="secondary">Quản lý lượt khám và tiếp nhận bệnh nhân</Text>
                 </div>
                 <Space>
-                    <Tooltip title={soundEnabled ? 'Tắt âm thanh thông báo' : 'Bật âm thanh thông báo'}>
+                    <Select
+                        placeholder="Chọn điểm dịch vụ"
+                        value={selectedStation}
+                        onChange={setSelectedStation}
+                        style={{ width: 220 }}
+                        options={stations.map((s) => ({
+                            value: s.id,
+                            label: `[${s.code}] ${s.name}`,
+                        }))}
+                    />
+                    <Input.Search
+                        placeholder="Mã màn hình"
+                        style={{ width: 160 }}
+                        enterButton="Liên kết"
+                        onSearch={async (code) => {
+                            if (!code.trim()) return;
+                            if (!selectedStation) {
+                                message.warning('Vui lòng chọn điểm dịch vụ trước');
+                                return;
+                            }
+                            try {
+                                const result = await qmsApi.pairDisplay(code, selectedStation);
+                                message.success(result.message);
+                            } catch (err: unknown) {
+                                const error = err as { response?: { data?: { error?: string } } };
+                                message.error(error?.response?.data?.error || 'Không thể liên kết');
+                            }
+                        }}
+                    />
+                    <Tooltip title={soundEnabled ? 'Tắt âm thanh' : 'Bật âm thanh'}>
                         <Button
                             type={soundEnabled ? 'primary' : 'default'}
                             ghost={soundEnabled}
@@ -498,6 +586,9 @@ export default function ReceptionPage() {
                     </Tooltip>
                     <Button type="primary" icon={<UserAddOutlined />} onClick={() => setIsModalOpen(true)}>
                         Tiếp nhận mới
+                    </Button>
+                    <Button danger icon={<AlertOutlined />} onClick={() => setIsEmergencyModalOpen(true)}>
+                        Tiếp nhận cấp cứu
                     </Button>
                 </Space>
             </div>
@@ -530,149 +621,198 @@ export default function ReceptionPage() {
                 </Card>
             </div>
 
-            {/* ══════════════ CURRENT PATIENT ══════════════ */}
+            {/* ══════════════ ĐANG GỌI — Multi-Call Panel ══════════════ */}
             <Card
                 title={
                     <Space>
-                        <MedicineBoxOutlined className="text-blue-500" />
-                        <span>Đang xử lý</span>
+                        <SoundOutlined className="text-blue-500" />
+                        <span>Đang gọi</span>
+                        <Badge
+                            count={currentlyServing.length}
+                            style={{ backgroundColor: currentlyServing.length >= MAX_CONCURRENT ? '#ff4d4f' : '#1890ff' }}
+                        />
+                        <Text type="secondary" className="text-xs">
+                            (tối đa {MAX_CONCURRENT})
+                        </Text>
                     </Space>
                 }
-                extra={currentVisit && (
-                    <Button
-                        size="small"
-                        danger
-                        icon={<CloseCircleOutlined />}
-                        onClick={clearCurrentVisit}
-                    >
-                        Bỏ chọn
-                    </Button>
-                )}
+                extra={
+                    <Space>
+                        <Button
+                            type="primary"
+                            icon={<SoundOutlined />}
+                            onClick={handleCallNext}
+                            loading={callLoading}
+                            disabled={!selectedStation || currentlyServing.length >= MAX_CONCURRENT}
+                        >
+                            Gọi tiếp
+                        </Button>
+                        <Button icon={<ReloadOutlined />} onClick={fetchQueueBoard}>
+                            Làm mới
+                        </Button>
+                    </Space>
+                }
                 className="border-blue-200"
                 styles={{ header: { borderBottom: '2px solid #1677ff' } }}
             >
-                {currentVisit ? (
-                    <div className="flex gap-6">
-                        <div className="flex-1">
-                            <Descriptions column={3} size="small" bordered>
-                                <Descriptions.Item label="STT">
-                                    <Badge
-                                        count={currentVisit.queue_number}
-                                        style={{ backgroundColor: '#1E88E5', fontSize: 16, minWidth: 36 }}
-                                        overflowCount={999}
-                                    />
-                                </Descriptions.Item>
-                                <Descriptions.Item label="Mã khám">
-                                    <Text strong className="text-blue-600">{currentVisit.visit_code}</Text>
-                                </Descriptions.Item>
-                                <Descriptions.Item label="Trạng thái">
-                                    <Tag color={statusConfig[currentVisit.status]?.color || 'default'}>
-                                        {statusConfig[currentVisit.status]?.label || currentVisit.status}
+                {currentlyServing.length > 0 ? (
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        {currentlyServing.map((patient) => (
+                            <Card
+                                key={patient.entry_id}
+                                size="small"
+                                className="border-2 border-blue-300 bg-blue-50"
+                            >
+                                <div className="text-center">
+                                    <Tag color={sourceConfig[patient.source_type]?.color || 'default'} className="mb-2">
+                                        {sourceConfig[patient.source_type]?.label || patient.source_type}
                                     </Tag>
-                                </Descriptions.Item>
-                                <Descriptions.Item label="Bệnh nhân" span={2}>
-                                    <Text strong>{getPatientInfo(currentVisit).name}</Text>
-                                    <Text type="secondary" className="ml-2">{getPatientInfo(currentVisit).code}</Text>
-                                </Descriptions.Item>
-                                <Descriptions.Item label="Ưu tiên">
-                                    <Tag color={priorityConfig[currentVisit.priority]?.color || 'default'}>
-                                        {priorityConfig[currentVisit.priority]?.label || currentVisit.priority}
+                                    <div
+                                        className="text-5xl font-bold mb-1"
+                                        style={{ color: patient.source_type === 'EMERGENCY' ? '#ff4d4f' : '#1890ff' }}
+                                    >
+                                        {patient.daily_sequence}
+                                    </div>
+                                    <Tag color="blue" className="text-sm px-3 py-0.5 mb-1">
+                                        {patient.queue_number}
                                     </Tag>
-                                </Descriptions.Item>
-                                {currentVisit.chief_complaint && (
-                                    <Descriptions.Item label="Lý do khám" span={3}>
-                                        {currentVisit.chief_complaint}
-                                    </Descriptions.Item>
-                                )}
-                            </Descriptions>
-                        </div>
-                        <div className="flex flex-col gap-2 min-w-[140px]">
-                            {currentVisit.status === 'CHECK_IN' && (
-                                <Button
-                                    type="primary"
-                                    icon={<RobotOutlined />}
-                                    onClick={() => openTriageModal(currentVisit)}
-                                    block
-                                >
-                                    Phân luồng AI
-                                </Button>
-                            )}
-                            {currentVisit.status === 'TRIAGE' && !currentVisit.confirmed_department && (
-                                <Button
-                                    icon={<MedicineBoxOutlined />}
-                                    onClick={() => openTriageModal(currentVisit)}
-                                    block
-                                >
-                                    Chốt khoa
-                                </Button>
-                            )}
-                            {currentVisit.confirmed_department_detail && (
-                                <Tag color="blue" icon={<CheckOutlined />} className="text-center">
-                                    {currentVisit.confirmed_department_detail.name}
-                                </Tag>
-                            )}
-                        </div>
+                                    <div className="text-sm text-gray-600 mb-1">
+                                        {patient.patient_name || 'Bệnh nhân'}
+                                    </div>
+                                    {patient.wait_time_minutes != null && (
+                                        <Text type="secondary" className="text-xs">
+                                            Chờ {patient.wait_time_minutes} phút
+                                        </Text>
+                                    )}
+                                    <Divider className="!my-2" />
+                                    <Space>
+                                        <Tooltip title="Phân luồng bệnh nhân">
+                                            <Button
+                                                type="primary"
+                                                size="small"
+                                                icon={<MedicineBoxOutlined />}
+                                                onClick={() => handleTriageFromCall(patient)}
+                                            >
+                                                Phân luồng
+                                            </Button>
+                                        </Tooltip>
+                                        <Tooltip title="Đã gọi nhưng không có mặt">
+                                            <Button
+                                                danger
+                                                size="small"
+                                                icon={<EyeInvisibleOutlined />}
+                                                onClick={() => handleNoShow(patient.entry_id)}
+                                            >
+                                                Vắng
+                                            </Button>
+                                        </Tooltip>
+                                    </Space>
+                                </div>
+                            </Card>
+                        ))}
                     </div>
                 ) : (
-                    <Empty
-                        image={Empty.PRESENTED_IMAGE_SIMPLE}
-                        description="Chọn bệnh nhân từ hàng đợi bên dưới để bắt đầu xử lý"
-                    />
+                    <div className="text-center py-6">
+                        <Empty
+                            image={Empty.PRESENTED_IMAGE_SIMPLE}
+                            description="Chưa có bệnh nhân nào đang gọi"
+                        />
+                        <Button
+                            type="primary"
+                            size="large"
+                            icon={<SoundOutlined />}
+                            onClick={handleCallNext}
+                            loading={callLoading}
+                            disabled={!selectedStation}
+                            className="mt-4"
+                        >
+                            Gọi số đầu tiên
+                        </Button>
+                    </div>
                 )}
             </Card>
 
-            {/* ══════════════ QUEUE ══════════════ */}
+            {/* ══════════════ DANH SÁCH VẮNG ══════════════ */}
+            {noShowList.length > 0 && (
+                <Card
+                    size="small"
+                    title={
+                        <Space>
+                            <EyeInvisibleOutlined className="text-red-500" />
+                            <span>Vắng mặt</span>
+                            <Badge count={noShowList.length} style={{ backgroundColor: '#ff4d4f' }} />
+                        </Space>
+                    }
+                    className="border-red-200"
+                    styles={{ header: { borderBottom: '2px solid #ff4d4f' } }}
+                >
+                    <div className="flex flex-wrap gap-3">
+                        {noShowList.map((entry) => (
+                            <div
+                                key={entry.entry_id}
+                                className="flex items-center gap-3 px-3 py-2 bg-red-50 border border-red-200 rounded-lg"
+                            >
+                                <div>
+                                    <Text strong className="text-red-600">
+                                        {entry.daily_sequence}
+                                    </Text>
+                                    <Text type="secondary" className="ml-2 text-xs">
+                                        {entry.queue_number}
+                                    </Text>
+                                </div>
+                                <Text className="text-sm">{entry.patient_name}</Text>
+                                {entry.end_time && (
+                                    <Text type="secondary" className="text-xs">
+                                        {entry.end_time}
+                                    </Text>
+                                )}
+                                <Button
+                                    size="small"
+                                    type="primary"
+                                    ghost
+                                    icon={<PhoneOutlined />}
+                                    onClick={() => handleRecall(entry)}
+                                >
+                                    Gọi lại
+                                </Button>
+                            </div>
+                        ))}
+                    </div>
+                </Card>
+            )}
+
+            {/* ══════════════ DANH SÁCH LƯỢT KHÁM ══════════════ */}
             <Card
                 title={
                     <Space>
-                        <span>Hàng đợi chờ tiếp đón</span>
+                        <TeamOutlined className="text-orange-500" />
+                        <span>Lượt khám hôm nay</span>
                         <div className={badgePulse ? 'badge-pulse' : ''}>
                             <Badge
-                                count={queueVisits.length}
+                                count={todayVisits.length}
                                 style={{ backgroundColor: '#fa8c16' }}
                                 overflowCount={999}
                             />
                         </div>
                     </Space>
                 }
-            >
-                <div className="flex justify-between items-center mb-4">
-                    <Space>
-                        <Input.Search
-                            placeholder="Tìm mã khám, bệnh nhân..."
-                            allowClear
-                            style={{ width: 280 }}
-                            prefix={<SearchOutlined className="text-gray-400" />}
-                        />
-                        <Select
-                            placeholder="Trạng thái"
-                            allowClear
-                            style={{ width: 140 }}
-                            options={Object.entries(statusConfig).map(([k, v]) => ({
-                                value: k,
-                                label: v.label,
-                            }))}
-                        />
-                    </Space>
+                extra={
                     <Button icon={<ReloadOutlined />} onClick={fetchVisits}>
                         Làm mới
                     </Button>
-                </div>
-
+                }
+            >
                 <Table
                     columns={columns}
-                    dataSource={queueVisits}
+                    dataSource={todayVisits}
                     rowKey="id"
                     loading={loading}
-                    pagination={{ pageSize: 10, showTotal: (t) => `Tổng ${t} đang chờ` }}
+                    pagination={{ pageSize: 10, showTotal: (t) => `Tổng ${t} lượt khám` }}
                     scroll={{ x: 1100 }}
                     rowClassName={(record) =>
                         highlightedIds.has(record.id) ? 'reception-highlight-row' : ''
                     }
-                    onRow={(record) => ({
-                        onDoubleClick: () => selectCurrentVisit(record),
-                        style: { cursor: 'pointer' },
-                    })}
+                    size="small"
                 />
             </Card>
 
@@ -681,6 +821,14 @@ export default function ReceptionPage() {
                 open={isModalOpen}
                 onClose={() => setIsModalOpen(false)}
                 onSuccess={fetchVisits}
+            />
+
+            {/* Emergency Visit Modal */}
+            <CreateVisitModal
+                open={isEmergencyModalOpen}
+                onClose={() => setIsEmergencyModalOpen(false)}
+                onSuccess={fetchVisits}
+                emergencyMode
             />
 
             {/* Triage Modal */}

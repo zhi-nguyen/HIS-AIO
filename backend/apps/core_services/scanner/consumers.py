@@ -11,10 +11,13 @@ Protocol:
 
 import json
 from datetime import datetime
-from channels.generic.websocket import AsyncWebSocketConsumer
+try:
+    from channels.generic.websocket import AsyncWebsocketConsumer
+except ImportError:
+    from channels.generic.websocket import AsyncWebSocketConsumer as AsyncWebsocketConsumer
 
 
-class ScannerConsumer(AsyncWebSocketConsumer):
+class ScannerConsumer(AsyncWebsocketConsumer):
     """
     WebSocket consumer for remote scanner station pairing.
     

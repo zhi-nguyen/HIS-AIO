@@ -21,6 +21,30 @@ from .serializers import QueueNumberSerializer, ServiceStationSerializer
 from .services import ClinicalQueueService
 
 
+def _broadcast_queue_update(station):
+    """
+    Push the full queue board to all WebSocket-connected displays for this station.
+    Safe to call from sync context (views).
+    """
+    try:
+        from channels.layers import get_channel_layer
+        from asgiref.sync import async_to_sync
+        channel_layer = get_channel_layer()
+        if channel_layer is None:
+            return
+        board = ClinicalQueueService.get_queue_board(station)
+        async_to_sync(channel_layer.group_send)(
+            f'qms_station_{station.id}',
+            {
+                'type': 'queue_update',
+                'data': board,
+            },
+        )
+    except Exception:
+        import logging
+        logging.getLogger(__name__).exception('Failed to broadcast queue update')
+
+
 # ====================================================================
 # REST API Views for Clinical Queue
 # ====================================================================
@@ -229,7 +253,17 @@ def doctor_call_next(request):
             'message': 'Hàng đợi trống — không có bệnh nhân nào đang chờ.',
             'called_patient': None,
         })
+
+    # Max concurrent calls reached
+    if 'error' in result:
+        return Response({
+            'success': False,
+            'message': result['error'],
+            'active_count': result.get('active_count', 0),
+        }, status=status.HTTP_429_TOO_MANY_REQUESTS)
     
+    _broadcast_queue_update(station)
+
     return Response({
         'success': True,
         'message': f"Mời {result['display_label']} - {result['patient_name']}",
@@ -262,11 +296,78 @@ def queue_board(request):
             status=status.HTTP_404_NOT_FOUND
         )
     
-    board = ClinicalQueueService.get_queue_board(station)
+    import logging
+    logger = logging.getLogger('qms')
+
+    try:
+        board = ClinicalQueueService.get_queue_board(station)
+    except Exception as exc:
+        logger.exception('get_queue_board crashed for station %s: %s', station_id, exc)
+        return Response(
+            {'error': f'Lỗi khi tải bảng chờ: {exc}'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
     
     return Response({
         'success': True,
         'data': board,
+    })
+
+
+@api_view(['PATCH'])
+@permission_classes([IsAuthenticated])
+def queue_entry_update_status(request, entry_id):
+    """
+    Cập nhật trạng thái QueueEntry (Hoàn thành / Bỏ qua / Không có mặt).
+
+    PATCH /qms/entries/<entry_id>/status/
+    Request Body:
+        {"status": "COMPLETED"} hoặc {"status": "SKIPPED"} hoặc {"status": "NO_SHOW"}
+    """
+    VALID_STATUSES = ('COMPLETED', 'SKIPPED', 'NO_SHOW', 'CALLED')
+    STATUS_MESSAGES = {
+        'COMPLETED': 'Hoàn thành phục vụ',
+        'SKIPPED': 'Đã bỏ qua',
+        'NO_SHOW': 'Đã gọi nhưng không có mặt',
+        'CALLED': 'Đã gọi lại bệnh nhân',
+    }
+
+    new_status = request.data.get('status')
+
+    if new_status not in VALID_STATUSES:
+        return Response(
+            {'error': f'status phải là một trong: {", ".join(VALID_STATUSES)}'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+        entry = QueueEntry.objects.select_related(
+            'queue_number', 'station'
+        ).get(id=entry_id)
+    except QueueEntry.DoesNotExist:
+        return Response(
+            {'error': f'Không tìm thấy phiếu xếp hàng: {entry_id}'},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    entry.status = new_status
+    if new_status == 'CALLED':
+        # Re-call: xóa end_time, đặt lại called_time
+        entry.end_time = None
+        entry.called_time = timezone.now()
+        entry.save(update_fields=['status', 'end_time', 'called_time'])
+    else:
+        entry.end_time = timezone.now()
+        entry.save(update_fields=['status', 'end_time'])
+
+    _broadcast_queue_update(entry.station)
+
+    return Response({
+        'success': True,
+        'message': STATUS_MESSAGES.get(new_status, '\u0110\u00e3 c\u1eadp nh\u1eadt'),
+        'entry_id': str(entry.id),
+        'queue_number': entry.queue_number.number_code,
+        'status': new_status,
     })
 
 
@@ -275,11 +376,56 @@ def queue_board(request):
 # ====================================================================
 
 class QueueNumberViewSet(viewsets.ModelViewSet):
-    queryset = QueueNumber.objects.all().order_by('-created_time')
     serializer_class = QueueNumberSerializer
     filter_backends = [filters.SearchFilter, DjangoFilterBackend]
     search_fields = ['number_code', 'visit__patient__first_name']
     filterset_fields = ['station', 'created_date']
+
+    def get_queryset(self):
+        qs = QueueNumber.objects.all().select_related(
+            'station', 'visit__patient',
+        ).prefetch_related('entries').order_by('-created_time')
+
+        # Support ?status= filter through QueueEntry
+        status_param = self.request.query_params.get('status')
+        if status_param:
+            qs = qs.filter(entries__status=status_param)
+
+        return qs
+
+    def partial_update(self, request, *args, **kwargs):
+        """
+        PATCH /qms/queues/<id>/
+        Supports { "status": "COMPLETED" } and { "status": "SKIPPED" }
+        by updating the related QueueEntry.
+        """
+        queue_number = self.get_object()
+        new_status = request.data.get('status')
+
+        if new_status in ('COMPLETED', 'SKIPPED'):
+            # Find the active entry (WAITING, CALLED, or IN_PROGRESS)
+            entry = queue_number.entries.filter(
+                status__in=[
+                    QueueStatus.WAITING,
+                    QueueStatus.CALLED,
+                    QueueStatus.IN_PROGRESS,
+                ]
+            ).order_by('-entered_queue_time').first()
+
+            if entry:
+                entry.status = new_status
+                entry.end_time = timezone.now()
+                entry.save(update_fields=['status', 'end_time'])
+
+            # Return updated queue number with status
+            serializer = self.get_serializer(queue_number)
+            data = serializer.data
+            data['status'] = new_status
+            data['entry_id'] = str(entry.id) if entry else None
+            return Response(data)
+
+        # Default behavior for other fields
+        return super().partial_update(request, *args, **kwargs)
 
     @action(detail=False, methods=['post'])
     def call_next(self, request):
@@ -305,3 +451,99 @@ class QueueNumberViewSet(viewsets.ModelViewSet):
 class ServiceStationViewSet(viewsets.ModelViewSet):
     queryset = ServiceStation.objects.filter(is_active=True)
     serializer_class = ServiceStationSerializer
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        station_type = self.request.query_params.get('station_type')
+        if station_type:
+            qs = qs.filter(station_type=station_type)
+        return qs
+
+
+# ====================================================================
+# Display Pairing System
+# ====================================================================
+
+import random, string, logging
+logger = logging.getLogger(__name__)
+
+# In-memory pairing store: { code: { station_id, station_name, paired_at } }
+_display_pairings = {}
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def display_register(request):
+    """
+    Display screen registers itself with a new pairing code.
+    POST /qms/display/register/
+    Returns: { code: "ABC123" }
+    """
+    code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
+    _display_pairings[code] = {'station_id': None, 'station_name': None}
+    return Response({'code': code})
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def display_check(request):
+    """
+    Display polls to check if its code has been paired.
+    GET /qms/display/check/?code=ABC123
+    Returns: { paired: true/false, station_id, station_name }
+    """
+    code = request.query_params.get('code', '').upper()
+    entry = _display_pairings.get(code)
+    if not entry:
+        return Response({'paired': False, 'error': 'Code not found'})
+    if entry['station_id']:
+        return Response({
+            'paired': True,
+            'station_id': entry['station_id'],
+            'station_name': entry['station_name'],
+        })
+    return Response({'paired': False})
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def display_pair(request):
+    """
+    Reception pairs a display code to a station.
+    POST /qms/display/pair/
+    Body: { code: "ABC123", station_id: "uuid" }
+    """
+    code = (request.data.get('code') or '').upper()
+    station_id = request.data.get('station_id')
+
+    if not code or not station_id:
+        return Response(
+            {'error': 'code và station_id là bắt buộc'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    entry = _display_pairings.get(code)
+    if not entry:
+        return Response(
+            {'error': f'Mã "{code}" không tồn tại hoặc đã hết hạn'},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    try:
+        station = ServiceStation.objects.get(id=station_id)
+    except ServiceStation.DoesNotExist:
+        return Response(
+            {'error': 'Điểm dịch vụ không tồn tại'},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    entry['station_id'] = str(station.id)
+    entry['station_name'] = station.name
+    logger.info(f'Display paired: code={code} → station={station.code}')
+
+    return Response({
+        'success': True,
+        'message': f'Đã liên kết màn hình với {station.name}',
+        'station_id': str(station.id),
+        'station_name': station.name,
+    })

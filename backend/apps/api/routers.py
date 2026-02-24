@@ -9,7 +9,7 @@ from apps.core_services.departments.views import DepartmentViewSet
 
 router.register(r'patients', PatientViewSet)
 router.register(r'reception/visits', VisitViewSet)
-router.register(r'qms/queues', QueueNumberViewSet)
+router.register(r'qms/queues', QueueNumberViewSet, basename='queuenumber')
 router.register(r'qms/stations', ServiceStationViewSet)
 router.register(r'departments', DepartmentViewSet)
 
