@@ -150,7 +150,7 @@ export interface VisitCreateInput {
 // QMS TYPES
 // ============================================================================
 
-export type QueueStatus = 'WAITING' | 'CALLED' | 'IN_PROGRESS' | 'COMPLETED' | 'SKIPPED';
+export type QueueStatus = 'WAITING' | 'CALLED' | 'IN_PROGRESS' | 'COMPLETED' | 'SKIPPED' | 'NO_SHOW';
 export type StationType = 'TRIAGE' | 'DOCTOR' | 'LAB' | 'IMAGING' | 'PHARMACY' | 'CASHIER';
 export type QueueSourceType = 'WALK_IN' | 'ONLINE_BOOKING' | 'EMERGENCY';
 
@@ -182,6 +182,7 @@ export interface ServiceStation {
 /** Bệnh nhân được gọi — response từ call_next_patient */
 export interface CalledPatient {
     entry_id: string;
+    visit_id: string;
     queue_number: string;
     daily_sequence: number;
     patient_name: string;
@@ -196,20 +197,47 @@ export interface CalledPatient {
 /** Entry trong danh sách chờ */
 export interface QueueBoardEntry {
     position: number;
+    entry_id: string;
     queue_number: string;
+    daily_sequence: number;
     patient_name: string;
     source_type: QueueSourceType;
     priority: number;
     wait_time_minutes: number | null;
 }
 
+/** Entry đã hoàn thành */
+export interface QueueCompletedEntry {
+    entry_id: string;
+    queue_number: string;
+    daily_sequence: number;
+    patient_name: string;
+    source_type: QueueSourceType;
+    status: QueueStatus;
+    end_time: string | null;
+}
+
 /** Response từ queue/board/ endpoint */
 export interface QueueBoardData {
     station: { code: string; name: string };
-    current_serving: CalledPatient | null;
+    currently_serving: CalledPatient[];
     waiting_list: QueueBoardEntry[];
+    completed_list: QueueCompletedEntry[];
+    no_show_list: NoShowEntry[];
     total_waiting: number;
     estimated_wait_minutes: number;
+}
+
+/** Entry vắng mặt (có thể gọi lại) */
+export interface NoShowEntry {
+    entry_id: string;
+    visit_id: string;
+    queue_number: string;
+    daily_sequence: number;
+    patient_name: string;
+    source_type: QueueSourceType;
+    status: string;
+    end_time: string | null;
 }
 
 /** Booking check-in lateness info */

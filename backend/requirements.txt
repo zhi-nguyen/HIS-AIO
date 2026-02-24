@@ -17,6 +17,7 @@ djangorestframework==3.15.2
 djangorestframework_simplejwt==5.4.0
 filelock==3.20.3
 filetype==1.2.0
+fhir.resources==8.0.0
 fsspec==2026.1.0
 google-auth==2.48.0
 google-genai==1.60.0
@@ -50,6 +51,7 @@ psycopg2-binary==2.9.11
 pyasn1==0.6.2
 pyasn1_modules==0.4.2
 pycparser==3.0
+pydicom==3.0.1
 pydantic==2.12.5
 pydantic_core==2.41.5
 PyJWT==2.10.1
@@ -83,6 +85,7 @@ uuid_utils==0.14.0
 websockets==15.0.1
 xxhash==3.6.0
 zstandard==0.25.0
-channels>=4.0
-channels-redis>=4.2
-daphne>=4.0
+channels==4.2.0
+channels-redis==4.2.1
+daphne==4.1.2
+uvicorn[standard]==0.34.0

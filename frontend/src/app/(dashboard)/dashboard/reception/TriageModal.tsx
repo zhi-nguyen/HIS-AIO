@@ -20,7 +20,6 @@ import {
     Badge,
 } from 'antd';
 import {
-    RobotOutlined,
     CheckOutlined,
     MedicineBoxOutlined,
     HeartOutlined,
@@ -468,7 +467,7 @@ export default function TriageModal({ visit, open, departments, onClose, onSucce
         <Modal
             title={
                 <Space>
-                    <RobotOutlined className="text-orange-500" />
+                    <MedicineBoxOutlined className="text-orange-500" />
                     <span style={{ fontSize: 16 }}>Phân luồng — {visit?.visit_code}</span>
                 </Space>
             }
@@ -530,7 +529,7 @@ export default function TriageModal({ visit, open, departments, onClose, onSucce
                         {/* --- NÚT GỌI AI --- */}
                         <Button
                             type="primary"
-                            icon={<RobotOutlined />}
+                            icon={<MedicineBoxOutlined />}
                             loading={triageLoading}
                             onClick={handleRunTriage}
                             style={{ marginTop: 12 }}
@@ -650,7 +649,7 @@ export default function TriageModal({ visit, open, departments, onClose, onSucce
                                 {showFullAnalysis && (
                                     <Card
                                         size="small"
-                                        title={<Text type="secondary" style={{ fontSize: 13 }}><RobotOutlined /> Phân luồng</Text>}
+                                        title={<Text type="secondary" style={{ fontSize: 13 }}><MedicineBoxOutlined /> Phân luồng</Text>}
                                         className="bg-blue-50"
                                         styles={{ body: { maxHeight: 200, overflow: 'auto' } }}
                                     >
@@ -679,7 +678,7 @@ export default function TriageModal({ visit, open, departments, onClose, onSucce
                                 size="small"
                                 title={
                                     <Space size={4}>
-                                        <RobotOutlined style={{ color: '#722ed1' }} />
+                                        <MedicineBoxOutlined style={{ color: '#722ed1' }} />
                                         <Text strong style={{ fontSize: 14 }}>Khoa AI đề xuất</Text>
                                         <Tag color="purple" style={{ marginLeft: 4, fontSize: 13 }}>
                                             {triageResult!.matched_departments.length} kết quả

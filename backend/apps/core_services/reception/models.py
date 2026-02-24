@@ -73,6 +73,12 @@ class Visit(UUIDModel):
         verbose_name='Cách phân luồng'
     )
 
+    pending_merge = models.BooleanField(
+        default=False,
+        verbose_name='Chờ gộp hồ sơ',
+        help_text='BN cấp cứu chưa xác định danh tính, cần gộp sau'
+    )
+
     queue_number = models.IntegerField()
 
     def __str__(self):
