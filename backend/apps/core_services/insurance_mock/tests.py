@@ -15,7 +15,6 @@ Test cases:
 import json
 from django.test import TestCase, Client
 
-
 class InsuranceLookupAPITest(TestCase):
     """Kiểm tra endpoint POST /api/v1/insurance/lookup/"""
 

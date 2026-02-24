@@ -8,10 +8,13 @@ Protocol:
 """
 
 import json
-from channels.generic.websocket import AsyncWebSocketConsumer
+try:
+    from channels.generic.websocket import AsyncWebsocketConsumer
+except ImportError:
+    from channels.generic.websocket import AsyncWebSocketConsumer as AsyncWebsocketConsumer
 
 
-class ReceptionConsumer(AsyncWebSocketConsumer):
+class ReceptionConsumer(AsyncWebsocketConsumer):
     """
     WebSocket consumer for real-time Reception notifications.
 

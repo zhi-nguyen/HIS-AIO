@@ -71,6 +71,7 @@ urlpatterns = [
     path('qms/emergency/flag/', qms_views.emergency_flag, name='qms_emergency_flag'),
     path('qms/doctor/call-next/', qms_views.doctor_call_next, name='qms_doctor_call_next'),
     path('qms/queue/board/', qms_views.queue_board, name='qms_queue_board'),
+    path('qms/entries/<uuid:entry_id>/status/', qms_views.queue_entry_update_status, name='qms_entry_status'),
     
     # ==========================================================================
     # SELF-SERVICE KIOSK ENDPOINTS (3-Layer Protection)

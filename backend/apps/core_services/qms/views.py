@@ -229,6 +229,14 @@ def doctor_call_next(request):
             'message': 'Hàng đợi trống — không có bệnh nhân nào đang chờ.',
             'called_patient': None,
         })
+
+    # Max concurrent calls reached
+    if 'error' in result:
+        return Response({
+            'success': False,
+            'message': result['error'],
+            'active_count': result.get('active_count', 0),
+        }, status=status.HTTP_429_TOO_MANY_REQUESTS)
     
     return Response({
         'success': True,
@@ -262,11 +270,76 @@ def queue_board(request):
             status=status.HTTP_404_NOT_FOUND
         )
     
-    board = ClinicalQueueService.get_queue_board(station)
+    import logging
+    logger = logging.getLogger('qms')
+
+    try:
+        board = ClinicalQueueService.get_queue_board(station)
+    except Exception as exc:
+        logger.exception('get_queue_board crashed for station %s: %s', station_id, exc)
+        return Response(
+            {'error': f'Lỗi khi tải bảng chờ: {exc}'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
     
     return Response({
         'success': True,
         'data': board,
+    })
+
+
+@api_view(['PATCH'])
+@permission_classes([IsAuthenticated])
+def queue_entry_update_status(request, entry_id):
+    """
+    Cập nhật trạng thái QueueEntry (Hoàn thành / Bỏ qua / Không có mặt).
+
+    PATCH /qms/entries/<entry_id>/status/
+    Request Body:
+        {"status": "COMPLETED"} hoặc {"status": "SKIPPED"} hoặc {"status": "NO_SHOW"}
+    """
+    VALID_STATUSES = ('COMPLETED', 'SKIPPED', 'NO_SHOW', 'CALLED')
+    STATUS_MESSAGES = {
+        'COMPLETED': 'Hoàn thành phục vụ',
+        'SKIPPED': 'Đã bỏ qua',
+        'NO_SHOW': 'Đã gọi nhưng không có mặt',
+        'CALLED': 'Đã gọi lại bệnh nhân',
+    }
+
+    new_status = request.data.get('status')
+
+    if new_status not in VALID_STATUSES:
+        return Response(
+            {'error': f'status phải là một trong: {", ".join(VALID_STATUSES)}'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+        entry = QueueEntry.objects.select_related(
+            'queue_number', 'station'
+        ).get(id=entry_id)
+    except QueueEntry.DoesNotExist:
+        return Response(
+            {'error': f'Không tìm thấy phiếu xếp hàng: {entry_id}'},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    entry.status = new_status
+    if new_status == 'CALLED':
+        # Re-call: xóa end_time, đặt lại called_time
+        entry.end_time = None
+        entry.called_time = timezone.now()
+        entry.save(update_fields=['status', 'end_time', 'called_time'])
+    else:
+        entry.end_time = timezone.now()
+        entry.save(update_fields=['status', 'end_time'])
+
+    return Response({
+        'success': True,
+        'message': STATUS_MESSAGES.get(new_status, 'Đã cập nhật'),
+        'entry_id': str(entry.id),
+        'queue_number': entry.queue_number.number_code,
+        'status': new_status,
     })
 
 
@@ -275,11 +348,56 @@ def queue_board(request):
 # ====================================================================
 
 class QueueNumberViewSet(viewsets.ModelViewSet):
-    queryset = QueueNumber.objects.all().order_by('-created_time')
     serializer_class = QueueNumberSerializer
     filter_backends = [filters.SearchFilter, DjangoFilterBackend]
     search_fields = ['number_code', 'visit__patient__first_name']
     filterset_fields = ['station', 'created_date']
+
+    def get_queryset(self):
+        qs = QueueNumber.objects.all().select_related(
+            'station', 'visit__patient',
+        ).prefetch_related('entries').order_by('-created_time')
+
+        # Support ?status= filter through QueueEntry
+        status_param = self.request.query_params.get('status')
+        if status_param:
+            qs = qs.filter(entries__status=status_param)
+
+        return qs
+
+    def partial_update(self, request, *args, **kwargs):
+        """
+        PATCH /qms/queues/<id>/
+        Supports { "status": "COMPLETED" } and { "status": "SKIPPED" }
+        by updating the related QueueEntry.
+        """
+        queue_number = self.get_object()
+        new_status = request.data.get('status')
+
+        if new_status in ('COMPLETED', 'SKIPPED'):
+            # Find the active entry (WAITING, CALLED, or IN_PROGRESS)
+            entry = queue_number.entries.filter(
+                status__in=[
+                    QueueStatus.WAITING,
+                    QueueStatus.CALLED,
+                    QueueStatus.IN_PROGRESS,
+                ]
+            ).order_by('-entered_queue_time').first()
+
+            if entry:
+                entry.status = new_status
+                entry.end_time = timezone.now()
+                entry.save(update_fields=['status', 'end_time'])
+
+            # Return updated queue number with status
+            serializer = self.get_serializer(queue_number)
+            data = serializer.data
+            data['status'] = new_status
+            data['entry_id'] = str(entry.id) if entry else None
+            return Response(data)
+
+        # Default behavior for other fields
+        return super().partial_update(request, *args, **kwargs)
 
     @action(detail=False, methods=['post'])
     def call_next(self, request):
@@ -305,3 +423,11 @@ class QueueNumberViewSet(viewsets.ModelViewSet):
 class ServiceStationViewSet(viewsets.ModelViewSet):
     queryset = ServiceStation.objects.filter(is_active=True)
     serializer_class = ServiceStationSerializer
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        station_type = self.request.query_params.get('station_type')
+        if station_type:
+            qs = qs.filter(station_type=station_type)
+        return qs
+

@@ -425,49 +425,68 @@ class ClinicalQueueService:
             'source': 'EMERGENCY',
         }
 
+    # --- Max concurrent calls ---
+    MAX_CONCURRENT_CALLS = 3
+
     @staticmethod
     def call_next_patient(station):
         """
         Bác sĩ gọi bệnh nhân tiếp theo.
-        
-        Thuật toán:
-        1. Quét Emergency trước — nếu có, gọi ngay (interrupt)
-        2. Nếu không có Emergency → gọi theo thứ tự:
-           ORDER BY -priority, entered_queue_time ASC
-           
-        Điều này đảm bảo:
-        - Emergency (100) luôn được gọi trước
-        - Booking đúng giờ (7) được gọi trước Walk-in (0)
-        - Trong cùng priority → ai đến trước gọi trước (FCFS)
-        
-        Returns:
-            dict | None: Thông tin bệnh nhân được gọi, hoặc None nếu hàng đợi trống
         """
-        # Bước 1: Quét Emergency
+        import logging
+        logger = logging.getLogger('qms')
+        from datetime import date as date_cls
+
+        logger.info('[CALL_NEXT] station=%s (id=%s)', station.code, station.id)
+
+        # Bước 0: Đếm số đang active (CALLED hoặc IN_PROGRESS) hôm nay
+        active_count = QueueEntry.objects.filter(
+            station=station,
+            status__in=[QueueStatus.CALLED, QueueStatus.IN_PROGRESS],
+            entered_queue_time__date=date_cls.today(),
+        ).count()
+
+        # Bước 1: Quét Emergency — bỏ qua giới hạn
         emergency = QueueEntry.objects.filter(
             station=station,
             status=QueueStatus.WAITING,
-            source_type=QueueSourceType.EMERGENCY
+            source_type=QueueSourceType.EMERGENCY,
         ).order_by('entered_queue_time').first()
         
         if emergency:
             emergency.status = QueueStatus.CALLED
             emergency.called_time = timezone.now()
             emergency.save(update_fields=['status', 'called_time'])
+            logger.info('[CALL_NEXT] Called EMERGENCY entry=%s station_id=%s', emergency.id, emergency.station_id)
             return ClinicalQueueService._format_called_entry(emergency)
+
+        # Bước 2: Kiểm tra giới hạn (only for non-emergency)
+        if active_count >= ClinicalQueueService.MAX_CONCURRENT_CALLS:
+            return {
+                'error': f'Đã đạt tối đa {ClinicalQueueService.MAX_CONCURRENT_CALLS} số đang gọi. '
+                         'Hãy hoàn thành hoặc bỏ qua trước khi gọi tiếp.',
+                'active_count': active_count,
+            }
         
-        # Bước 2: Gọi theo priority + FCFS
+        # Bước 3: Gọi theo priority + FCFS
         next_entry = QueueEntry.objects.filter(
             station=station,
-            status=QueueStatus.WAITING
+            status=QueueStatus.WAITING,
         ).order_by('-priority', 'entered_queue_time').first()
         
         if next_entry:
             next_entry.status = QueueStatus.CALLED
             next_entry.called_time = timezone.now()
             next_entry.save(update_fields=['status', 'called_time'])
+            # Verify save succeeded
+            next_entry.refresh_from_db()
+            logger.info(
+                '[CALL_NEXT] Called entry=%s station_id=%s status_after_save=%s',
+                next_entry.id, next_entry.station_id, next_entry.status
+            )
             return ClinicalQueueService._format_called_entry(next_entry)
         
+        logger.info('[CALL_NEXT] Queue empty for station=%s', station.id)
         return None  # Hàng đợi trống
 
     @staticmethod
@@ -482,17 +501,22 @@ class ClinicalQueueService:
         elif entry.source_type == QueueSourceType.EMERGENCY:
             display_label += " 🚨 CẤP CỨU"
         
+        # Patient model dùng @property full_name (có underscore)
+        patient_name = getattr(patient, 'full_name', None) or str(patient)
+        
         return {
             'entry_id': str(entry.id),
+            'visit_id': str(entry.queue_number.visit.id),
             'queue_number': entry.queue_number.number_code,
             'daily_sequence': entry.queue_number.daily_sequence,
-            'patient_name': patient.fullname if hasattr(patient, 'fullname') else str(patient),
+            'patient_name': patient_name,
             'source_type': entry.source_type,
             'priority': entry.priority,
             'display_label': display_label,
             'station_code': entry.station.code,
             'station_name': entry.station.name,
             'wait_time_minutes': entry.wait_time_minutes,
+            'status': entry.status,
         }
 
     @staticmethod
@@ -502,48 +526,146 @@ class ClinicalQueueService:
         
         Returns:
             dict: {
-                current_serving: {...} or None,
+                currently_serving: [{...}, ...],   # Array, max 3
                 waiting_list: [{...}, ...],
+                completed_list: [{...}, ...],      # Last 10 today
                 total_waiting: int,
                 estimated_wait_minutes: int,
             }
         """
-        # Bệnh nhân đang khám / đã gọi
-        current = QueueEntry.objects.filter(
+        from datetime import date as date_cls
+        import logging
+        logger = logging.getLogger('qms')
+
+        # Bệnh nhân đang khám / đã gọi (tối đa 3)
+        active_entries = QueueEntry.objects.filter(
             station=station,
-            status__in=[QueueStatus.IN_PROGRESS, QueueStatus.CALLED]
-        ).order_by('-status').first()
+            status__in=[QueueStatus.IN_PROGRESS, QueueStatus.CALLED],
+        ).order_by('-priority', 'called_time').select_related(
+            'queue_number',
+            'queue_number__visit',
+            'queue_number__visit__patient',
+        )
+
+        # DEBUG: Log raw query results
+        active_count = active_entries.count()
+        logger.info(
+            '[BOARD] station=%s (id=%s) active_entries_count=%d',
+            station.code, station.id, active_count
+        )
+        if active_count == 0:
+            # Check ALL entries at this station regardless of status
+            all_entries = QueueEntry.objects.filter(station=station)
+            for e in all_entries[:10]:
+                logger.info(
+                    '[BOARD] entry=%s status=%s station_id=%s source=%s',
+                    e.id, e.status, e.station_id, e.source_type
+                )
+        
+        currently_serving = []
+        for entry in active_entries:
+            try:
+                currently_serving.append(
+                    ClinicalQueueService._format_called_entry(entry)
+                )
+            except Exception as exc:
+                logger.error('_format_called_entry failed for entry %s: %s', entry.id, exc)
         
         # Danh sách chờ
         waiting = QueueEntry.objects.filter(
             station=station,
-            status=QueueStatus.WAITING
+            status=QueueStatus.WAITING,
         ).order_by('-priority', 'entered_queue_time').select_related(
             'queue_number',
             'queue_number__visit',
-            'queue_number__visit__patient'
+            'queue_number__visit__patient',
         )
         
         waiting_list = []
         for idx, entry in enumerate(waiting):
-            patient = entry.queue_number.visit.patient
-            waiting_list.append({
-                'position': idx + 1,
-                'queue_number': entry.queue_number.number_code,
-                'patient_name': patient.fullname if hasattr(patient, 'fullname') else str(patient),
-                'source_type': entry.source_type,
-                'priority': entry.priority,
-                'wait_time_minutes': entry.wait_time_minutes,
-            })
+            try:
+                patient = entry.queue_number.visit.patient
+                patient_name = getattr(patient, 'full_name', None) or str(patient)
+                waiting_list.append({
+                    'position': idx + 1,
+                    'entry_id': str(entry.id),
+                    'queue_number': entry.queue_number.number_code,
+                    'daily_sequence': entry.queue_number.daily_sequence,
+                    'patient_name': patient_name,
+                    'source_type': entry.source_type,
+                    'priority': entry.priority,
+                    'wait_time_minutes': entry.wait_time_minutes,
+                })
+            except Exception as exc:
+                logger.error('waiting_list entry failed for entry %s: %s', entry.id, exc)
+
+        # Danh sách đã hoàn thành hôm nay (COMPLETED/SKIPPED, last 10)
+        done_entries = QueueEntry.objects.filter(
+            station=station,
+            status__in=[QueueStatus.COMPLETED, QueueStatus.SKIPPED],
+            end_time__date=date_cls.today(),
+        ).order_by('-end_time').select_related(
+            'queue_number',
+            'queue_number__visit',
+            'queue_number__visit__patient',
+        )[:10]
+
+        completed_list = []
+        for entry in done_entries:
+            try:
+                patient = entry.queue_number.visit.patient
+                patient_name = getattr(patient, 'full_name', None) or str(patient)
+                completed_list.append({
+                    'entry_id': str(entry.id),
+                    'queue_number': entry.queue_number.number_code,
+                    'daily_sequence': entry.queue_number.daily_sequence,
+                    'patient_name': patient_name,
+                    'source_type': entry.source_type,
+                    'status': entry.status,
+                    'end_time': entry.end_time.strftime('%H:%M') if entry.end_time else None,
+                })
+            except Exception as exc:
+                logger.error('completed_list entry failed for entry %s: %s', entry.id, exc)
+
+        # Danh sách vắng hôm nay (NO_SHOW — có thể gọi lại)
+        noshow_entries = QueueEntry.objects.filter(
+            station=station,
+            status=QueueStatus.NO_SHOW,
+            end_time__date=date_cls.today(),
+        ).order_by('-end_time').select_related(
+            'queue_number',
+            'queue_number__visit',
+            'queue_number__visit__patient',
+        )[:20]
+
+        no_show_list = []
+        for entry in noshow_entries:
+            try:
+                patient = entry.queue_number.visit.patient
+                patient_name = getattr(patient, 'full_name', None) or str(patient)
+                no_show_list.append({
+                    'entry_id': str(entry.id),
+                    'visit_id': str(entry.queue_number.visit.id),
+                    'queue_number': entry.queue_number.number_code,
+                    'daily_sequence': entry.queue_number.daily_sequence,
+                    'patient_name': patient_name,
+                    'source_type': entry.source_type,
+                    'status': entry.status,
+                    'end_time': entry.end_time.strftime('%H:%M') if entry.end_time else None,
+                })
+            except Exception as exc:
+                logger.error('no_show_list entry failed for entry %s: %s', entry.id, exc)
         
         return {
             'station': {
                 'code': station.code,
                 'name': station.name,
             },
-            'current_serving': ClinicalQueueService._format_called_entry(current) if current else None,
+            'currently_serving': currently_serving,
             'waiting_list': waiting_list,
+            'completed_list': completed_list,
+            'no_show_list': no_show_list,
             'total_waiting': len(waiting_list),
-            'estimated_wait_minutes': len(waiting_list) * 10,  # ~10 phút/bệnh nhân
+            'estimated_wait_minutes': len(waiting_list) * 10,
         }
 

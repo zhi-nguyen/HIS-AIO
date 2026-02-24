@@ -170,6 +170,20 @@ FHIR_SERVER_URL = config('FHIR_SERVER_URL', default='')
 PACS_SERVER_URL = config('PACS_SERVER_URL', default='')
 INTEROP_MOCK_MODE = config('INTEROP_MOCK_MODE', default=True, cast=bool)
 
+# Channels / WebSocket Configuration
+ASGI_APPLICATION = 'config.asgi.application'
+
+REDIS_HOST = config('REDIS_HOST', default='localhost')
+
+CHANNEL_LAYERS = {
+    'default': {
+        'BACKEND': 'channels_redis.core.RedisChannelLayer',
+        'CONFIG': {
+            'hosts': [(REDIS_HOST, 6379)],
+        },
+    },
+}
+
 
 # Password validation
 # https://docs.djangoproject.com/en/5.2/ref/settings/#auth-password-validators

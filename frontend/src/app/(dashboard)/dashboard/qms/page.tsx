@@ -139,7 +139,7 @@ export default function QMSPage() {
         setLoading(true);
         try {
             const data = await qmsApi.getQueueBoard(selectedStation);
-            setCurrentServing(data.current_serving);
+            setCurrentServing(data.currently_serving?.[0] || null);
             setWaitingList(data.waiting_list);
             setTotalWaiting(data.total_waiting);
             setEstimatedWait(data.estimated_wait_minutes);
@@ -149,7 +149,9 @@ export default function QMSPage() {
                 const waitingData = await qmsApi.getWaiting(selectedStation);
                 const mapped: QueueBoardEntry[] = waitingData.map((q, idx) => ({
                     position: idx + 1,
+                    entry_id: q.id || '',
                     queue_number: q.number_code,
+                    daily_sequence: q.daily_sequence || idx + 1,
                     patient_name: '',
                     source_type: 'WALK_IN' as QueueSourceType,
                     priority: q.priority || 0,
