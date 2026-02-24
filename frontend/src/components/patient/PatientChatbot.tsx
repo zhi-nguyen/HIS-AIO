@@ -4,7 +4,7 @@ import { useState, useRef, useEffect, memo } from 'react';
 import { Button, Input, Typography, Avatar, Spin, Tag } from 'antd';
 import {
     SendOutlined,
-    RobotOutlined,
+    MedicineBoxOutlined,
     UserOutlined,
     CloseOutlined,
     MessageOutlined,
@@ -269,7 +269,7 @@ const MessageItem = memo(({ msg, isLast, activeForm, formDismissed, bookingCompl
         <div style={{ display: 'flex', flexDirection: 'column' }}>
             <div className={`flex gap-3 ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}>
                 <Avatar
-                    icon={msg.role === 'user' ? <UserOutlined /> : <RobotOutlined />}
+                    icon={msg.role === 'user' ? <UserOutlined /> : <MedicineBoxOutlined />}
                     size="large"
                     className={msg.role === 'user' ? 'bg-blue-600' : 'bg-emerald-600'}
                 />
@@ -358,7 +358,7 @@ const MessageList = memo(({ messages, loading, activeForm, formDismissed, bookin
             ))}
             {loading && messages[messages.length - 1]?.content === '' && !messages[messages.length - 1]?.isThinking && (
                 <div className="flex gap-3">
-                    <Avatar icon={<RobotOutlined />} className="bg-emerald-600" size="large" />
+                    <Avatar icon={<MedicineBoxOutlined />} className="bg-emerald-600" size="large" />
                     <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 rounded-bl-none">
                         <Spin size="default" />
                     </div>
@@ -732,7 +732,7 @@ export default function PatientChatbot({ apiEndpoint = '/chat/stream/' }: Patien
                     <div className="bg-gradient-to-r from-blue-600 to-blue-700 p-5 flex items-center justify-between text-white shadow-md z-10">
                         <div className="flex items-center gap-4">
                             <div className="relative">
-                                <Avatar icon={<RobotOutlined />} size="large" className="bg-white/20" />
+                                <Avatar icon={<MedicineBoxOutlined />} size="large" className="bg-white/20" />
                                 <span className="absolute bottom-0 right-0 w-3 h-3 bg-green-400 border-2 border-blue-600 rounded-full"></span>
                             </div>
                             <div>

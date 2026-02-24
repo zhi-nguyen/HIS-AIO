@@ -21,6 +21,30 @@ from .serializers import QueueNumberSerializer, ServiceStationSerializer
 from .services import ClinicalQueueService
 
 
+def _broadcast_queue_update(station):
+    """
+    Push the full queue board to all WebSocket-connected displays for this station.
+    Safe to call from sync context (views).
+    """
+    try:
+        from channels.layers import get_channel_layer
+        from asgiref.sync import async_to_sync
+        channel_layer = get_channel_layer()
+        if channel_layer is None:
+            return
+        board = ClinicalQueueService.get_queue_board(station)
+        async_to_sync(channel_layer.group_send)(
+            f'qms_station_{station.id}',
+            {
+                'type': 'queue_update',
+                'data': board,
+            },
+        )
+    except Exception:
+        import logging
+        logging.getLogger(__name__).exception('Failed to broadcast queue update')
+
+
 # ====================================================================
 # REST API Views for Clinical Queue
 # ====================================================================
@@ -238,6 +262,8 @@ def doctor_call_next(request):
             'active_count': result.get('active_count', 0),
         }, status=status.HTTP_429_TOO_MANY_REQUESTS)
     
+    _broadcast_queue_update(station)
+
     return Response({
         'success': True,
         'message': f"Mời {result['display_label']} - {result['patient_name']}",
@@ -334,9 +360,11 @@ def queue_entry_update_status(request, entry_id):
         entry.end_time = timezone.now()
         entry.save(update_fields=['status', 'end_time'])
 
+    _broadcast_queue_update(entry.station)
+
     return Response({
         'success': True,
-        'message': STATUS_MESSAGES.get(new_status, 'Đã cập nhật'),
+        'message': STATUS_MESSAGES.get(new_status, '\u0110\u00e3 c\u1eadp nh\u1eadt'),
         'entry_id': str(entry.id),
         'queue_number': entry.queue_number.number_code,
         'status': new_status,
@@ -431,3 +459,91 @@ class ServiceStationViewSet(viewsets.ModelViewSet):
             qs = qs.filter(station_type=station_type)
         return qs
 
+
+# ====================================================================
+# Display Pairing System
+# ====================================================================
+
+import random, string, logging
+logger = logging.getLogger(__name__)
+
+# In-memory pairing store: { code: { station_id, station_name, paired_at } }
+_display_pairings = {}
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def display_register(request):
+    """
+    Display screen registers itself with a new pairing code.
+    POST /qms/display/register/
+    Returns: { code: "ABC123" }
+    """
+    code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
+    _display_pairings[code] = {'station_id': None, 'station_name': None}
+    return Response({'code': code})
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def display_check(request):
+    """
+    Display polls to check if its code has been paired.
+    GET /qms/display/check/?code=ABC123
+    Returns: { paired: true/false, station_id, station_name }
+    """
+    code = request.query_params.get('code', '').upper()
+    entry = _display_pairings.get(code)
+    if not entry:
+        return Response({'paired': False, 'error': 'Code not found'})
+    if entry['station_id']:
+        return Response({
+            'paired': True,
+            'station_id': entry['station_id'],
+            'station_name': entry['station_name'],
+        })
+    return Response({'paired': False})
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def display_pair(request):
+    """
+    Reception pairs a display code to a station.
+    POST /qms/display/pair/
+    Body: { code: "ABC123", station_id: "uuid" }
+    """
+    code = (request.data.get('code') or '').upper()
+    station_id = request.data.get('station_id')
+
+    if not code or not station_id:
+        return Response(
+            {'error': 'code và station_id là bắt buộc'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    entry = _display_pairings.get(code)
+    if not entry:
+        return Response(
+            {'error': f'Mã "{code}" không tồn tại hoặc đã hết hạn'},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    try:
+        station = ServiceStation.objects.get(id=station_id)
+    except ServiceStation.DoesNotExist:
+        return Response(
+            {'error': 'Điểm dịch vụ không tồn tại'},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    entry['station_id'] = str(station.id)
+    entry['station_name'] = station.name
+    logger.info(f'Display paired: code={code} → station={station.code}')
+
+    return Response({
+        'success': True,
+        'message': f'Đã liên kết màn hình với {station.name}',
+        'station_id': str(station.id),
+        'station_name': station.name,
+    })

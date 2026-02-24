@@ -21,10 +21,8 @@ import {
     PlusOutlined,
     SearchOutlined,
     UserAddOutlined,
-    CheckCircleOutlined,
-    ReloadOutlined,
-    RobotOutlined,
     MedicineBoxOutlined,
+    ReloadOutlined,
     CheckOutlined,
     SoundOutlined,
     CloseCircleOutlined,
@@ -32,6 +30,7 @@ import {
     EyeInvisibleOutlined,
     TeamOutlined,
     PhoneOutlined,
+    AlertOutlined,
 } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import { visitApi, departmentApi, patientApi, qmsApi } from '@/lib/services';
@@ -39,6 +38,7 @@ import type { Visit, Department, CalledPatient, ServiceStation, NoShowEntry } fr
 import TriageModal from './TriageModal';
 import CreateVisitModal from './CreateVisitModal';
 import { useReceptionSocket, WsVisitPayload } from '@/hooks/useReceptionSocket';
+import { useQmsSocket } from '@/hooks/useQmsSocket';
 import { toast } from 'sonner';
 import dayjs from 'dayjs';
 import './reception-highlight.css';
@@ -124,6 +124,7 @@ export default function ReceptionPage() {
     const [visits, setVisits] = useState<Visit[]>([]);
     const [loading, setLoading] = useState(false);
     const [isModalOpen, setIsModalOpen] = useState(false);
+    const [isEmergencyModalOpen, setIsEmergencyModalOpen] = useState(false);
 
     // Triage
     const [triageModalOpen, setTriageModalOpen] = useState(false);
@@ -143,6 +144,7 @@ export default function ReceptionPage() {
     const [currentlyServing, setCurrentlyServing] = useState<CalledPatient[]>([]);
     const [noShowList, setNoShowList] = useState<NoShowEntry[]>([]);
     const [callLoading, setCallLoading] = useState(false);
+    const [pendingEntryId, setPendingEntryId] = useState<string | null>(null);
 
     // Load sound preference
     useEffect(() => {
@@ -206,13 +208,14 @@ export default function ReceptionPage() {
         fetchStations();
     }, [fetchVisits, fetchDepartments, fetchStations]);
 
-    useEffect(() => {
-        if (selectedStation) {
-            fetchQueueBoard();
-            const interval = setInterval(fetchQueueBoard, 8000);
-            return () => clearInterval(interval);
-        }
-    }, [selectedStation, fetchQueueBoard]);
+    // Queue board via WebSocket (replaces polling)
+    useQmsSocket({
+        stationId: selectedStation,
+        onBoardUpdate: useCallback((data) => {
+            setCurrentlyServing(data.currently_serving || []);
+            setNoShowList(data.no_show_list || []);
+        }, []),
+    });
 
     // ── WebSocket: Real-time new visits ──────────────────────
 
@@ -322,10 +325,19 @@ export default function ReceptionPage() {
         setTriageModalOpen(true);
     }, []);
 
-    const handleTriageSuccess = useCallback(() => {
+    const handleTriageSuccess = useCallback(async () => {
         fetchVisits();
+        // Auto-complete QMS entry after triage is confirmed
+        if (pendingEntryId) {
+            try {
+                await qmsApi.completeQueue(pendingEntryId);
+            } catch (e) {
+                console.error('Failed to complete QMS entry:', e);
+            }
+            setPendingEntryId(null);
+        }
         fetchQueueBoard();
-    }, [fetchVisits, fetchQueueBoard]);
+    }, [fetchVisits, fetchQueueBoard, pendingEntryId]);
 
     // ── Sound toggle ─────────────────────────────────────────
 
@@ -374,9 +386,11 @@ export default function ReceptionPage() {
 
     const handleTriageFromCall = useCallback(async (patient: CalledPatient) => {
         try {
+            setPendingEntryId(patient.entry_id);
             const visit = await visitApi.getById(patient.visit_id);
             openTriageModal(visit);
         } catch {
+            setPendingEntryId(null);
             message.error('Không thể mở phân luồng');
         }
     }, [message, openTriageModal]);
@@ -504,37 +518,23 @@ export default function ReceptionPage() {
             },
         },
         {
-            title: 'Thao tác',
-            key: 'actions',
+            title: 'Trạng thái',
+            key: 'status_display',
             width: 160,
-            render: (_: unknown, record: Visit) => (
-                <Space>
-                    {record.status === 'CHECK_IN' && (
-                        <Button
-                            type="primary"
-                            size="small"
-                            icon={<RobotOutlined />}
-                            onClick={() => openTriageModal(record)}
-                        >
-                            Phân luồng
-                        </Button>
-                    )}
-                    {record.status === 'TRIAGE' && !record.confirmed_department && (
-                        <Button
-                            size="small"
-                            icon={<MedicineBoxOutlined />}
-                            onClick={() => openTriageModal(record)}
-                        >
-                            Chốt khoa
-                        </Button>
-                    )}
-                    {record.status === 'COMPLETED' && (
-                        <Tag icon={<CheckCircleOutlined />} color="success">Xong</Tag>
-                    )}
-                </Space>
-            ),
+            render: (_: unknown, record: Visit) => {
+                const config = statusConfig[record.status] || { color: 'default', label: record.status };
+                if (record.confirmed_department_detail) {
+                    return (
+                        <Space direction="vertical" size={2}>
+                            <Tag color={config.color}>{config.label}</Tag>
+                            <Tag color="blue" icon={<CheckOutlined />}>{record.confirmed_department_detail.name}</Tag>
+                        </Space>
+                    );
+                }
+                return <Tag color={config.color}>{config.label}</Tag>;
+            },
         },
-    ], [openTriageModal]);
+    ], []);
 
     // ── Render ───────────────────────────────────────────────
 
@@ -557,6 +557,25 @@ export default function ReceptionPage() {
                             label: `[${s.code}] ${s.name}`,
                         }))}
                     />
+                    <Input.Search
+                        placeholder="Mã màn hình"
+                        style={{ width: 160 }}
+                        enterButton="Liên kết"
+                        onSearch={async (code) => {
+                            if (!code.trim()) return;
+                            if (!selectedStation) {
+                                message.warning('Vui lòng chọn điểm dịch vụ trước');
+                                return;
+                            }
+                            try {
+                                const result = await qmsApi.pairDisplay(code, selectedStation);
+                                message.success(result.message);
+                            } catch (err: unknown) {
+                                const error = err as { response?: { data?: { error?: string } } };
+                                message.error(error?.response?.data?.error || 'Không thể liên kết');
+                            }
+                        }}
+                    />
                     <Tooltip title={soundEnabled ? 'Tắt âm thanh' : 'Bật âm thanh'}>
                         <Button
                             type={soundEnabled ? 'primary' : 'default'}
@@ -567,6 +586,9 @@ export default function ReceptionPage() {
                     </Tooltip>
                     <Button type="primary" icon={<UserAddOutlined />} onClick={() => setIsModalOpen(true)}>
                         Tiếp nhận mới
+                    </Button>
+                    <Button danger icon={<AlertOutlined />} onClick={() => setIsEmergencyModalOpen(true)}>
+                        Tiếp nhận cấp cứu
                     </Button>
                 </Space>
             </div>
@@ -668,7 +690,7 @@ export default function ReceptionPage() {
                                             <Button
                                                 type="primary"
                                                 size="small"
-                                                icon={<RobotOutlined />}
+                                                icon={<MedicineBoxOutlined />}
                                                 onClick={() => handleTriageFromCall(patient)}
                                             >
                                                 Phân luồng
@@ -799,6 +821,14 @@ export default function ReceptionPage() {
                 open={isModalOpen}
                 onClose={() => setIsModalOpen(false)}
                 onSuccess={fetchVisits}
+            />
+
+            {/* Emergency Visit Modal */}
+            <CreateVisitModal
+                open={isEmergencyModalOpen}
+                onClose={() => setIsEmergencyModalOpen(false)}
+                onSuccess={fetchVisits}
+                emergencyMode
             />
 
             {/* Triage Modal */}

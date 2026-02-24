@@ -83,6 +83,7 @@ export const visitApi = {
     create: async (data: {
         patient: string;
         priority?: string;  // 'NORMAL' | 'PRIORITY' | 'EMERGENCY'
+        pending_merge?: boolean;
     }): Promise<Visit> => {
         const response = await api.post('/reception/visits/', data);
         return response.data;
@@ -206,6 +207,23 @@ export const qmsApi = {
         const response = await api.patch(`/qms/entries/${entryId}/status/`, {
             status: 'CALLED',
         });
+        return response.data;
+    },
+
+    // === Display Pairing ===
+
+    registerDisplay: async (): Promise<{ code: string }> => {
+        const response = await api.post('/qms/display/register/');
+        return response.data;
+    },
+
+    checkDisplay: async (code: string): Promise<{ paired: boolean; station_id?: string; station_name?: string }> => {
+        const response = await api.get('/qms/display/check/', { params: { code } });
+        return response.data;
+    },
+
+    pairDisplay: async (code: string, stationId: string): Promise<{ success: boolean; message: string }> => {
+        const response = await api.post('/qms/display/pair/', { code, station_id: stationId });
         return response.data;
     },
 
