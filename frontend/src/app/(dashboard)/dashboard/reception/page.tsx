@@ -137,6 +137,7 @@ export default function ReceptionPage() {
     const [soundEnabled, setSoundEnabled] = useState(true);
     const [badgePulse, setBadgePulse] = useState(false);
     const highlightTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+    const suppressWsToastUntilRef = useRef<number>(0);
 
     // QMS state
     const [stations, setStations] = useState<ServiceStation[]>([]);
@@ -211,7 +212,7 @@ export default function ReceptionPage() {
     // Queue board via WebSocket (replaces polling)
     useQmsSocket({
         stationId: selectedStation,
-        onBoardUpdate: useCallback((data) => {
+        onBoardUpdate: useCallback((data: { currently_serving: CalledPatient[]; no_show_list: NoShowEntry[] }) => {
             setCurrentlyServing(data.currently_serving || []);
             setNoShowList(data.no_show_list || []);
         }, []),
@@ -220,14 +221,19 @@ export default function ReceptionPage() {
     // ── WebSocket: Real-time new visits ──────────────────────
 
     const handleNewVisitWs = useCallback((wsVisit: WsVisitPayload) => {
-        const patientName = wsVisit.patient?.full_name || 'Bệnh nhân';
+        // Skip toast if this visit was just created locally (suppress for 3s window)
+        const now = Date.now();
+        if (now < suppressWsToastUntilRef.current) {
+            // Still refresh the table, just skip toast + sound
+        } else {
+            const patientName = wsVisit.patient?.full_name || 'Bệnh nhân';
+            toast.success(`${patientName} vừa đăng ký thành công`, {
+                description: `Mã: ${wsVisit.visit_code} — STT: ${wsVisit.queue_number}`,
+            });
 
-        toast.success(`${patientName} vừa đăng ký thành công`, {
-            description: `Mã: ${wsVisit.visit_code} — STT: ${wsVisit.queue_number}`,
-        });
-
-        if (soundEnabled) {
-            playTing();
+            if (soundEnabled) {
+                playTing();
+            }
         }
 
         fetchVisits();
@@ -820,14 +826,14 @@ export default function ReceptionPage() {
             <CreateVisitModal
                 open={isModalOpen}
                 onClose={() => setIsModalOpen(false)}
-                onSuccess={fetchVisits}
+                onSuccess={() => { suppressWsToastUntilRef.current = Date.now() + 3000; fetchVisits(); }}
             />
 
             {/* Emergency Visit Modal */}
             <CreateVisitModal
                 open={isEmergencyModalOpen}
                 onClose={() => setIsEmergencyModalOpen(false)}
-                onSuccess={fetchVisits}
+                onSuccess={() => { suppressWsToastUntilRef.current = Date.now() + 3000; fetchVisits(); }}
                 emergencyMode
             />
 

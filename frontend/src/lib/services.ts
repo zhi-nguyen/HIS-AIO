@@ -59,6 +59,36 @@ export const patientApi = {
 };
 
 /**
+ * Insurance Mock API (Cổng Chính phủ giả lập)
+ * Tra cứu thông tin công dân qua CCCD / mã BHYT
+ */
+export interface InsuranceLookupResult {
+    status: 'success' | 'expired' | 'not_found';
+    data: {
+        patient_name: string;
+        insurance_code: string;
+        dob: string;
+        gender: 'male' | 'female';
+        address: string;
+        card_issue_date: string;
+        card_expire_date: string;
+        benefit_rate: number;
+        benefit_code: string;
+        registered_hospital_code: string;
+        registered_hospital_name: string;
+        is_5_years_consecutive: boolean;
+        check_time?: string;
+    } | null;
+}
+
+export const insuranceApi = {
+    lookup: async (query: string): Promise<InsuranceLookupResult> => {
+        const response = await api.post('/insurance/lookup/', { query });
+        return response.data;
+    },
+};
+
+/**
  * Visit/Reception API Services
  * Quản lý tiếp nhận khám bệnh
  */
