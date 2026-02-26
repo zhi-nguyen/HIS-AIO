@@ -91,6 +91,38 @@ function playTing() {
     }
 }
 
+/**
+ * Play TTS audio from the backend.
+ * If audio_url is available, play the pre-generated MP3.
+ * Otherwise, fall back to browser speechSynthesis.
+ */
+function playTtsAudio(audioUrl: string | null, fallbackText: string) {
+    const API_BASE = process.env.NEXT_PUBLIC_API_URL?.replace('/api/v1', '') || 'http://localhost:8000';
+    if (audioUrl) {
+        try {
+            const fullUrl = audioUrl.startsWith('http') ? audioUrl : `${API_BASE}${audioUrl}`;
+            const audio = new Audio(fullUrl);
+            audio.play().catch(() => {
+                // If autoplay is blocked, fall back to speechSynthesis
+                playTtsFallback(fallbackText);
+            });
+            return;
+        } catch {
+            // Fall through to fallback
+        }
+    }
+    playTtsFallback(fallbackText);
+}
+
+function playTtsFallback(text: string) {
+    if ('speechSynthesis' in window) {
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.lang = 'vi-VN';
+        utterance.rate = 0.9;
+        speechSynthesis.speak(utterance);
+    }
+}
+
 // ── Configs ──────────────────────────────────────────────────
 
 const statusConfig: Record<string, { color: string; label: string }> = {
@@ -137,6 +169,7 @@ export default function ReceptionPage() {
     const [soundEnabled, setSoundEnabled] = useState(true);
     const [badgePulse, setBadgePulse] = useState(false);
     const highlightTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+    const suppressWsToastUntilRef = useRef<number>(0);
 
     // QMS state
     const [stations, setStations] = useState<ServiceStation[]>([]);
@@ -211,7 +244,7 @@ export default function ReceptionPage() {
     // Queue board via WebSocket (replaces polling)
     useQmsSocket({
         stationId: selectedStation,
-        onBoardUpdate: useCallback((data) => {
+        onBoardUpdate: useCallback((data: { currently_serving: CalledPatient[]; no_show_list: NoShowEntry[] }) => {
             setCurrentlyServing(data.currently_serving || []);
             setNoShowList(data.no_show_list || []);
         }, []),
@@ -220,14 +253,19 @@ export default function ReceptionPage() {
     // ── WebSocket: Real-time new visits ──────────────────────
 
     const handleNewVisitWs = useCallback((wsVisit: WsVisitPayload) => {
-        const patientName = wsVisit.patient?.full_name || 'Bệnh nhân';
+        // Skip toast if this visit was just created locally (suppress for 3s window)
+        const now = Date.now();
+        if (now < suppressWsToastUntilRef.current) {
+            // Still refresh the table, just skip toast + sound
+        } else {
+            const patientName = wsVisit.patient?.full_name || 'Bệnh nhân';
+            toast.success(`${patientName} vừa đăng ký thành công`, {
+                description: `Mã: ${wsVisit.visit_code} — STT: ${wsVisit.queue_number}`,
+            });
 
-        toast.success(`${patientName} vừa đăng ký thành công`, {
-            description: `Mã: ${wsVisit.visit_code} — STT: ${wsVisit.queue_number}`,
-        });
-
-        if (soundEnabled) {
-            playTing();
+            if (soundEnabled) {
+                playTing();
+            }
         }
 
         fetchVisits();
@@ -359,14 +397,11 @@ export default function ReceptionPage() {
             const result = await qmsApi.doctorCallNext(selectedStation);
             if (result.success && result.called_patient) {
                 const p = result.called_patient;
-                if ('speechSynthesis' in window) {
-                    const utterance = new SpeechSynthesisUtterance(
-                        `Mời số ${p.daily_sequence}, ${p.patient_name || ''}, đến ${p.station_name}`
-                    );
-                    utterance.lang = 'vi-VN';
-                    utterance.rate = 0.9;
-                    speechSynthesis.speak(utterance);
-                }
+                // Play edge-tts audio (or fallback to browser TTS)
+                playTtsAudio(
+                    p.audio_url,
+                    `Mời số ${p.daily_sequence}, ${p.patient_name || ''}, đến ${p.station_name}`
+                );
                 message.success(`Đã gọi: ${p.queue_number} — ${p.patient_name}`);
                 fetchQueueBoard();
             } else {
@@ -408,14 +443,13 @@ export default function ReceptionPage() {
     const handleRecall = async (entry: NoShowEntry) => {
         try {
             await qmsApi.recallQueue(entry.entry_id);
-            if ('speechSynthesis' in window) {
-                const utterance = new SpeechSynthesisUtterance(
-                    `Mời số ${entry.daily_sequence}, ${entry.patient_name || ''}, vui lòng quay lại quầy tiếp đón`
-                );
-                utterance.lang = 'vi-VN';
-                utterance.rate = 0.9;
-                speechSynthesis.speak(utterance);
-            }
+            // Try to play TTS audio for recalled patient
+            const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
+            const ttsUrl = `${API_BASE}/qms/tts/audio/${entry.entry_id}/`;
+            playTtsAudio(
+                ttsUrl,
+                `Mời số ${entry.daily_sequence}, ${entry.patient_name || ''}, vui lòng quay lại quầy tiếp đón`
+            );
             message.success(`Đã gọi lại: ${entry.queue_number} — ${entry.patient_name}`);
             fetchQueueBoard();
         } catch {
@@ -820,14 +854,14 @@ export default function ReceptionPage() {
             <CreateVisitModal
                 open={isModalOpen}
                 onClose={() => setIsModalOpen(false)}
-                onSuccess={fetchVisits}
+                onSuccess={() => { suppressWsToastUntilRef.current = Date.now() + 3000; fetchVisits(); }}
             />
 
             {/* Emergency Visit Modal */}
             <CreateVisitModal
                 open={isEmergencyModalOpen}
                 onClose={() => setIsEmergencyModalOpen(false)}
-                onSuccess={fetchVisits}
+                onSuccess={() => { suppressWsToastUntilRef.current = Date.now() + 3000; fetchVisits(); }}
                 emergencyMode
             />
 

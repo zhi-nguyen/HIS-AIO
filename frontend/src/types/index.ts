@@ -192,6 +192,7 @@ export interface CalledPatient {
     station_code: string;
     station_name: string;
     wait_time_minutes: number | null;
+    audio_url: string | null;
 }
 
 /** Entry trong danh sách chờ */
