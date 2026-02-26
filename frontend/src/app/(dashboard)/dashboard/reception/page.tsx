@@ -91,6 +91,38 @@ function playTing() {
     }
 }
 
+/**
+ * Play TTS audio from the backend.
+ * If audio_url is available, play the pre-generated MP3.
+ * Otherwise, fall back to browser speechSynthesis.
+ */
+function playTtsAudio(audioUrl: string | null, fallbackText: string) {
+    const API_BASE = process.env.NEXT_PUBLIC_API_URL?.replace('/api/v1', '') || 'http://localhost:8000';
+    if (audioUrl) {
+        try {
+            const fullUrl = audioUrl.startsWith('http') ? audioUrl : `${API_BASE}${audioUrl}`;
+            const audio = new Audio(fullUrl);
+            audio.play().catch(() => {
+                // If autoplay is blocked, fall back to speechSynthesis
+                playTtsFallback(fallbackText);
+            });
+            return;
+        } catch {
+            // Fall through to fallback
+        }
+    }
+    playTtsFallback(fallbackText);
+}
+
+function playTtsFallback(text: string) {
+    if ('speechSynthesis' in window) {
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.lang = 'vi-VN';
+        utterance.rate = 0.9;
+        speechSynthesis.speak(utterance);
+    }
+}
+
 // ── Configs ──────────────────────────────────────────────────
 
 const statusConfig: Record<string, { color: string; label: string }> = {
@@ -365,14 +397,11 @@ export default function ReceptionPage() {
             const result = await qmsApi.doctorCallNext(selectedStation);
             if (result.success && result.called_patient) {
                 const p = result.called_patient;
-                if ('speechSynthesis' in window) {
-                    const utterance = new SpeechSynthesisUtterance(
-                        `Mời số ${p.daily_sequence}, ${p.patient_name || ''}, đến ${p.station_name}`
-                    );
-                    utterance.lang = 'vi-VN';
-                    utterance.rate = 0.9;
-                    speechSynthesis.speak(utterance);
-                }
+                // Play edge-tts audio (or fallback to browser TTS)
+                playTtsAudio(
+                    p.audio_url,
+                    `Mời số ${p.daily_sequence}, ${p.patient_name || ''}, đến ${p.station_name}`
+                );
                 message.success(`Đã gọi: ${p.queue_number} — ${p.patient_name}`);
                 fetchQueueBoard();
             } else {
@@ -414,14 +443,13 @@ export default function ReceptionPage() {
     const handleRecall = async (entry: NoShowEntry) => {
         try {
             await qmsApi.recallQueue(entry.entry_id);
-            if ('speechSynthesis' in window) {
-                const utterance = new SpeechSynthesisUtterance(
-                    `Mời số ${entry.daily_sequence}, ${entry.patient_name || ''}, vui lòng quay lại quầy tiếp đón`
-                );
-                utterance.lang = 'vi-VN';
-                utterance.rate = 0.9;
-                speechSynthesis.speak(utterance);
-            }
+            // Try to play TTS audio for recalled patient
+            const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
+            const ttsUrl = `${API_BASE}/qms/tts/audio/${entry.entry_id}/`;
+            playTtsAudio(
+                ttsUrl,
+                `Mời số ${entry.daily_sequence}, ${entry.patient_name || ''}, vui lòng quay lại quầy tiếp đón`
+            );
             message.success(`Đã gọi lại: ${entry.queue_number} — ${entry.patient_name}`);
             fetchQueueBoard();
         } catch {

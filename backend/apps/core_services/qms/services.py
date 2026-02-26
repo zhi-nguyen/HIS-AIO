@@ -458,6 +458,8 @@ class ClinicalQueueService:
             emergency.called_time = timezone.now()
             emergency.save(update_fields=['status', 'called_time'])
             logger.info('[CALL_NEXT] Called EMERGENCY entry=%s station_id=%s', emergency.id, emergency.station_id)
+            # TTS: pre-generate for upcoming patients
+            ClinicalQueueService._trigger_tts_pre_generate(station)
             return ClinicalQueueService._format_called_entry(emergency)
 
         # Bước 2: Kiểm tra giới hạn (only for non-emergency)
@@ -484,6 +486,8 @@ class ClinicalQueueService:
                 '[CALL_NEXT] Called entry=%s station_id=%s status_after_save=%s',
                 next_entry.id, next_entry.station_id, next_entry.status
             )
+            # TTS: pre-generate for upcoming patients
+            ClinicalQueueService._trigger_tts_pre_generate(station)
             return ClinicalQueueService._format_called_entry(next_entry)
         
         logger.info('[CALL_NEXT] Queue empty for station=%s', station.id)
@@ -503,6 +507,14 @@ class ClinicalQueueService:
         
         # Patient model dùng @property full_name (có underscore)
         patient_name = getattr(patient, 'full_name', None) or str(patient)
+
+        # TTS: get pre-generated audio URL
+        audio_url = None
+        try:
+            from .tts_service import get_audio_url
+            audio_url = get_audio_url(str(entry.id))
+        except Exception:
+            pass  # TTS is best-effort, don't break the call flow
         
         return {
             'entry_id': str(entry.id),
@@ -517,7 +529,18 @@ class ClinicalQueueService:
             'station_name': entry.station.name,
             'wait_time_minutes': entry.wait_time_minutes,
             'status': entry.status,
+            'audio_url': audio_url,
         }
+
+    @staticmethod
+    def _trigger_tts_pre_generate(station):
+        """Trigger TTS pre-generation for upcoming patients (best-effort)."""
+        try:
+            from .tts_service import pre_generate_for_upcoming
+            pre_generate_for_upcoming.delay(str(station.id))
+        except Exception:
+            import logging
+            logging.getLogger('qms').exception('Failed to trigger TTS pre-generation')
 
     @staticmethod
     def get_queue_board(station):
