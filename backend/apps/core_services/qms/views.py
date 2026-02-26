@@ -79,7 +79,14 @@ def kiosk_checkin(request):
         result = ClinicalQueueService.checkin_from_booking(appointment_id, station)
     except ValueError as e:
         return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
-    
+
+    # TTS: generate audio for this patient
+    try:
+        from apps.core_services.qms.tts_service import generate_tts_audio
+        generate_tts_audio.delay(str(result['queue_entry'].id))
+    except Exception:
+        pass  # TTS is best-effort
+
     return Response({
         'success': True,
         'message': 'Check-in thành công!',
@@ -148,6 +155,13 @@ def walkin_checkin(request):
         reason=reason,
         extra_priority=extra_priority,
     )
+
+    # TTS: generate audio for this patient
+    try:
+        from apps.core_services.qms.tts_service import generate_tts_audio
+        generate_tts_audio.delay(str(result['queue_entry'].id))
+    except Exception:
+        pass  # TTS is best-effort
     
     return Response({
         'success': True,
@@ -369,6 +383,37 @@ def queue_entry_update_status(request, entry_id):
         'queue_number': entry.queue_number.number_code,
         'status': new_status,
     })
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def serve_tts_audio(request, entry_id):
+    """
+    Serve pre-generated TTS audio for a QueueEntry.
+
+    GET /qms/tts/audio/<entry_id>/
+    Returns: MP3 file (audio/mpeg) or 404
+    """
+    from django.http import FileResponse
+    from apps.core_services.qms.tts_service import get_audio_url, _get_redis_client
+    import os
+
+    r = _get_redis_client()
+    redis_key = f'tts:audio:{entry_id}'
+    file_path = r.get(redis_key)
+
+    if file_path and os.path.exists(file_path):
+        return FileResponse(
+            open(file_path, 'rb'),
+            content_type='audio/mpeg',
+            as_attachment=False,
+            filename=os.path.basename(file_path),
+        )
+
+    return Response(
+        {'error': 'Audio not found or not yet generated'},
+        status=status.HTTP_404_NOT_FOUND,
+    )
 
 
 # ====================================================================

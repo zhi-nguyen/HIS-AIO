@@ -33,6 +33,44 @@ export default function PublicDisplayPage() {
     const wsRef = useRef<WebSocket | null>(null);
     const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
     const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const prevServingRef = useRef<Set<string>>(new Set());
+
+    // TTS audio playback for display screen
+    const playTtsForPatient = useCallback((patient: CalledPatient) => {
+        const API_BASE = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1');
+        if (patient.audio_url) {
+            const baseUrl = API_BASE.replace(/\/api\/v1\/?$/, '');
+            const fullUrl = patient.audio_url.startsWith('http')
+                ? patient.audio_url
+                : `${baseUrl}${patient.audio_url}`;
+            const audio = new Audio(fullUrl);
+            audio.play().catch(() => {
+                // Fallback to browser TTS
+                if ('speechSynthesis' in window) {
+                    const u = new SpeechSynthesisUtterance(
+                        `Mời số ${patient.daily_sequence}, ${patient.patient_name || ''}`
+                    );
+                    u.lang = 'vi-VN';
+                    u.rate = 0.9;
+                    speechSynthesis.speak(u);
+                }
+            });
+        } else {
+            // Try fetching from TTS endpoint
+            const ttsUrl = `${API_BASE}/qms/tts/audio/${patient.entry_id}/`;
+            const audio = new Audio(ttsUrl);
+            audio.play().catch(() => {
+                if ('speechSynthesis' in window) {
+                    const u = new SpeechSynthesisUtterance(
+                        `Mời số ${patient.daily_sequence}, ${patient.patient_name || ''}`
+                    );
+                    u.lang = 'vi-VN';
+                    u.rate = 0.9;
+                    speechSynthesis.speak(u);
+                }
+            });
+        }
+    }, []);
 
     // Clock
     useEffect(() => {
@@ -79,10 +117,22 @@ export default function PublicDisplayPage() {
 
     // Apply board data from WebSocket message
     const applyBoardData = useCallback((data: Record<string, unknown>) => {
-        setCurrentlyServing((data.currently_serving as CalledPatient[]) || []);
+        const newServing = (data.currently_serving as CalledPatient[]) || [];
+
+        // Detect NEW patients in currently_serving → play TTS
+        const newIds = new Set(newServing.map((p) => p.entry_id));
+        for (const patient of newServing) {
+            if (!prevServingRef.current.has(patient.entry_id)) {
+                // This is a newly called patient → play TTS
+                playTtsForPatient(patient);
+            }
+        }
+        prevServingRef.current = newIds;
+
+        setCurrentlyServing(newServing);
         setWaitingList((data.waiting_list as QueueBoardEntry[]) || []);
         setNoShowList((data.no_show_list as NoShowEntry[]) || []);
-    }, []);
+    }, [playTtsForPatient]);
 
     // Step 3: Connect WebSocket once paired
     useEffect(() => {

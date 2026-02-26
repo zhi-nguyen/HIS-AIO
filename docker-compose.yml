@@ -38,6 +38,7 @@ services:
     container_name: his_backend
     volumes:
       - ./backend:/app
+      - tts_audio:/app/media/audio/tts
     ports:
       - "8000:8000"
     env_file:
@@ -56,6 +57,46 @@ services:
     command: >
       sh -c "python manage.py migrate --noinput &&
              uvicorn config.asgi:application --host 0.0.0.0 --port 8000 --reload --reload-dir /app"
+    restart: always
+
+  celery_worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: his_celery_worker
+    volumes:
+      - ./backend:/app
+      - tts_audio:/app/media/audio/tts
+    env_file:
+      - ./backend/.env
+    environment:
+      - PYTHONUNBUFFERED=1
+      - POSTGRES_HOST=db
+      - REDIS_HOST=redis
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: celery -A config worker -l info -Q default --concurrency=2
+    restart: always
+
+  celery_beat:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: his_celery_beat
+    volumes:
+      - ./backend:/app
+    env_file:
+      - ./backend/.env
+    environment:
+      - PYTHONUNBUFFERED=1
+      - POSTGRES_HOST=db
+      - REDIS_HOST=redis
+    depends_on:
+      - celery_worker
+    command: celery -A config beat -l info
     restart: always
 
   frontend:
@@ -82,3 +123,5 @@ services:
 
 volumes:
   his_postgres_data:
+  tts_audio:
+

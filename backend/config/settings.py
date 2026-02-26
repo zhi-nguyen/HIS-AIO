@@ -235,3 +235,20 @@ SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(minutes=60),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=1),
 }
+
+# ── Celery Configuration ─────────────────────────────────────────────
+CELERY_BROKER_URL = f'redis://{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}'
+CELERY_RESULT_BACKEND = f'redis://{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}'
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_SERIALIZER = 'json'
+CELERY_TIMEZONE = 'Asia/Ho_Chi_Minh'
+
+# ── Media files (TTS audio, uploads) ─────────────────────────────────
+MEDIA_ROOT = BASE_DIR / 'media'
+MEDIA_URL = '/media/'
+
+# ── TTS Configuration ────────────────────────────────────────────────
+TTS_VOICE = config('TTS_VOICE', default='vi-VN-HoaiMyNeural')
+TTS_AUDIO_DIR = 'audio/tts'  # relative to MEDIA_ROOT
+TTS_PRE_GENERATE_COUNT = config('TTS_PRE_GENERATE_COUNT', default=5, cast=int)
