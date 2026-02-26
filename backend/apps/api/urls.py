@@ -73,6 +73,9 @@ urlpatterns = [
     path('qms/queue/board/', qms_views.queue_board, name='qms_queue_board'),
     path('qms/entries/<uuid:entry_id>/status/', qms_views.queue_entry_update_status, name='qms_entry_status'),
 
+    # TTS Audio
+    path('qms/tts/audio/<uuid:entry_id>/', qms_views.serve_tts_audio, name='qms_tts_audio'),
+
     # Display pairing
     path('qms/display/register/', qms_views.display_register, name='qms_display_register'),
     path('qms/display/check/', qms_views.display_check, name='qms_display_check'),
