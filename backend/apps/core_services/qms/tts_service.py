@@ -86,7 +86,7 @@ def build_announcement_text(patient_name: str, daily_sequence: int, station) -> 
     )
 
 
-def _run_edge_tts(text: str, output_path: str, voice: str) -> None:
+def _run_tts(text: str, output_path: str, voice: str = 'vi-VN-HoaiMyNeural') -> None:
     """
     Run edge-tts to generate an MP3 file.
     edge-tts is async, so we run it in an event loop.
@@ -97,7 +97,6 @@ def _run_edge_tts(text: str, output_path: str, voice: str) -> None:
         communicate = edge_tts.Communicate(text, voice)
         await communicate.save(output_path)
 
-    # Create a new event loop for the Celery worker thread
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     try:
@@ -160,8 +159,8 @@ def generate_tts_audio(self, entry_id: str) -> dict:
     file_path = str(audio_dir / filename)
 
     try:
-        voice = settings.TTS_VOICE
-        _run_edge_tts(text, file_path, voice)
+        voice = getattr(settings, 'TTS_VOICE', 'vi-VN-HoaiMyNeural')
+        _run_tts(text, file_path, voice)
     except Exception as exc:
         logger.error('[TTS] edge-tts failed for entry=%s: %s', entry_id, exc)
         raise self.retry(exc=exc)

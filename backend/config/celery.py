@@ -13,7 +13,15 @@ os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings')
 
 app = Celery('his')
 app.config_from_object('django.conf:settings', namespace='CELERY')
+
+# Auto-discover tasks.py in all INSTALLED_APPS
 app.autodiscover_tasks()
+
+# Explicitly register tts_service module (not named tasks.py)
+app.autodiscover_tasks(
+    ['apps.core_services.qms'],
+    related_name='tts_service',
+)
 
 # Celery Beat schedule
 app.conf.beat_schedule = {

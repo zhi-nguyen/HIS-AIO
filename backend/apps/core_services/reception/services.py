@@ -1,4 +1,5 @@
 from django.utils import timezone
+from django.db import transaction, IntegrityError
 from .models import Visit
 from apps.medical_services.emr.models import ClinicalRecord
 
@@ -8,19 +9,38 @@ class ReceptionService:
         """
         Create a new visit for a patient.
         """
-        # Generate a simple visit code (In production, use a sequence or UUID logic)
+        import logging
+        logger = logging.getLogger(__name__)
+        
         today_str = timezone.now().strftime('%Y%m%d')
         count = Visit.objects.filter(created_at__date=timezone.now().date()).count() + 1
-        visit_code = f"VISIT-{today_str}-{count:04d}"
 
-        visit = Visit.objects.create(
-            patient=patient,
-            visit_code=visit_code,
-            priority=priority,
-            check_in_time=timezone.now(),
-            status=Visit.Status.CHECK_IN,
-            queue_number=count
-        )
+        max_retries = 10
+        visit = None
+        for attempt in range(max_retries):
+            visit_code = f"VISIT-{today_str}-{count:04d}"
+            try:
+                with transaction.atomic():
+                    visit = Visit.objects.create(
+                        patient=patient,
+                        visit_code=visit_code,
+                        priority=priority,
+                        check_in_time=timezone.now(),
+                        status=Visit.Status.CHECK_IN,
+                        queue_number=count
+                    )
+                break  # Success
+            except IntegrityError:
+                count += 1
+                logger.warning(
+                    f"[RECEPTION] visit_code {visit_code} conflict, "
+                    f"retrying with count={count} (attempt {attempt + 1})"
+                )
+        
+        if visit is None:
+            raise Exception(
+                f"Không thể tạo mã lượt khám sau {max_retries} lần thử."
+            )
         
         # Initialize Clinical Record automatically
         ClinicalRecord.objects.create(

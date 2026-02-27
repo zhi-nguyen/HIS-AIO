@@ -442,12 +442,10 @@ export default function ReceptionPage() {
 
     const handleRecall = async (entry: NoShowEntry) => {
         try {
-            await qmsApi.recallQueue(entry.entry_id);
-            // Try to play TTS audio for recalled patient
-            const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
-            const ttsUrl = `${API_BASE}/qms/tts/audio/${entry.entry_id}/`;
+            const result = await qmsApi.recallQueue(entry.entry_id);
+            // Play TTS audio from backend response
             playTtsAudio(
-                ttsUrl,
+                result?.audio_url || null,
                 `Mời số ${entry.daily_sequence}, ${entry.patient_name || ''}, vui lòng quay lại quầy tiếp đón`
             );
             message.success(`Đã gọi lại: ${entry.queue_number} — ${entry.patient_name}`);

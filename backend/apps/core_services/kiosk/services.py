@@ -103,6 +103,45 @@ class KioskService:
         return copy.deepcopy(record) if record else None
 
     @staticmethod
+    def _sync_patient_from_insurance(patient: 'Patient', insurance_info: dict | None):
+        """
+        Đồng bộ thông tin bệnh nhân từ dữ liệu BHYT (cổng Chính phủ).
+        Cập nhật họ tên nếu dữ liệu mới có dấu tiếng Việt mà DB đang thiếu.
+        """
+        if not insurance_info:
+            return
+        
+        gov_name = insurance_info.get('patient_name', '')
+        if not gov_name:
+            return
+        
+        name_parts = gov_name.split()
+        gov_first = name_parts[-1] if name_parts else ''
+        gov_last = ' '.join(name_parts[:-1]) if len(name_parts) > 1 else ''
+        
+        # Chỉ cập nhật nếu tên khác (VD: ASCII → có dấu)
+        updated_fields = []
+        if gov_first and gov_first != patient.first_name:
+            patient.first_name = gov_first
+            updated_fields.append('first_name')
+        if gov_last and gov_last != patient.last_name:
+            patient.last_name = gov_last
+            updated_fields.append('last_name')
+        
+        # Cập nhật mã BHYT nếu chưa có
+        gov_insurance = insurance_info.get('insurance_code')
+        if gov_insurance and not patient.insurance_number:
+            patient.insurance_number = gov_insurance
+            updated_fields.append('insurance_number')
+        
+        if updated_fields:
+            patient.save(update_fields=updated_fields)
+            logger.info(
+                f"[KIOSK] Synced patient {patient.patient_code} "
+                f"fields: {updated_fields}"
+            )
+
+    @staticmethod
     def _find_or_create_patient(scan_data: str, scan_type: str, insurance_info: dict | None) -> tuple:
         """
         Tìm hoặc tạo Patient từ dữ liệu quét.
@@ -113,6 +152,7 @@ class KioskService:
         if scan_type == 'cccd':
             try:
                 patient = Patient.objects.get(id_card=scan_data)
+                KioskService._sync_patient_from_insurance(patient, insurance_info)
                 return patient, False
             except Patient.DoesNotExist:
                 pass
@@ -125,6 +165,7 @@ class KioskService:
             if insurance_code:
                 try:
                     patient = Patient.objects.get(insurance_number=insurance_code)
+                    KioskService._sync_patient_from_insurance(patient, insurance_info)
                     return patient, False
                 except Patient.DoesNotExist:
                     pass
@@ -139,6 +180,7 @@ class KioskService:
                     if cccd:
                         try:
                             patient = Patient.objects.get(id_card=cccd)
+                            KioskService._sync_patient_from_insurance(patient, insurance_info)
                             return patient, False
                         except Patient.DoesNotExist:
                             break
@@ -173,20 +215,39 @@ class KioskService:
                         id_card = record.get('cccd')
                         break
             
-            # Generate patient_code
+            # Generate patient_code with retry to handle race conditions
+            from django.db import IntegrityError
             today_str = timezone.now().strftime('%Y%m%d')
             count = Patient.objects.filter(created_at__date=timezone.now().date()).count() + 1
-            patient_code = f"BN-{today_str}-{count:04d}"
             
-            patient = Patient.objects.create(
-                patient_code=patient_code,
-                id_card=id_card,
-                insurance_number=insurance_info.get('insurance_code'),
-                first_name=first_name,
-                last_name=last_name,
-                date_of_birth=dob,
-                gender=gender,
-            )
+            max_retries = 10
+            patient = None
+            for attempt in range(max_retries):
+                patient_code = f"BN-{today_str}-{count:04d}"
+                try:
+                    with transaction.atomic():
+                        patient = Patient.objects.create(
+                            patient_code=patient_code,
+                            id_card=id_card,
+                            insurance_number=insurance_info.get('insurance_code'),
+                            first_name=first_name,
+                            last_name=last_name,
+                            date_of_birth=dob,
+                            gender=gender,
+                        )
+                    break  # Success
+                except IntegrityError:
+                    count += 1
+                    logger.warning(
+                        f"[KIOSK] patient_code {patient_code} conflict, "
+                        f"retrying with count={count} (attempt {attempt + 1})"
+                    )
+            
+            if patient is None:
+                raise Exception(
+                    f"Không thể tạo mã bệnh nhân sau {max_retries} lần thử. "
+                    f"Vui lòng thử lại."
+                )
             
             logger.info(f"[KIOSK] Tạo Patient mới: {patient.patient_code} - {patient.full_name}")
             return patient, True
@@ -353,6 +414,13 @@ class KioskService:
         
         # 6. Trigger AI summarize (background - fire-and-forget)
         cls._trigger_ai_summary_async(visit, chief_complaint)
+        
+        # 7. TTS: Pre-generate audio for this patient (best-effort)
+        try:
+            from apps.core_services.qms.tts_service import generate_tts_audio
+            generate_tts_audio.delay(str(result['queue_entry'].id))
+        except Exception:
+            pass  # TTS is best-effort
         
         logger.info(
             f"[KIOSK] Register: {patient.patient_code} | "

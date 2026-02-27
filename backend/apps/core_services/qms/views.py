@@ -376,12 +376,29 @@ def queue_entry_update_status(request, entry_id):
 
     _broadcast_queue_update(entry.station)
 
+    # TTS: generate audio for recall
+    audio_url = None
+    if new_status == 'CALLED':
+        try:
+            from apps.core_services.qms.tts_service import generate_tts_audio, get_audio_url
+            audio_url = get_audio_url(str(entry.id))
+            if not audio_url:
+                task = generate_tts_audio.apply_async(args=[str(entry.id)], expires=30)
+                try:
+                    result = task.get(timeout=5)
+                    audio_url = result.get('audio_url') if isinstance(result, dict) else None
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
     return Response({
         'success': True,
         'message': STATUS_MESSAGES.get(new_status, '\u0110\u00e3 c\u1eadp nh\u1eadt'),
         'entry_id': str(entry.id),
         'queue_number': entry.queue_number.number_code,
         'status': new_status,
+        'audio_url': audio_url,
     })
 
 
