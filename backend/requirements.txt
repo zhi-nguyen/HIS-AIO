@@ -90,4 +90,4 @@ channels-redis==4.2.1
 daphne==4.1.2
 uvicorn[standard]==0.34.0
 celery==5.4.0
-edge-tts==7.0.2
+edge-tts

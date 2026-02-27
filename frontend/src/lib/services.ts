@@ -233,7 +233,7 @@ export const qmsApi = {
     },
 
     // Gọi lại bệnh nhân vắng
-    recallQueue: async (entryId: string): Promise<QueueNumber> => {
+    recallQueue: async (entryId: string): Promise<QueueNumber & { audio_url?: string | null }> => {
         const response = await api.patch(`/qms/entries/${entryId}/status/`, {
             status: 'CALLED',
         });
