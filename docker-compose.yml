@@ -78,7 +78,7 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    command: celery -A config worker -l info -Q default --concurrency=2
+    command: celery -A config worker -l info --concurrency=2
     restart: always
 
   celery_beat:

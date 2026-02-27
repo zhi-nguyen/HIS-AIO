@@ -27,7 +27,7 @@ MOCK_RECORDS = [
         "insurance_code": "TE1790000000123",
         "insurance_short": "0000000123",
         "data": {
-            "patient_name": "NGUYEN VAN AN",
+            "patient_name": "NGUYỄN VĂN AN",
             "insurance_code": "TE1790000000123",
             "dob": "2021-03-15",
             "gender": "male",
@@ -47,7 +47,7 @@ MOCK_RECORDS = [
         "insurance_code": "DN7910000000456",
         "insurance_short": "0000000456",
         "data": {
-            "patient_name": "TRAN THI BICH",
+            "patient_name": "TRẦN THỊ BÍCH",
             "insurance_code": "DN7910000000456",
             "dob": "1985-07-20",
             "gender": "female",
@@ -67,7 +67,7 @@ MOCK_RECORDS = [
         "insurance_code": "GD0120000000789",
         "insurance_short": "0000000789",
         "data": {
-            "patient_name": "LE VAN CUONG",
+            "patient_name": "LÊ VĂN CƯỜNG",
             "insurance_code": "GD0120000000789",
             "dob": "1990-11-03",
             "gender": "male",
@@ -87,7 +87,7 @@ MOCK_RECORDS = [
         "insurance_code": "HT7920000001234",
         "insurance_short": "0000001234",
         "data": {
-            "patient_name": "PHAM VAN DUNG",
+            "patient_name": "PHẠM VĂN DỤNG",
             "insurance_code": "HT7920000001234",
             "dob": "1955-02-10",
             "gender": "male",
@@ -107,7 +107,7 @@ MOCK_RECORDS = [
         "insurance_code": "HN3810000005678",
         "insurance_short": "0000005678",
         "data": {
-            "patient_name": "HOANG THI EM",
+            "patient_name": "HOÀNG THỊ EM",
             "insurance_code": "HN3810000005678",
             "dob": "1975-08-25",
             "gender": "female",
@@ -127,7 +127,7 @@ MOCK_RECORDS = [
         "insurance_code": "HS9210000009012",
         "insurance_short": "0000009012",
         "data": {
-            "patient_name": "VO MINH PHUC",
+            "patient_name": "VÕ MINH PHÚC",
             "insurance_code": "HS9210000009012",
             "dob": "2010-09-01",
             "gender": "male",
@@ -147,7 +147,7 @@ MOCK_RECORDS = [
         "insurance_code": "CC4810000003456",
         "insurance_short": "0000003456",
         "data": {
-            "patient_name": "NGUYEN THANH GIANG",
+            "patient_name": "NGUYỄN THÀNH GIANG",
             "insurance_code": "CC4810000003456",
             "dob": "1945-04-30",
             "gender": "male",
@@ -167,7 +167,7 @@ MOCK_RECORDS = [
         "insurance_code": "DN7920000007890",
         "insurance_short": "0000007890",
         "data": {
-            "patient_name": "DO THI HANH",
+            "patient_name": "ĐỖ THỊ HẠNH",
             "insurance_code": "DN7920000007890",
             "dob": "1988-12-01",
             "gender": "female",
@@ -187,7 +187,7 @@ MOCK_RECORDS = [
         "insurance_code": "SV9220000002345",
         "insurance_short": "0000002345",
         "data": {
-            "patient_name": "HUYNH QUOC KHANH",
+            "patient_name": "HUỲNH QUỐC KHANH",
             "insurance_code": "SV9220000002345",
             "dob": "2003-05-15",
             "gender": "male",
@@ -207,7 +207,7 @@ MOCK_RECORDS = [
         "insurance_code": "CK3610000006789",
         "insurance_short": "0000006789",
         "data": {
-            "patient_name": "BUI THI LOAN",
+            "patient_name": "BÙI THỊ LOAN",
             "insurance_code": "CK3610000006789",
             "dob": "1970-01-20",
             "gender": "female",
@@ -226,7 +226,7 @@ MOCK_RECORDS = [
         "insurance_code": "CK3610000006789",
         "insurance_short": "0000006789",
         "data": {
-            "patient_name": "NGUYEN CHI NGUYEN",
+            "patient_name": "NGUYỄN CHÍ NGUYÊN",
             "insurance_code": "CK3610000006789",
             "dob": "2004-01-20",
             "gender": "male",

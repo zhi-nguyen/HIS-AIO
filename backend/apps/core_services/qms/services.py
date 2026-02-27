@@ -508,13 +508,34 @@ class ClinicalQueueService:
         # Patient model dùng @property full_name (có underscore)
         patient_name = getattr(patient, 'full_name', None) or str(patient)
 
-        # TTS: get pre-generated audio URL
+        # TTS: get pre-generated audio URL (or trigger generation)
         audio_url = None
         try:
-            from .tts_service import get_audio_url
+            from .tts_service import get_audio_url, generate_tts_audio
+            import logging as _log
+            _tts_logger = _log.getLogger('qms.tts')
+            _tts_logger.info('[TTS] _format_called_entry: checking audio for entry=%s', entry.id)
             audio_url = get_audio_url(str(entry.id))
-        except Exception:
-            pass  # TTS is best-effort, don't break the call flow
+            if not audio_url:
+                _tts_logger.info('[TTS] No cached audio, triggering generate_tts_audio for entry=%s', entry.id)
+                # Audio not pre-generated — trigger now and try to get result
+                task = generate_tts_audio.apply_async(
+                    args=[str(entry.id)],
+                    expires=30,
+                )
+                _tts_logger.info('[TTS] Task dispatched: task_id=%s, waiting up to 5s...', task.id)
+                # Wait briefly for result (up to 5 seconds)
+                try:
+                    result = task.get(timeout=5)
+                    _tts_logger.info('[TTS] Task result: %s', result)
+                    audio_url = result.get('audio_url') if isinstance(result, dict) else None
+                except Exception as inner_exc:
+                    _tts_logger.warning('[TTS] Task.get() failed: %s', inner_exc)
+            else:
+                _tts_logger.info('[TTS] Found cached audio_url=%s', audio_url)
+        except Exception as exc:
+            import logging as _log
+            _log.getLogger('qms.tts').error('[TTS] _format_called_entry error: %s', exc, exc_info=True)
         
         return {
             'entry_id': str(entry.id),
