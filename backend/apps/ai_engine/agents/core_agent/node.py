@@ -15,6 +15,11 @@ from pydantic import BaseModel, Field
 from apps.ai_engine.graph.state import AgentState
 from apps.ai_engine.graph.llm_config import llm_pro, logging_node_execution
 from .prompts import SUPERVISOR_SYSTEM_PROMPT
+from apps.ai_engine.agents.security import (
+    InputSanitizer, 
+    is_agent_allowed, 
+    REJECTION_MESSAGE,
+)
 
 
 # ==============================================================================
@@ -161,6 +166,36 @@ def supervisor_node(state: AgentState) -> Dict[str, Any]:
     logging_node_execution("SUPERVISOR")
     messages = state["messages"]
     
+    # =========================================================================
+    # LAYER 1: INPUT SANITIZATION & INJECTION DETECTION
+    # =========================================================================
+    last_user_msg = ""
+    for msg in reversed(messages):
+        if hasattr(msg, 'content'):
+            last_user_msg = msg.content
+            break
+        elif isinstance(msg, dict) and msg.get('role') == 'user':
+            last_user_msg = msg.get('content', '')
+            break
+    
+    sanitized_input, is_safe = InputSanitizer.check_and_sanitize(last_user_msg)
+    
+    if not is_safe:
+        print(f"[SUPERVISOR] SECURITY: Prompt injection detected! Blocking.")
+        message = AIMessage(
+            content=REJECTION_MESSAGE,
+            additional_kwargs={
+                "agent": "supervisor",
+                "security_block": True,
+                "thinking_progress": ["Phát hiện yêu cầu bất thường - từ chối xử lý."],
+            }
+        )
+        return {
+            "messages": [message],
+            "next_agent": "end",
+            "current_agent": "supervisor"
+        }
+    
     # Call LLM với text thinking prompt
     prompt_messages = [SystemMessage(content=SUPERVISOR_SYSTEM_PROMPT)] + messages
     
@@ -207,6 +242,16 @@ def supervisor_node(state: AgentState) -> Dict[str, Any]:
             }
         )
 
+    # =========================================================================
+    # LAYER 2: AGENT ACCESS CONTROL (check user role vs target agent)
+    # =========================================================================
+    user_context = state.get("user_context") or {}
+    staff_role = user_context.get("staff_role", "ANONYMOUS")
+    
+    if not is_agent_allowed(staff_role, next_agent):
+        print(f"[SUPERVISOR] RBAC: Role '{staff_role}' denied access to agent '{next_agent}'. Redirecting to consultant.")
+        next_agent = "consultant"
+    
     return {
         "messages": [message],
         "next_agent": next_agent,

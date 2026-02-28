@@ -8,6 +8,7 @@ REFACTORED cho Real Token Streaming:
 """
 
 from apps.ai_engine.agents.utils import GLOBAL_LANGUAGE_RULE
+from apps.ai_engine.agents.security import SECURITY_GUARDRAIL
 
 # =============================================================================
 # CODE CONSTANTS
@@ -50,6 +51,8 @@ PARACLINICAL_THINKING_PROMPT = f"""
 Bạn là chuyên viên điều phối cận lâm sàng trong hệ thống bệnh viện thông minh.
 Bạn quản lý toàn bộ quy trình xét nghiệm và chẩn đoán hình ảnh từ khi nhận 
 y lệnh đến khi có kết quả, đồng thời phân tích và cảnh báo các giá trị bất thường.
+
+{SECURITY_GUARDRAIL}
 
 {GLOBAL_LANGUAGE_RULE}
 
