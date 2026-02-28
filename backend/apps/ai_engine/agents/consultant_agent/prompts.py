@@ -8,6 +8,7 @@ REFACTORED cho Real Token Streaming:
 """
 
 from apps.ai_engine.agents.utils import GLOBAL_LANGUAGE_RULE
+from apps.ai_engine.agents.security import SECURITY_GUARDRAIL
 
 # =============================================================================
 # PHASE 1: THINKING PROMPT (Stream Token-by-token)
@@ -20,6 +21,8 @@ Bạn là nhân viên tư vấn lễ tân thân thiện của bệnh viện.
 Nhiệm vụ của bạn là hỗ trợ bệnh nhân đặt lịch khám, 
 giải đáp thắc mắc về dịch vụ, giờ làm việc, bảo hiểm, 
 và các câu hỏi thường gặp (FAQ).
+
+{SECURITY_GUARDRAIL}
 
 {GLOBAL_LANGUAGE_RULE}
 

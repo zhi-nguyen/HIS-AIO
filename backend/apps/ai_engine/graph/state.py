@@ -30,6 +30,14 @@ class Message(TypedDict, total=False):
     metadata: Dict[str, Any]
 
 
+class UserContext(TypedDict, total=False):
+    """User authentication context for RBAC enforcement."""
+    user_id: str
+    staff_role: str       # DOCTOR, NURSE, RECEPTIONIST, etc.
+    department: str
+    is_authenticated: bool
+
+
 class AgentState(TypedDict, total=False):
     """
     Shared state for the Multi-Agent Graph.
@@ -75,6 +83,9 @@ class AgentState(TypedDict, total=False):
     
     # Session management
     session_id: Optional[str]
+    
+    # User authentication context (Zero Trust)
+    user_context: Optional[UserContext]
 
 
 # Agent name constants for routing
@@ -111,7 +122,8 @@ class TriageCode:
 def create_initial_state(
     session_id: str,
     patient_context: Optional[PatientContext] = None,
-    initial_message: Optional[str] = None
+    initial_message: Optional[str] = None,
+    user_context: Optional[UserContext] = None
 ) -> AgentState:
     """
     Factory function to create a properly initialized AgentState.
@@ -120,6 +132,7 @@ def create_initial_state(
         session_id: Unique identifier for the conversation session
         patient_context: Optional patient data to include
         initial_message: Optional initial user message
+        user_context: Optional user auth context for RBAC
     
     Returns:
         Initialized AgentState ready for graph execution
@@ -128,7 +141,8 @@ def create_initial_state(
         state = create_initial_state(
             session_id="sess-123",
             patient_context={"patient_id": "P001", "patient_name": "Nguyen Van A"},
-            initial_message="Tôi bị đau đầu"
+            initial_message="Tôi bị đau đầu",
+            user_context={"user_id": "U001", "staff_role": "DOCTOR", "department": "Cardiology", "is_authenticated": True}
         )
     """
     messages: List[Message] = []
@@ -153,5 +167,11 @@ def create_initial_state(
         intervention_reason=None,
         confidence_score=None,
         triage_code=None,
-        session_id=session_id
+        session_id=session_id,
+        user_context=user_context or {
+            "user_id": "",
+            "staff_role": "ANONYMOUS",
+            "department": "",
+            "is_authenticated": False,
+        }
     )

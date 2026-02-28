@@ -8,6 +8,7 @@ REFACTORED cho Real Token Streaming:
 """
 
 from apps.ai_engine.agents.utils import GLOBAL_LANGUAGE_RULE
+from apps.ai_engine.agents.security import SECURITY_GUARDRAIL
 
 # =============================================================================
 # CODE CONSTANTS
@@ -28,6 +29,8 @@ PHARMACIST_THINKING_PROMPT = f"""
 
 Bạn là dược sĩ lâm sàng chuyên nghiệp, hỗ trợ bác sĩ và bệnh nhân 
 về các vấn đề liên quan đến thuốc.
+
+{SECURITY_GUARDRAIL}
 
 {GLOBAL_LANGUAGE_RULE}
 

@@ -21,6 +21,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 
 from apps.ai_engine.streaming.service import StreamingService
+from apps.ai_engine.agents.security import require_role
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +32,7 @@ logger = logging.getLogger(__name__)
 
 @csrf_exempt
 @require_http_methods(["POST"])
+@require_role("DOCTOR", "NURSE")
 def submit_triage_assessment(request: HttpRequest) -> JsonResponse:
     """
     Submit structured patient data for AI-assisted triage assessment.
@@ -181,6 +183,7 @@ YÊU CẦU: Đánh giá mức độ ưu tiên (triage code), phân luồng khoa 
 
 @csrf_exempt
 @require_http_methods(["POST"])
+@require_role("DOCTOR", "PHARMACIST")
 def check_drug_interactions(request: HttpRequest) -> JsonResponse:
     """
     Check for drug interactions from a structured medication list.
@@ -297,6 +300,7 @@ YÊU CẦU:
 
 @csrf_exempt
 @require_http_methods(["POST"])
+@require_role("DOCTOR")
 def create_lab_order(request: HttpRequest) -> JsonResponse:
     """
     Create a lab order with AI-assisted contraindication checking.
@@ -415,6 +419,7 @@ YÊU CẦU:
 
 @csrf_exempt
 @require_http_methods(["POST"])
+@require_role("DOCTOR", "NURSE")
 def generate_patient_summary(request: HttpRequest) -> JsonResponse:
     """
     Generate an AI summary from structured patient EMR data.
@@ -565,6 +570,7 @@ YÊU CẦU: Tạo bản tóm tắt {summary_type} cho bệnh nhân với các ph
 
 @csrf_exempt
 @require_http_methods(["POST"])
+@require_role("DOCTOR", "NURSE")
 def assess_vitals(request: HttpRequest) -> JsonResponse:
     """
     Quick vital signs assessment without LLM (rule-based).
@@ -686,6 +692,7 @@ def assess_vitals(request: HttpRequest) -> JsonResponse:
 
 @csrf_exempt
 @require_http_methods(["GET"])
+@require_role("DOCTOR")
 def get_ai_suggestions(request: HttpRequest, visit_id: str) -> JsonResponse:
     """
     Retrieve saved AI suggestions for a specific visit's clinical record.
