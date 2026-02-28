@@ -261,7 +261,8 @@ class StreamingService:
         self,
         message: str,
         session_id: str,
-        patient_context: Optional[Dict[str, Any]] = None
+        patient_context: Optional[Dict[str, Any]] = None,
+        user_context: Optional[Dict[str, Any]] = None
     ) -> AsyncGenerator[Dict[str, Any], None]:
         """
         Stream LangGraph execution with "Stream Tư Duy - Return Kết Quả" protocol.
@@ -270,6 +271,7 @@ class StreamingService:
             message: User's message (supports Vietnamese UTF-8)
             session_id: Unique session identifier for checkpointing
             patient_context: Optional patient EMR data
+            user_context: Optional user auth context for RBAC enforcement
             
         Yields:
             Dict events in the format:
@@ -283,7 +285,8 @@ class StreamingService:
         initial_state = create_initial_state(
             session_id=session_id,
             patient_context=patient_context,
-            initial_message=message
+            initial_message=message,
+            user_context=user_context
         )
         
         # Config for LangGraph with thread_id for checkpointing
@@ -487,7 +490,8 @@ class StreamingService:
         self,
         message: str,
         session_id: str,
-        patient_context: Optional[Dict[str, Any]] = None
+        patient_context: Optional[Dict[str, Any]] = None,
+        user_context: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """
         Get complete response without streaming.
@@ -499,6 +503,7 @@ class StreamingService:
             message: User's message
             session_id: Session identifier
             patient_context: Optional patient data
+            user_context: Optional user auth context for RBAC
             
         Returns:
             Dict in result_json format with structured data
@@ -506,7 +511,8 @@ class StreamingService:
         initial_state = create_initial_state(
             session_id=session_id,
             patient_context=patient_context,
-            initial_message=message
+            initial_message=message,
+            user_context=user_context
         )
         
         config = {

@@ -8,6 +8,7 @@ REFACTORED cho Real Token Streaming:
 """
 
 from apps.ai_engine.agents.utils import GLOBAL_LANGUAGE_RULE
+from apps.ai_engine.agents.security import SECURITY_GUARDRAIL
 
 # =============================================================================
 # PHASE 1: THINKING PROMPT (Stream Token-by-token)
@@ -19,6 +20,8 @@ CLINICAL_THINKING_PROMPT = f"""
 Bạn là một bác sĩ giàu kinh nghiệm trong hệ thống bệnh viện thông minh. 
 Bạn có khả năng phân tích hồ sơ bệnh án điện tử (EMR), chỉ số sinh hiệu, 
 và lắng nghe mô tả triệu chứng từ bệnh nhân để đưa ra chẩn đoán sơ bộ.
+
+{SECURITY_GUARDRAIL}
 
 {GLOBAL_LANGUAGE_RULE}
 

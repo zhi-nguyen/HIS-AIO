@@ -17,6 +17,7 @@ from django.views.decorators.http import require_http_methods
 
 from apps.ai_engine.streaming.service import StreamingService
 from apps.ai_engine.streaming.events import StreamEvent, EventType
+from apps.ai_engine.agents.security import extract_user_context
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +33,8 @@ def async_view(view_func):
 async def generate_sse_events(
     message: str,
     session_id: str,
-    patient_context: Optional[Dict[str, Any]] = None
+    patient_context: Optional[Dict[str, Any]] = None,
+    user_context: Optional[Dict[str, Any]] = None
 ) -> AsyncGenerator[str, None]:
     """
     Async generator that yields SSE-formatted events from LangGraph streaming.
@@ -41,6 +43,7 @@ async def generate_sse_events(
         message: User's message in Vietnamese
         session_id: Unique session identifier
         patient_context: Optional patient EMR data
+        user_context: Optional user auth context for RBAC
         
     Yields:
         SSE-formatted strings: "data: {json}\n\n"
@@ -51,7 +54,8 @@ async def generate_sse_events(
         async for event in streaming_service.stream_response(
             message=message,
             session_id=session_id,
-            patient_context=patient_context
+            patient_context=patient_context,
+            user_context=user_context
         ):
             # Format as SSE: data: {json}\n\n
             # ensure_ascii=False to preserve Vietnamese characters
@@ -134,8 +138,11 @@ def chat_stream(request: HttpRequest) -> StreamingHttpResponse:
         
         logger.info(f"SSE stream request: session={session_id}, message_len={len(message)}")
         
+        # Extract user context from JWT (if authenticated) or default to ANONYMOUS
+        user_context = extract_user_context(request)
+        
         # Create async generator
-        async_gen = generate_sse_events(message, session_id, patient_context)
+        async_gen = generate_sse_events(message, session_id, patient_context, user_context)
         
         # Create streaming response
         response = StreamingHttpResponse(
@@ -204,10 +211,15 @@ def chat_sync(request: HttpRequest) -> JsonResponse:
             )
         
         streaming_service = StreamingService()
+        
+        # Extract user context from JWT (if authenticated) or default to ANONYMOUS
+        user_context = extract_user_context(request)
+        
         result = asyncio.run(streaming_service.get_full_response(
             message=message,
             session_id=session_id,
-            patient_context=patient_context
+            patient_context=patient_context,
+            user_context=user_context
         ))
         
         response = JsonResponse(result, json_dumps_params={'ensure_ascii': False})

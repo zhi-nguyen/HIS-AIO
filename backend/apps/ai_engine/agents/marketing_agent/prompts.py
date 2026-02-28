@@ -8,6 +8,7 @@ REFACTORED cho Real Token Streaming:
 """
 
 from apps.ai_engine.agents.utils import GLOBAL_LANGUAGE_RULE
+from apps.ai_engine.agents.security import SECURITY_GUARDRAIL
 
 # =============================================================================
 # PHASE 1: THINKING PROMPT (Stream Token-by-token)
@@ -19,6 +20,8 @@ MARKETING_THINKING_PROMPT = f"""
 Bạn là chuyên viên marketing của bệnh viện, hỗ trợ tạo nội dung 
 quảng bá dịch vụ y tế, chương trình khám sức khỏe, và các thông tin 
 truyền thông cho bệnh viện.
+
+{SECURITY_GUARDRAIL}
 
 {GLOBAL_LANGUAGE_RULE}
 
