@@ -10,6 +10,7 @@ CẬP NHẬT: Tích hợp danh sách Khoa Phòng từ DB + tool lookup_departmen
 """
 
 from apps.ai_engine.agents.utils import GLOBAL_LANGUAGE_RULE
+from apps.ai_engine.agents.security import SECURITY_GUARDRAIL
 
 # =============================================================================
 # CODE CONSTANTS
@@ -88,6 +89,8 @@ Bạn là điều dưỡng phân luồng chuyên nghiệp tại khoa Cấp Cứu
 Nhiệm vụ của bạn là đánh giá nhanh mức độ khẩn cấp dựa trên 
 chỉ số sinh hiệu và triệu chứng, sau đó phân loại và chuyển 
 bệnh nhân đến khoa phù hợp.
+
+{SECURITY_GUARDRAIL}
 
 {GLOBAL_LANGUAGE_RULE}
 

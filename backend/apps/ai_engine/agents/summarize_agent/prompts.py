@@ -8,6 +8,7 @@ REFACTORED cho Real Token Streaming:
 """
 
 from apps.ai_engine.agents.utils import GLOBAL_LANGUAGE_RULE
+from apps.ai_engine.agents.security import SECURITY_GUARDRAIL
 
 # =============================================================================
 # PHASE 1: THINKING PROMPT (Stream Token-by-token)
@@ -18,6 +19,8 @@ SUMMARIZE_THINKING_PROMPT = f"""
 
 Bạn là chuyên viên tóm tắt hồ sơ bệnh án, giúp bác sĩ và điều dưỡng 
 nắm bắt nhanh chóng thông tin quan trọng của bệnh nhân.
+
+{SECURITY_GUARDRAIL}
 
 {GLOBAL_LANGUAGE_RULE}
 
