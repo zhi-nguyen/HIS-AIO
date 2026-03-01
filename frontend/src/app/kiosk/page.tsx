@@ -24,7 +24,10 @@ import {
     WarningOutlined,
     ReloadOutlined,
     FileTextOutlined,
+    QrcodeOutlined,
 } from '@ant-design/icons';
+import ScannerModal from '@/components/ScannerModal';
+import { parseCccdQrData } from '@/utils/cccd';
 import { kioskApi } from '@/lib/services';
 import type {
     KioskSelfServiceIdentifyResponse,
@@ -79,6 +82,7 @@ export default function KioskPage() {
     const [chiefComplaint, setChiefComplaint] = useState('');
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [showScanner, setShowScanner] = useState(false);
 
     // API results
     const [identifyResult, setIdentifyResult] = useState<KioskSelfServiceIdentifyResponse | null>(null);
@@ -130,13 +134,15 @@ export default function KioskPage() {
     }, [currentStep, handleReset]);
 
     // --- Step 1: Identify ---
-    const handleIdentify = async () => {
-        if (!scanData.trim()) return;
+    const handleIdentify = async (overrideScanData?: any) => {
+        const dataToScan = typeof overrideScanData === 'string' ? overrideScanData : scanData.trim();
+        if (!dataToScan) return;
+
         setError(null);
         setLoading(true);
 
         try {
-            const result = await kioskApi.identify(scanData.trim());
+            const result = await kioskApi.identify(dataToScan);
             setIdentifyResult(result);
             setCurrentStep(1);
         } catch (err) {
@@ -191,6 +197,24 @@ export default function KioskPage() {
             setLoading(false);
         }
     };
+
+    // --- QR Scanner Handler ---
+    const handleQrScanSuccess = useCallback((decodedText: string) => {
+        setShowScanner(false);
+        const parsed = parseCccdQrData(decodedText);
+
+        console.log('--- KHÁCH HÀNG QUÉT QR TẠI KIOSK ---');
+        console.log('Dữ liệu thô quét được:', decodedText);
+        console.log('Thông tin phân tích:', parsed);
+
+        if (!parsed) {
+            setError('Mã QR không hợp lệ hoặc không phải CCCD');
+            return;
+        }
+
+        setScanData(parsed.cccd);
+        handleIdentify(parsed.cccd);
+    }, [handleIdentify]);
 
     // ======================================================================
     // RENDER
@@ -281,25 +305,45 @@ export default function KioskPage() {
                                     />
                                 )}
 
-                                <Button
-                                    type="primary"
-                                    size="large"
-                                    block
-                                    loading={loading}
-                                    onClick={handleIdentify}
-                                    disabled={!scanData.trim()}
-                                    icon={<ScanOutlined />}
-                                    style={{
-                                        height: 56,
-                                        fontSize: 18,
-                                        borderRadius: 16,
-                                        background: 'linear-gradient(135deg, #00b4d8, #0077b6)',
-                                        border: 'none',
-                                        fontWeight: 600,
-                                    }}
-                                >
-                                    Tra cứu
-                                </Button>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <Button
+                                        type="default"
+                                        size="large"
+                                        block
+                                        onClick={() => setShowScanner(true)}
+                                        icon={<QrcodeOutlined />}
+                                        style={{
+                                            height: 56,
+                                            fontSize: 16,
+                                            borderRadius: 16,
+                                            background: 'rgba(255,255,255,0.1)',
+                                            borderColor: 'rgba(255,255,255,0.2)',
+                                            color: '#fff',
+                                            fontWeight: 500,
+                                        }}
+                                    >
+                                        Quét QR Camera
+                                    </Button>
+                                    <Button
+                                        type="primary"
+                                        size="large"
+                                        block
+                                        loading={loading}
+                                        onClick={handleIdentify}
+                                        disabled={!scanData.trim()}
+                                        icon={<ScanOutlined />}
+                                        style={{
+                                            height: 56,
+                                            fontSize: 18,
+                                            borderRadius: 16,
+                                            background: 'linear-gradient(135deg, #00b4d8, #0077b6)',
+                                            border: 'none',
+                                            fontWeight: 600,
+                                        }}
+                                    >
+                                        Tra cứu
+                                    </Button>
+                                </div>
                             </div>
 
                             {/* Mock data hints */}
@@ -584,6 +628,12 @@ export default function KioskPage() {
             <footer className="text-center py-4 text-blue-400/50 text-xs border-t border-white/5">
                 Vui lòng giữ gìn thiết bị • Hotline hỗ trợ: <span className="text-cyan-400">1900 1234</span>
             </footer>
+
+            <ScannerModal
+                open={showScanner}
+                onCancel={() => setShowScanner(false)}
+                onScanSuccess={handleQrScanSuccess}
+            />
 
             {/* ── Custom Styles ── */}
             <style jsx global>{`
