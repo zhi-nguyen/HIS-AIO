@@ -30,6 +30,9 @@ import {
 import { visitApi, patientApi, insuranceApi, type InsuranceLookupResult } from '@/lib/services';
 import type { Patient } from '@/types';
 import dayjs from 'dayjs';
+import ScannerModal from '@/components/ScannerModal';
+import { parseCccdQrData } from '@/utils/cccd';
+import { QrcodeOutlined } from '@ant-design/icons';
 
 const { Text } = Typography;
 
@@ -108,10 +111,12 @@ export default function CreateVisitModal({ open, onClose, onSuccess, emergencyMo
     const [showDiffModal, setShowDiffModal] = useState(false);
     const [diffFields, setDiffFields] = useState<DiffField[]>([]);
     const [cccdScanned, setCccdScanned] = useState(false);
+    const [showScanner, setShowScanner] = useState(false);
 
     // ── CCCD Scan Handler ──────────────────────────────────────
-    const handleCccdScan = useCallback(async () => {
-        const cccd = cccdInput.trim();
+    const handleCccdScan = useCallback(async (overrideCccd?: any) => {
+        const cccdStr = typeof overrideCccd === 'string' ? overrideCccd : cccdInput;
+        const cccd = cccdStr.trim();
         if (!/^\d{12}$/.test(cccd)) {
             message.warning('CCCD phải là 12 chữ số');
             return;
@@ -447,6 +452,48 @@ export default function CreateVisitModal({ open, onClose, onSuccess, emergencyMo
         onClose();
     };
 
+    const handleQrScanSuccess = useCallback((decodedText: string) => {
+        setShowScanner(false);
+        const parsed = parseCccdQrData(decodedText);
+
+        console.log('--- NHÂN VIÊN LỄ TÂN QUÉT QR ---');
+        console.log('Dữ liệu thô quét được:', decodedText);
+        console.log('Thông tin phân tích:', parsed);
+
+        if (!parsed) {
+            message.error('Mã QR không hợp lệ hoặc không phải CCCD');
+            return;
+        }
+
+        setCccdInput(parsed.cccd);
+
+        // Auto-fill basic info first from QR
+        const dobDayjs = parsed.dob ? dayjs(parsed.dob) : undefined;
+        if (emergencyMode) {
+            newPatientForm.setFieldsValue({
+                last_name: toTitleCase(splitVietnameseName(parsed.fullName).lastName),
+                first_name: toTitleCase(splitVietnameseName(parsed.fullName).firstName),
+                gender: parsed.gender,
+                date_of_birth: dobDayjs,
+                id_card: parsed.cccd,
+            });
+        } else {
+            setShowNewPatientForm(true);
+            setTimeout(() => {
+                newPatientForm.setFieldsValue({
+                    last_name: toTitleCase(splitVietnameseName(parsed.fullName).lastName),
+                    first_name: toTitleCase(splitVietnameseName(parsed.fullName).firstName),
+                    gender: parsed.gender,
+                    date_of_birth: dobDayjs,
+                    id_card: parsed.cccd,
+                });
+            }, 100);
+        }
+
+        // concurrently trigger BHYT lookup
+        handleCccdScan(parsed.cccd);
+    }, [emergencyMode, newPatientForm, message, handleCccdScan]);
+
     // ── CCCD Scan Section (shared between modes) ───────────────
     const CccdScanSection = (
         <Card
@@ -471,6 +518,13 @@ export default function CreateVisitModal({ open, onClose, onSuccess, emergencyMo
                     style={{ flex: 1 }}
                     disabled={cccdLoading}
                 />
+                <Button
+                    type="default"
+                    icon={<QrcodeOutlined />}
+                    onClick={() => setShowScanner(true)}
+                >
+                    Quét QR
+                </Button>
                 <Button
                     type="primary"
                     icon={<SearchOutlined />}
@@ -694,6 +748,11 @@ export default function CreateVisitModal({ open, onClose, onSuccess, emergencyMo
                     </div>
                 </Modal>
                 {DiffModal}
+                <ScannerModal
+                    open={showScanner}
+                    onCancel={() => setShowScanner(false)}
+                    onScanSuccess={handleQrScanSuccess}
+                />
             </>
         );
     }
@@ -824,15 +883,20 @@ export default function CreateVisitModal({ open, onClose, onSuccess, emergencyMo
 
                     <Divider className="my-3" />
 
-                    <div className="flex justify-end gap-2">
+                    <div className="flex justify-end gap-2 mt-4">
                         <Button onClick={handleClose}>Hủy</Button>
-                        <Button type="primary" htmlType="submit" icon={<PlusOutlined />}>
+                        <Button type="primary" htmlType="submit" icon={<PlusOutlined />} disabled={!selectedPatient && !showNewPatientForm}>
                             Tiếp nhận
                         </Button>
                     </div>
                 </Form>
             </Modal>
             {DiffModal}
+            <ScannerModal
+                open={showScanner}
+                onCancel={() => setShowScanner(false)}
+                onScanSuccess={handleQrScanSuccess}
+            />
         </>
     );
 }
