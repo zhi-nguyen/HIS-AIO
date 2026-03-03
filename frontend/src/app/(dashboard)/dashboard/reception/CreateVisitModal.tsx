@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import {
     Modal,
     Form,
@@ -41,6 +41,8 @@ interface CreateVisitModalProps {
     onClose: () => void;
     onSuccess: () => void;
     emergencyMode?: boolean;
+    pendingCccdScanData?: string | null;
+    clearPendingCccdScanData?: () => void;
 }
 
 // ── Helpers ────────────────────────────────────────────────────
@@ -89,7 +91,7 @@ interface DiffField {
     differs: boolean;
 }
 
-export default function CreateVisitModal({ open, onClose, onSuccess, emergencyMode = false }: CreateVisitModalProps) {
+export default function CreateVisitModal({ open, onClose, onSuccess, emergencyMode = false, pendingCccdScanData, clearPendingCccdScanData }: CreateVisitModalProps) {
     const { message, modal } = App.useApp();
     const [form] = Form.useForm();
     const [patientOptions, setPatientOptions] = useState<{ value: string; label: string; patient: Patient }[]>([]);
@@ -111,7 +113,6 @@ export default function CreateVisitModal({ open, onClose, onSuccess, emergencyMo
     const [showDiffModal, setShowDiffModal] = useState(false);
     const [diffFields, setDiffFields] = useState<DiffField[]>([]);
     const [cccdScanned, setCccdScanned] = useState(false);
-    const [showScanner, setShowScanner] = useState(false);
 
     // ── CCCD Scan Handler ──────────────────────────────────────
     const handleCccdScan = useCallback(async (overrideCccd?: any) => {
@@ -451,14 +452,14 @@ export default function CreateVisitModal({ open, onClose, onSuccess, emergencyMo
         newPatientForm.resetFields();
         onClose();
     };
+    const handleScannerInput = useCallback((scannedText: string) => {
+        if (!scannedText.includes('|')) {
+            setCccdInput(scannedText);
+            handleCccdScan(scannedText);
+            return;
+        }
 
-    const handleQrScanSuccess = useCallback((decodedText: string) => {
-        setShowScanner(false);
-        const parsed = parseCccdQrData(decodedText);
-
-        console.log('--- NHÂN VIÊN LỄ TÂN QUÉT QR ---');
-        console.log('Dữ liệu thô quét được:', decodedText);
-        console.log('Thông tin phân tích:', parsed);
+        const parsed = parseCccdQrData(scannedText);
 
         if (!parsed) {
             message.error('Mã QR không hợp lệ hoặc không phải CCCD');
@@ -494,6 +495,17 @@ export default function CreateVisitModal({ open, onClose, onSuccess, emergencyMo
         handleCccdScan(parsed.cccd);
     }, [emergencyMode, newPatientForm, message, handleCccdScan]);
 
+    import('@/components/common/ScannerStatus').catch(() => { }); // prevent unused imports error
+
+    useEffect(() => {
+        if (open && pendingCccdScanData) {
+            handleScannerInput(pendingCccdScanData);
+            if (clearPendingCccdScanData) {
+                clearPendingCccdScanData();
+            }
+        }
+    }, [open, pendingCccdScanData, handleScannerInput, clearPendingCccdScanData]);
+
     // ── CCCD Scan Section (shared between modes) ───────────────
     const CccdScanSection = (
         <Card
@@ -507,6 +519,7 @@ export default function CreateVisitModal({ open, onClose, onSuccess, emergencyMo
                 </span>
             }
         >
+            <div className="mb-2 text-sm text-gray-500 italic">💡 Vui lòng đưa mã QR hoặc thẻ CCCD vào máy quét.</div>
             <div className="flex gap-2">
                 <Input
                     value={cccdInput}
@@ -518,13 +531,6 @@ export default function CreateVisitModal({ open, onClose, onSuccess, emergencyMo
                     style={{ flex: 1 }}
                     disabled={cccdLoading}
                 />
-                <Button
-                    type="default"
-                    icon={<QrcodeOutlined />}
-                    onClick={() => setShowScanner(true)}
-                >
-                    Quét QR
-                </Button>
                 <Button
                     type="primary"
                     icon={<SearchOutlined />}
@@ -748,11 +754,6 @@ export default function CreateVisitModal({ open, onClose, onSuccess, emergencyMo
                     </div>
                 </Modal>
                 {DiffModal}
-                <ScannerModal
-                    open={showScanner}
-                    onCancel={() => setShowScanner(false)}
-                    onScanSuccess={handleQrScanSuccess}
-                />
             </>
         );
     }
@@ -892,11 +893,6 @@ export default function CreateVisitModal({ open, onClose, onSuccess, emergencyMo
                 </Form>
             </Modal>
             {DiffModal}
-            <ScannerModal
-                open={showScanner}
-                onCancel={() => setShowScanner(false)}
-                onScanSuccess={handleQrScanSuccess}
-            />
         </>
     );
 }
