@@ -114,6 +114,7 @@ export const visitApi = {
         patient: string;
         priority?: string;  // 'NORMAL' | 'PRIORITY' | 'EMERGENCY'
         pending_merge?: boolean;
+        station_id?: string | null;
     }): Promise<Visit> => {
         const response = await api.post('/reception/visits/', data);
         return response.data;

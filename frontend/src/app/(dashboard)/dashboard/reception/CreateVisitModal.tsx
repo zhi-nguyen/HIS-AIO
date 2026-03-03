@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import {
     Modal,
     Form,
@@ -17,6 +17,7 @@ import {
     Alert,
     Table,
     Tag,
+    Space,
 } from 'antd';
 import {
     PlusOutlined,
@@ -30,6 +31,9 @@ import {
 import { visitApi, patientApi, insuranceApi, type InsuranceLookupResult } from '@/lib/services';
 import type { Patient } from '@/types';
 import dayjs from 'dayjs';
+import ScannerModal from '@/components/ScannerModal';
+import { parseCccdQrData } from '@/utils/cccd';
+import { QrcodeOutlined } from '@ant-design/icons';
 
 const { Text } = Typography;
 
@@ -38,6 +42,9 @@ interface CreateVisitModalProps {
     onClose: () => void;
     onSuccess: () => void;
     emergencyMode?: boolean;
+    pendingCccdScanData?: string | null;
+    clearPendingCccdScanData?: () => void;
+    selectedStation?: string | null;
 }
 
 // ── Helpers ────────────────────────────────────────────────────
@@ -86,7 +93,7 @@ interface DiffField {
     differs: boolean;
 }
 
-export default function CreateVisitModal({ open, onClose, onSuccess, emergencyMode = false }: CreateVisitModalProps) {
+export default function CreateVisitModal({ open, onClose, onSuccess, emergencyMode = false, pendingCccdScanData, clearPendingCccdScanData, selectedStation }: CreateVisitModalProps) {
     const { message, modal } = App.useApp();
     const [form] = Form.useForm();
     const [patientOptions, setPatientOptions] = useState<{ value: string; label: string; patient: Patient }[]>([]);
@@ -105,13 +112,17 @@ export default function CreateVisitModal({ open, onClose, onSuccess, emergencyMo
     const [cccdLoading, setCccdLoading] = useState(false);
     const [govData, setGovData] = useState<GovData | null>(null);
     const [hospitalPatient, setHospitalPatient] = useState<Patient | null>(null);
+    const [isSubmitting, setIsSubmitting] = useState(false);
     const [showDiffModal, setShowDiffModal] = useState(false);
+
+    // Scanner state
     const [diffFields, setDiffFields] = useState<DiffField[]>([]);
     const [cccdScanned, setCccdScanned] = useState(false);
 
     // ── CCCD Scan Handler ──────────────────────────────────────
-    const handleCccdScan = useCallback(async () => {
-        const cccd = cccdInput.trim();
+    const handleCccdScan = useCallback(async (overrideCccd?: any) => {
+        const cccdStr = typeof overrideCccd === 'string' ? overrideCccd : cccdInput;
+        const cccd = cccdStr.trim();
         if (!/^\d{12}$/.test(cccd)) {
             message.warning('CCCD phải là 12 chữ số');
             return;
@@ -230,6 +241,8 @@ export default function CreateVisitModal({ open, onClose, onSuccess, emergencyMo
                         gender: parsed.gender,
                         date_of_birth: parsed.dob ? dayjs(parsed.dob) : undefined,
                         id_card: cccd,
+                        insurance_number: parsed.insuranceCode,
+                        address_detail: parsed.address,
                     });
                 } else {
                     setShowNewPatientForm(true);
@@ -242,6 +255,8 @@ export default function CreateVisitModal({ open, onClose, onSuccess, emergencyMo
                             date_of_birth: parsed.dob ? dayjs(parsed.dob) : undefined,
                             contact_number: undefined,
                             id_card: cccd,
+                            insurance_number: parsed.insuranceCode,
+                            address_detail: parsed.address,
                         });
                     }, 100);
                 }
@@ -333,6 +348,8 @@ export default function CreateVisitModal({ open, onClose, onSuccess, emergencyMo
                 date_of_birth: values.date_of_birth ? values.date_of_birth.format('YYYY-MM-DD') : undefined,
                 contact_number: values.contact_number || undefined,
                 id_card: values.id_card || undefined,
+                insurance_number: values.insurance_number || undefined,
+                address_detail: values.address_detail || undefined,
                 is_anonymous: false,
             };
 
@@ -351,6 +368,7 @@ export default function CreateVisitModal({ open, onClose, onSuccess, emergencyMo
 
     // ── Emergency: anonymous patient ───────────────────────────
     const handleEmergencySubmit = async () => {
+        setIsSubmitting(true);
         try {
             const anonPatient = await patientApi.create({
                 first_name: 'Cấp cứu',
@@ -363,18 +381,20 @@ export default function CreateVisitModal({ open, onClose, onSuccess, emergencyMo
                 patient: anonPatient.id,
                 priority: 'EMERGENCY',
                 pending_merge: true,
+                station_id: selectedStation,
             });
 
             message.success('Đã tiếp nhận cấp cứu! Bệnh nhân ẩn danh, chờ gộp hồ sơ');
             handleClose();
             onSuccess();
-        } catch {
-            message.error('Không thể tiếp nhận cấp cứu');
+        } finally {
+            setIsSubmitting(false);
         }
     };
 
     // ── Emergency: with info ───────────────────────────────────
     const handleEmergencyWithInfo = async () => {
+        setIsSubmitting(true);
         try {
             let patient: Patient;
 
@@ -392,6 +412,8 @@ export default function CreateVisitModal({ open, onClose, onSuccess, emergencyMo
                     date_of_birth: values.date_of_birth ? values.date_of_birth.format('YYYY-MM-DD') : undefined,
                     contact_number: values.contact_number || undefined,
                     id_card: values.id_card || undefined,
+                    insurance_number: values.insurance_number || undefined,
+                    address_detail: values.address_detail || undefined,
                     is_anonymous: !hasRealInfo,
                 };
 
@@ -402,6 +424,7 @@ export default function CreateVisitModal({ open, onClose, onSuccess, emergencyMo
                 patient: patient.id,
                 priority: 'EMERGENCY',
                 pending_merge: patient.is_anonymous || false,
+                station_id: selectedStation,
             });
 
             message.success(
@@ -411,23 +434,32 @@ export default function CreateVisitModal({ open, onClose, onSuccess, emergencyMo
             );
             handleClose();
             onSuccess();
-        } catch {
-            message.error('Không thể tiếp nhận cấp cứu');
+        } finally {
+            setIsSubmitting(false);
         }
     };
 
     // ── Normal submit ──────────────────────────────────────────
     const handleSubmit = async (values: { patient: string; priority?: string }) => {
+        setIsSubmitting(true);
         try {
+            const finalPatientId = values.patient || selectedPatient?.id;
+            if (!finalPatientId) {
+                message.error('Vui lòng chọn hoặc điền thông tin bệnh nhân');
+                return;
+            }
             await visitApi.create({
-                patient: values.patient,
+                patient: finalPatientId,
                 priority: values.priority,
+                station_id: selectedStation,
             });
             message.success('Tiếp nhận bệnh nhân thành công!');
             handleClose();
             onSuccess();
         } catch {
             message.error('Không thể tạo lượt khám');
+        } finally {
+            setIsSubmitting(false);
         }
     };
 
@@ -446,6 +478,36 @@ export default function CreateVisitModal({ open, onClose, onSuccess, emergencyMo
         newPatientForm.resetFields();
         onClose();
     };
+    const handleScannerInput = useCallback((scannedText: string) => {
+        if (!scannedText.includes('|')) {
+            setCccdInput(scannedText);
+            handleCccdScan(scannedText);
+            return;
+        }
+
+        const parsed = parseCccdQrData(scannedText);
+
+        if (!parsed) {
+            message.error('Mã QR không hợp lệ hoặc không phải CCCD');
+            return;
+        }
+
+        setCccdInput(parsed.cccd);
+
+        // Chờ xử lý để tra cứu Cổng CP từ số CCCD (Mock), hệ thống sẽ lấy dữ liệu CCCD từ query.
+        handleCccdScan(parsed.cccd);
+    }, [emergencyMode, newPatientForm, message, handleCccdScan]);
+
+    import('@/components/common/ScannerStatus').catch(() => { }); // prevent unused imports error
+
+    useEffect(() => {
+        if (open && pendingCccdScanData) {
+            handleScannerInput(pendingCccdScanData);
+            if (clearPendingCccdScanData) {
+                clearPendingCccdScanData();
+            }
+        }
+    }, [open, pendingCccdScanData, handleScannerInput, clearPendingCccdScanData]);
 
     // ── CCCD Scan Section (shared between modes) ───────────────
     const CccdScanSection = (
@@ -460,6 +522,7 @@ export default function CreateVisitModal({ open, onClose, onSuccess, emergencyMo
                 </span>
             }
         >
+            <div className="mb-2 text-sm text-gray-500 italic">💡 Vui lòng đưa mã QR hoặc thẻ CCCD vào máy quét.</div>
             <div className="flex gap-2">
                 <Input
                     value={cccdInput}
@@ -488,7 +551,7 @@ export default function CreateVisitModal({ open, onClose, onSuccess, emergencyMo
                         type={govData.status === 'expired' ? 'warning' : 'success'}
                         showIcon
                         icon={govData.status === 'expired' ? <ExclamationCircleOutlined /> : <CheckCircleOutlined />}
-                        message={
+                        title={
                             <span>
                                 <strong>Cổng Chính phủ:</strong> {govData.fullName}
                                 {govData.status === 'expired' && <Tag color="red" className="ml-2">BHYT hết hạn</Tag>}
@@ -511,13 +574,20 @@ export default function CreateVisitModal({ open, onClose, onSuccess, emergencyMo
                     />
 
                     {/* Show match status */}
-                    {hospitalPatient && !showDiffModal && selectedPatient && (
+                    {hospitalPatient && !showDiffModal && (
                         <Alert
                             type="info"
                             showIcon
                             icon={<CheckCircleOutlined />}
                             className="mt-2"
-                            message={`Đã có hồ sơ bệnh viện: ${selectedPatient.patient_code} — ${selectedPatient.full_name}`}
+                            title={`Đã có hồ sơ bệnh viện: ${hospitalPatient.patient_code} — ${hospitalPatient.full_name}`}
+                            action={
+                                diffFields.some(d => d.differs) ? (
+                                    <Button size="small" type="primary" danger onClick={() => setShowDiffModal(true)}>
+                                        Xem lại sai lệch
+                                    </Button>
+                                ) : null
+                            }
                         />
                     )}
                 </div>
@@ -535,11 +605,11 @@ export default function CreateVisitModal({ open, onClose, onSuccess, emergencyMo
                 </span>
             }
             open={showDiffModal}
-            onCancel={() => { setShowDiffModal(false); }}
+            onCancel={handleKeepHospitalData}
             width={650}
             footer={
                 <div className="flex justify-end gap-2">
-                    <Button onClick={() => { setShowDiffModal(false); }}>
+                    <Button onClick={handleKeepHospitalData}>
                         Hủy
                     </Button>
                     <Button onClick={handleKeepHospitalData}>
@@ -555,7 +625,7 @@ export default function CreateVisitModal({ open, onClose, onSuccess, emergencyMo
                 type="warning"
                 showIcon
                 className="mb-4"
-                message="Thông tin bệnh nhân trên Căn cước công dân KHÁC với hồ sơ đang lưu tại bệnh viện"
+                title="Thông tin bệnh nhân trên Căn cước công dân KHÁC với hồ sơ đang lưu tại bệnh viện"
                 description="Bạn có muốn ghi đè thông tin bệnh viện bằng thông tin trên Căn cước? Nếu không, bệnh nhân sẽ được tiếp nhận với thông tin hiện tại của bệnh viện."
             />
             <Table
@@ -622,6 +692,12 @@ export default function CreateVisitModal({ open, onClose, onSuccess, emergencyMo
             <Form.Item name="id_card" label="CCCD/CMND">
                 <Input placeholder="Số CCCD" disabled={cccdScanned} />
             </Form.Item>
+            <Form.Item name="insurance_number" label="Mã BHYT">
+                <Input placeholder="Số thẻ BHYT" />
+            </Form.Item>
+            <Form.Item name="address_detail" label="Địa chỉ" className="col-span-2">
+                <Input placeholder="Chi tiết địa chỉ" />
+            </Form.Item>
         </div>
     );
 
@@ -640,7 +716,17 @@ export default function CreateVisitModal({ open, onClose, onSuccess, emergencyMo
                     }
                     open={open}
                     onCancel={handleClose}
-                    footer={null}
+                    footer={
+                        <div className="flex justify-end gap-2">
+                            <Button onClick={handleClose}>Hủy</Button>
+                            <Button type="primary" danger onClick={handleEmergencyWithInfo} loading={isSubmitting}>
+                                Tiếp nhận cấp cứu (Có thông tin)
+                            </Button>
+                            <Button type="primary" danger ghost onClick={handleEmergencySubmit} loading={isSubmitting}>
+                                Tiếp nhận cấp cứu (Ẩn danh)
+                            </Button>
+                        </div>
+                    }
                     width={650}
                 >
                     {/* CCCD Scan */}
@@ -671,27 +757,6 @@ export default function CreateVisitModal({ open, onClose, onSuccess, emergencyMo
                             </Form>
                         </>
                     )}
-
-                    <div className="flex justify-end gap-2 mt-4">
-                        <Button onClick={handleClose}>Hủy</Button>
-                        {!selectedPatient && (
-                            <Button
-                                danger
-                                type="primary"
-                                icon={<AlertOutlined />}
-                                onClick={handleEmergencySubmit}
-                            >
-                                Tiếp nhận ẩn danh
-                            </Button>
-                        )}
-                        <Button
-                            type="primary"
-                            icon={<PlusOutlined />}
-                            onClick={handleEmergencyWithInfo}
-                        >
-                            {selectedPatient ? 'Tiếp nhận cấp cứu' : 'Tiếp nhận có thông tin'}
-                        </Button>
-                    </div>
                 </Modal>
                 {DiffModal}
             </>
@@ -739,7 +804,7 @@ export default function CreateVisitModal({ open, onClose, onSuccess, emergencyMo
                             type="info"
                             showIcon
                             className="mb-4"
-                            message="Không tìm thấy bệnh nhân"
+                            title="Không tìm thấy bệnh nhân"
                             action={
                                 <Button
                                     type="primary"
@@ -770,7 +835,7 @@ export default function CreateVisitModal({ open, onClose, onSuccess, emergencyMo
                                 </Button>
                             }
                         >
-                            <Form form={newPatientForm} layout="vertical" size="small">
+                            <Form form={newPatientForm} layout="vertical" size="small" component={false}>
                                 {PatientFormFields}
                                 <Button
                                     type="primary"
@@ -824,12 +889,12 @@ export default function CreateVisitModal({ open, onClose, onSuccess, emergencyMo
 
                     <Divider className="my-3" />
 
-                    <div className="flex justify-end gap-2">
+                    <Space style={{ width: '100%', justifyContent: 'flex-end', marginTop: 16 }}>
                         <Button onClick={handleClose}>Hủy</Button>
-                        <Button type="primary" htmlType="submit" icon={<PlusOutlined />}>
+                        <Button type="primary" htmlType="submit" icon={<PlusOutlined />} disabled={!selectedPatient && !showNewPatientForm} loading={isSubmitting}>
                             Tiếp nhận
                         </Button>
-                    </div>
+                    </Space>
                 </Form>
             </Modal>
             {DiffModal}

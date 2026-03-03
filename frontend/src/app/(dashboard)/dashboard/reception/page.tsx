@@ -39,11 +39,15 @@ import TriageModal from './TriageModal';
 import CreateVisitModal from './CreateVisitModal';
 import { useReceptionSocket, WsVisitPayload } from '@/hooks/useReceptionSocket';
 import { useQmsSocket } from '@/hooks/useQmsSocket';
+import { useScannerListener } from '@/hooks/useScannerListener';
 import { toast } from 'sonner';
 import dayjs from 'dayjs';
 import './reception-highlight.css';
 
 const { Title, Text } = Typography;
+
+// Global set to prevent duplicate WS toasts across hot-reloads or concurrent StrictMode mounts
+const globalHandledVisitIds = new Set<string>();
 
 // ── Helpers ──────────────────────────────────────────────────
 
@@ -162,7 +166,7 @@ export default function ReceptionPage() {
     const [triageModalOpen, setTriageModalOpen] = useState(false);
     const [triageVisit, setTriageVisit] = useState<Visit | null>(null);
     const [departments, setDepartments] = useState<Department[]>([]);
-    const [scannedPatientId, setScannedPatientId] = useState<string | null>(null);
+    const [pendingCccdScanData, setPendingCccdScanData] = useState<string | null>(null);
 
     // Highlights & sound
     const [highlightedIds, setHighlightedIds] = useState<Set<string>>(new Set());
@@ -253,6 +257,9 @@ export default function ReceptionPage() {
     // ── WebSocket: Real-time new visits ──────────────────────
 
     const handleNewVisitWs = useCallback((wsVisit: WsVisitPayload) => {
+        if (globalHandledVisitIds.has(wsVisit.id)) return;
+        globalHandledVisitIds.add(wsVisit.id);
+
         // Skip toast if this visit was just created locally (suppress for 3s window)
         const now = Date.now();
         if (now < suppressWsToastUntilRef.current) {
@@ -306,45 +313,55 @@ export default function ReceptionPage() {
     }, []);
 
     // ── Scanner ──────────────────────────────────────────────
+    const processScanData = useCallback(async (rawData: string) => {
+        if (!rawData) return;
+
+        // If it's a full QR (contains | mapping to CCCD logic)
+        if (rawData.includes('|')) {
+            setPendingCccdScanData(rawData);
+            setIsModalOpen(true);
+            return;
+        }
+
+        try {
+            if (isCCCD(rawData)) {
+                message.loading({ content: `Đang tra cứu CCCD: ${rawData}...`, key: 'scan' });
+                const patients = await patientApi.search(rawData);
+                if (patients.length > 0) {
+                    message.success({ content: `Tìm thấy: ${patients[0].full_name || patients[0].last_name + ' ' + patients[0].first_name}`, key: 'scan' });
+                    setPendingCccdScanData(rawData);
+                    setIsModalOpen(true);
+                } else {
+                    message.warning({ content: `Không tìm thấy bệnh nhân với CCCD: ${rawData}`, key: 'scan' });
+                }
+            } else if (isBHYT(rawData)) {
+                message.loading({ content: `Đang tra cứu BHYT: ${rawData}...`, key: 'scan' });
+                const patients = await patientApi.search(rawData);
+                if (patients.length > 0) {
+                    message.success({ content: `Tìm thấy: ${patients[0].full_name || patients[0].last_name + ' ' + patients[0].first_name}`, key: 'scan' });
+                    setPendingCccdScanData(rawData);
+                    setIsModalOpen(true);
+                } else {
+                    message.warning({ content: `Không tìm thấy bệnh nhân với BHYT: ${rawData}`, key: 'scan' });
+                }
+            } else {
+                message.info({ content: `Mã quét: ${rawData.substring(0, 30)}${rawData.length > 30 ? '...' : ''}`, key: 'scan', duration: 3 });
+            }
+        } catch (error) {
+            console.error('Error processing scan:', error);
+            message.error({ content: 'Lỗi tra cứu dữ liệu quét', key: 'scan' });
+        }
+    }, [message]);
 
     useEffect(() => {
-        const handleScan = async (e: Event) => {
-            const rawData = (e as CustomEvent).detail as string;
-            if (!rawData) return;
-
-            try {
-                if (isCCCD(rawData)) {
-                    message.loading({ content: `Đang tra cứu CCCD: ${rawData}...`, key: 'scan' });
-                    const patients = await patientApi.search(rawData);
-                    if (patients.length > 0) {
-                        message.success({ content: `Tìm thấy: ${patients[0].full_name || patients[0].last_name + ' ' + patients[0].first_name}`, key: 'scan' });
-                        setScannedPatientId(patients[0].id);
-                        setIsModalOpen(true);
-                    } else {
-                        message.warning({ content: `Không tìm thấy bệnh nhân với CCCD: ${rawData}`, key: 'scan' });
-                    }
-                } else if (isBHYT(rawData)) {
-                    message.loading({ content: `Đang tra cứu BHYT: ${rawData}...`, key: 'scan' });
-                    const patients = await patientApi.search(rawData);
-                    if (patients.length > 0) {
-                        message.success({ content: `Tìm thấy: ${patients[0].full_name || patients[0].last_name + ' ' + patients[0].first_name}`, key: 'scan' });
-                        setScannedPatientId(patients[0].id);
-                        setIsModalOpen(true);
-                    } else {
-                        message.warning({ content: `Không tìm thấy bệnh nhân với BHYT: ${rawData}`, key: 'scan' });
-                    }
-                } else {
-                    message.info({ content: `Mã quét: ${rawData.substring(0, 30)}${rawData.length > 30 ? '...' : ''}`, key: 'scan', duration: 3 });
-                }
-            } catch (error) {
-                console.error('Error processing scan:', error);
-                message.error({ content: 'Lỗi tra cứu dữ liệu quét', key: 'scan' });
-            }
-        };
-
+        const handleScan = async (e: Event) => processScanData((e as CustomEvent).detail as string);
         window.addEventListener('HIS_SCANNED_DATA', handleScan);
         return () => window.removeEventListener('HIS_SCANNED_DATA', handleScan);
-    }, [message]);
+    }, [processScanData]);
+
+    useScannerListener({
+        onScan: processScanData,
+    });
 
     // ── Triage ───────────────────────────────────────────────
 
@@ -853,6 +870,9 @@ export default function ReceptionPage() {
                 open={isModalOpen}
                 onClose={() => setIsModalOpen(false)}
                 onSuccess={() => { suppressWsToastUntilRef.current = Date.now() + 3000; fetchVisits(); }}
+                pendingCccdScanData={pendingCccdScanData}
+                clearPendingCccdScanData={() => setPendingCccdScanData(null)}
+                selectedStation={selectedStation}
             />
 
             {/* Emergency Visit Modal */}
@@ -861,6 +881,9 @@ export default function ReceptionPage() {
                 onClose={() => setIsEmergencyModalOpen(false)}
                 onSuccess={() => { suppressWsToastUntilRef.current = Date.now() + 3000; fetchVisits(); }}
                 emergencyMode
+                pendingCccdScanData={pendingCccdScanData}
+                clearPendingCccdScanData={() => setPendingCccdScanData(null)}
+                selectedStation={selectedStation}
             />
 
             {/* Triage Modal */}
