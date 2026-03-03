@@ -305,7 +305,7 @@ export default function TriageForm({ onComplete }: TriageFormProps) {
                         <Alert
                             type="error"
                             showIcon
-                            message={identityError}
+                            title={identityError}
                             style={{ marginTop: 16, borderRadius: 8 }}
                         />
                     )}
@@ -320,7 +320,7 @@ export default function TriageForm({ onComplete }: TriageFormProps) {
                         type="success"
                         showIcon
                         icon={<CheckCircleOutlined />}
-                        message={
+                        title={
                             <Text strong>Xin chào, {patientFound.name}</Text>
                         }
                         description={

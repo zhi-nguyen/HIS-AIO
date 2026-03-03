@@ -364,7 +364,7 @@ export default function ClinicalExamPage() {
 
                                     {vitalsAssessment && (
                                         <Alert
-                                            message="Kết quả đánh giá sinh hiệu"
+                                            title="Kết quả đánh giá sinh hiệu"
                                             description={
                                                 <pre className="text-sm mt-2">
                                                     {JSON.stringify(vitalsAssessment, null, 2)}

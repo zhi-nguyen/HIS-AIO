@@ -298,7 +298,7 @@ export default function KioskPage() {
                                 {error && (
                                     <Alert
                                         type="error"
-                                        message={error}
+                                        title={error}
                                         showIcon
                                         icon={<WarningOutlined />}
                                         className="!rounded-xl"
@@ -383,7 +383,7 @@ export default function KioskPage() {
                                     type="warning"
                                     showIcon
                                     icon={<WarningOutlined />}
-                                    message="Bạn đang có lượt khám chưa hoàn thành"
+                                    title="Bạn đang có lượt khám chưa hoàn thành"
                                     description={`Mã lượt khám: ${identifyResult.active_visit_code}. Bạn vẫn có thể đăng ký mới nếu cần.`}
                                     className="!rounded-xl mb-6"
                                 />
@@ -474,7 +474,7 @@ export default function KioskPage() {
                             {error && (
                                 <Alert
                                     type="error"
-                                    message={error}
+                                    title={error}
                                     showIcon
                                     icon={<WarningOutlined />}
                                     className="!rounded-xl mb-6"

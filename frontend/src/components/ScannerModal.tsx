@@ -99,7 +99,7 @@ export default function ScannerModal({ open, onCancel, onScanSuccess, title = 'Q
                 }
             }}
             footer={null}
-            destroyOnClose
+            destroyOnHidden
             centered
         >
             <div className="flex flex-col items-center">

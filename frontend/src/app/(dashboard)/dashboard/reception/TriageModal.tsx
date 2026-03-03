@@ -476,7 +476,7 @@ export default function TriageModal({ visit, open, departments, onClose, onSucce
             afterOpenChange={handleAfterOpenChange}
             footer={null}
             width={1100}
-            destroyOnClose
+            destroyOnHidden
         >
             {visit && (
                 <div style={{ display: 'flex', gap: 16, marginTop: 16 }}>
@@ -559,7 +559,7 @@ export default function TriageModal({ visit, open, departments, onClose, onSucce
                                                 : 'success'
                                     }
                                     showIcon
-                                    message={
+                                    title={
                                         <Space>
                                             <span
                                                 className="inline-block w-4 h-4 rounded-full"

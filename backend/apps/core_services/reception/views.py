@@ -32,11 +32,47 @@ class VisitViewSet(viewsets.ModelViewSet):
         
         # Generate visit_code
         code = f"V{today_str}-{uuid.uuid4().hex[:6].upper()}"
-        serializer.save(
+        visit = serializer.save(
             visit_code=code, 
             check_in_time=timezone.now(),
             queue_number=queue_number
         )
+
+        # Integrate with QMS to enqueue manually created visits
+        try:
+            from apps.core_services.qms.models import ServiceStation, StationType, QueueEntry, QueueStatus, QueueSourceType
+            from apps.core_services.qms.services import QueueService
+
+            # Default to the passed station_id, else find the first RECEPTION station
+            station_id = self.request.data.get('station_id')
+            if station_id:
+                station = ServiceStation.objects.filter(id=station_id, is_active=True).first()
+            else:
+                station = ServiceStation.objects.filter(
+                    station_type=StationType.RECEPTION,
+                    is_active=True,
+                ).first()
+            
+            if station:
+                q_num = QueueService.generate_queue_number(visit, station)
+                
+                # Determine priority according to QMS clinical rules
+                priority = 0
+                if visit.priority == 'EMERGENCY':
+                    # PRIORITY_EMERGENCY
+                    priority = 100
+                elif visit.priority == 'PRIORITY':
+                    priority = 5
+
+                QueueEntry.objects.create(
+                    queue_number=q_num,
+                    station=station,
+                    status=QueueStatus.WAITING,
+                    priority=priority,
+                    source_type=QueueSourceType.WALK_IN,
+                )
+        except Exception as e:
+            logger.error(f"Failed to enqueue manually created visit to QMS: {e}")
 
     @action(detail=True, methods=['post'], url_path='triage')
     def run_triage(self, request, pk=None):

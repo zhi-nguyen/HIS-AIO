@@ -46,6 +46,9 @@ import './reception-highlight.css';
 
 const { Title, Text } = Typography;
 
+// Global set to prevent duplicate WS toasts across hot-reloads or concurrent StrictMode mounts
+const globalHandledVisitIds = new Set<string>();
+
 // ── Helpers ──────────────────────────────────────────────────
 
 function isCCCD(raw: string): boolean {
@@ -254,6 +257,9 @@ export default function ReceptionPage() {
     // ── WebSocket: Real-time new visits ──────────────────────
 
     const handleNewVisitWs = useCallback((wsVisit: WsVisitPayload) => {
+        if (globalHandledVisitIds.has(wsVisit.id)) return;
+        globalHandledVisitIds.add(wsVisit.id);
+
         // Skip toast if this visit was just created locally (suppress for 3s window)
         const now = Date.now();
         if (now < suppressWsToastUntilRef.current) {
@@ -866,6 +872,7 @@ export default function ReceptionPage() {
                 onSuccess={() => { suppressWsToastUntilRef.current = Date.now() + 3000; fetchVisits(); }}
                 pendingCccdScanData={pendingCccdScanData}
                 clearPendingCccdScanData={() => setPendingCccdScanData(null)}
+                selectedStation={selectedStation}
             />
 
             {/* Emergency Visit Modal */}
@@ -876,6 +883,7 @@ export default function ReceptionPage() {
                 emergencyMode
                 pendingCccdScanData={pendingCccdScanData}
                 clearPendingCccdScanData={() => setPendingCccdScanData(null)}
+                selectedStation={selectedStation}
             />
 
             {/* Triage Modal */}
