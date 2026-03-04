@@ -1,4 +1,4 @@
-from django.db import models
+from django.db import models, transaction
 from django.utils import timezone
 from apps.core_services.core.models import UUIDModel
 
@@ -219,6 +219,10 @@ class Prescription(UUIDModel):
     class Meta:
         verbose_name = "Đơn thuốc"
         verbose_name_plural = "Các đơn thuốc"
+        indexes = [
+            models.Index(fields=['status'], name='prescription_status_idx'),
+            models.Index(fields=['visit', 'status'], name='prescription_visit_status_idx'),
+        ]
 
     def __str__(self):
         return f"Prescription for {self.visit.visit_code}"
@@ -268,6 +272,9 @@ class PrescriptionDetail(UUIDModel):
     class Meta:
         verbose_name = "Chi tiết đơn thuốc"
         verbose_name_plural = "Chi tiết đơn thuốc"
+        indexes = [
+            models.Index(fields=['prescription'], name='prescdetail_prescription_idx'),
+        ]
 
     def __str__(self):
         return f"{self.medication.name} x {self.quantity}"
@@ -318,30 +325,51 @@ class DispenseRecord(UUIDModel):
         return f"Dispense {self.quantity} {self.lot.medication.name}"
     
     def save(self, *args, **kwargs):
-        """Trừ kho khi xuất thuốc"""
-        if not self.pk:  # Only on create
-            # Deduct from lot
-            self.lot.remaining_quantity -= self.quantity
-            self.lot.save()
-            
-            # Update medication total inventory
-            self.lot.medication.inventory_count -= self.quantity
-            self.lot.medication.save()
-            
-            # Update prescription detail dispensed count
-            self.prescription_detail.dispensed_quantity += self.quantity
-            self.prescription_detail.save()
-            
-            # Update prescription status if fully dispensed
-            prescription = self.prescription_detail.prescription
-            all_dispensed = all(
-                d.dispensed_quantity >= d.quantity 
-                for d in prescription.details.all()
-            )
-            if all_dispensed:
-                prescription.status = Prescription.Status.DISPENSED
-            else:
-                prescription.status = Prescription.Status.PARTIAL
-            prescription.save()
+        """Trừ kho khi xuất thuốc — dùng select_for_update để tránh race condition"""
+        if self._state.adding:  # Chỉ chạy khi tạo mới (UUIDModel tự assign pk trước save)
+            with transaction.atomic():
+                # Lock lot row để tránh concurrent dispense cùng lô
+                lot = MedicationLot.objects.select_for_update().get(pk=self.lot_id)
+                
+                # Kiểm tra đủ tồn kho
+                if lot.remaining_quantity < self.quantity:
+                    raise ValueError(
+                        f"Không đủ tồn kho: lô {lot.lot_number} còn {lot.remaining_quantity}, "
+                        f"cần {self.quantity}"
+                    )
+                
+                # Trừ số lượng lô
+                lot.remaining_quantity -= self.quantity
+                lot.save(update_fields=['remaining_quantity'])
+                self.lot = lot  # Update cached reference
+                
+                # Lock và cập nhật tổng tồn kho thuốc
+                medication = Medication.objects.select_for_update().get(pk=lot.medication_id)
+                medication.inventory_count -= self.quantity
+                medication.save(update_fields=['inventory_count'])
+                
+                # Cập nhật số lượng đã phát trong chi tiết đơn
+                detail = PrescriptionDetail.objects.select_for_update().get(
+                    pk=self.prescription_detail_id
+                )
+                detail.dispensed_quantity += self.quantity
+                detail.save(update_fields=['dispensed_quantity'])
+                self.prescription_detail = detail
+                
+                # Lưu bản thân trước khi cập nhật status đơn
+                super().save(*args, **kwargs)
+                
+                # Cập nhật trạng thái đơn thuốc
+                prescription = detail.prescription
+                all_dispensed = all(
+                    d.dispensed_quantity >= d.quantity
+                    for d in prescription.details.select_for_update().all()
+                )
+                if all_dispensed:
+                    prescription.status = Prescription.Status.DISPENSED
+                else:
+                    prescription.status = Prescription.Status.PARTIAL
+                prescription.save(update_fields=['status'])
+                return  # Đã save bên trong transaction
         
         super().save(*args, **kwargs)
