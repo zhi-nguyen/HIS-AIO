@@ -99,3 +99,105 @@ class ICD10Code(models.Model):
         verbose_name = "Mã chi tiết ICD-10"
         verbose_name_plural = "Mã chi tiết ICD-10"
 
+
+class ICD11Code(models.Model):
+    """Mã bệnh ICD-11 (WHO 2022) — bổ sung bên cạnh ICD-10 hiện có."""
+
+    code = models.CharField(
+        max_length=20,
+        unique=True,
+        db_index=True,
+        help_text="Mã ICD-11 (ví dụ: CA40.0)"
+    )
+    title = models.CharField(max_length=500, help_text="Tên bệnh ICD-11 (tiếng Anh)")
+    title_vi = models.CharField(
+        max_length=500,
+        null=True, blank=True,
+        help_text="Tên bệnh ICD-11 (tiếng Việt)"
+    )
+    inclusions = models.TextField(null=True, blank=True)
+    exclusions = models.TextField(null=True, blank=True)
+    is_billable = models.BooleanField(
+        default=True,
+        help_text="Mã có thể dùng cho kê khai (leaf node)"
+    )
+
+    # Ánh xạ sang ICD-10 tương đương
+    icd10_map = models.ManyToManyField(
+        ICD10Code,
+        blank=True,
+        related_name='icd11_codes',
+        verbose_name="Mã ICD-10 tương đương"
+    )
+
+    is_active = models.BooleanField(default=True)
+
+    def __str__(self):
+        return f"{self.code} - {self.title}"
+
+    class Meta:
+        ordering = ['code']
+        verbose_name = "Mã ICD-11"
+        verbose_name_plural = "Mã ICD-11"
+
+
+class TechnicalService(models.Model):
+    """Danh mục dịch vụ kỹ thuật (DMKT) theo quy định BHYT."""
+
+    class ServiceGroup(models.TextChoices):
+        LABORATORY = 'XN', 'Xét nghiệm'
+        IMAGING = 'CDHA', 'Chẩn đoán hình ảnh'
+        SURGERY = 'PT', 'Phẫu thuật thủ thuật'
+        REHABILITATION = 'PHCN', 'Phục hồi chức năng'
+        CONSULTATION = 'KCB', 'Khám chữa bệnh'
+        OTHER = 'KHAC', 'Khác'
+
+    code = models.CharField(
+        max_length=50,
+        unique=True,
+        db_index=True,
+        help_text="Mã dịch vụ kỹ thuật (mã BYT)"
+    )
+    name = models.CharField(max_length=500, verbose_name="Tên dịch vụ")
+    group = models.CharField(
+        max_length=10,
+        choices=ServiceGroup.choices,
+        default=ServiceGroup.OTHER,
+        verbose_name="Nhóm dịch vụ"
+    )
+    unit = models.CharField(
+        max_length=50,
+        default="lần",
+        verbose_name="Đơn vị tính"
+    )
+    unit_price = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        default=0,
+        verbose_name="Giá thu (VNĐ)"
+    )
+    bhyt_price = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        verbose_name="Giá BHYT thanh toán"
+    )
+    is_covered_by_bhyt = models.BooleanField(
+        default=False,
+        verbose_name="BHYT chi trả"
+    )
+    description = models.TextField(null=True, blank=True)
+    is_active = models.BooleanField(default=True)
+
+    def __str__(self):
+        return f"{self.code} - {self.name}"
+
+    class Meta:
+        ordering = ['group', 'code']
+        verbose_name = "Dịch vụ kỹ thuật"
+        verbose_name_plural = "Danh mục dịch vụ kỹ thuật"
+        indexes = [
+            models.Index(fields=['group', 'code']),
+        ]
+

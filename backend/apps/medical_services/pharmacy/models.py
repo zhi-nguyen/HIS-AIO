@@ -84,6 +84,22 @@ class Medication(UUIDModel):
     )
     is_active = models.BooleanField(default=True, verbose_name="Đang sử dụng")
 
+    # Catalog standardization - Track 1
+    national_drug_code = models.CharField(
+        max_length=50,
+        null=True,
+        blank=True,
+        verbose_name="Mã số đăng ký (BYT)",
+        help_text="Số đăng ký thuốc quốc gia do Bộ Y tế cấp (VD: VD-12345-13)"
+    )
+    atc_code = models.CharField(
+        max_length=10,
+        null=True,
+        blank=True,
+        verbose_name="Mã ATC (WHO)",
+        help_text="Mã phân loại WHO-ATC (VD: N02BE01 cho Paracetamol)"
+    )
+
     class Meta:
         verbose_name = "Thuốc"
         verbose_name_plural = "Danh mục thuốc"
@@ -206,6 +222,13 @@ class Prescription(UUIDModel):
         null=True, 
         blank=True, 
         help_text="Cảnh báo tương tác thuốc từ AI"
+    )
+    
+    # CDSS - Track 3: Lưu kết quả kiểm tra lâm sàng
+    cdss_alerts = models.JSONField(
+        null=True,
+        blank=True,
+        help_text="Kết quả CDSS: {allergy_alerts: [...], interaction_alerts: [...], has_critical: bool}"
     )
     
     # Total price

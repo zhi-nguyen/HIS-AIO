@@ -406,3 +406,100 @@ async def load_departments_to_vector_db(
     
     logger.info(f"Completed loading {loaded_count} departments")
     return loaded_count
+
+
+async def load_guidelines_to_vector_db(
+    batch_size: int = 50,
+    vector_service = None,
+    embedding_service = None
+) -> int:
+    """
+    Nạp phác đồ điều trị (ClinicalGuideline) vào vector database.
+
+    Mỗi guideline được embed với title + content để clinical_agent
+    có thể tìm kiếm semantic theo từ khóa chẩn đoán.
+
+    Args:
+        batch_size: Số phác đồ mỗi batch.
+        vector_service: VectorService instance.
+        embedding_service: EmbeddingService instance.
+
+    Returns:
+        Số phác đồ đã nạp.
+    """
+    from apps.medical_services.emr.guidelines import ClinicalGuideline
+
+    logger.info("Starting clinical guidelines loading to vector DB")
+
+    if vector_service is None:
+        vector_service = VectorService()
+    if embedding_service is None:
+        embedding_service = EmbeddingService()
+
+    @sync_to_async
+    def _get_guidelines():
+        return list(
+            ClinicalGuideline.objects.filter(is_active=True)
+            .prefetch_related('icd10_codes')
+        )
+
+    guidelines = await _get_guidelines()
+    total = len(guidelines)
+    logger.info(f"Found {total} active guidelines to load")
+
+    if total == 0:
+        return 0
+
+    loaded_count = 0
+
+    for i in range(0, total, batch_size):
+        batch = guidelines[i:i + batch_size]
+        try:
+            documents = []
+            embeddings = []
+            ids = []
+            metadatas = []
+
+            for guideline in batch:
+                document_text = (
+                    f"Phác đồ điều trị: {guideline.title}\n"
+                    f"Nguồn: {guideline.source} (v{guideline.version})\n\n"
+                    f"{guideline.content}"
+                )
+
+                embedding = await embedding_service.embed_text(document_text[:2000])
+
+                icd_codes = [c.code for c in guideline.icd10_codes.all()]
+                metadata = {
+                    'title': guideline.title,
+                    'source': guideline.source,
+                    'version': guideline.version,
+                    'icd10_codes': icd_codes,
+                    'effective_date': (
+                        guideline.effective_date.isoformat()
+                        if guideline.effective_date else None
+                    ),
+                }
+
+                documents.append(document_text)
+                embeddings.append(embedding)
+                ids.append(str(guideline.id))
+                metadatas.append(metadata)
+
+            await vector_service.add_documents(
+                collection_name='guidelines',
+                documents=documents,
+                embeddings=embeddings,
+                ids=ids,
+                metadatas=metadatas,
+            )
+
+            loaded_count += len(batch)
+            logger.info(f"Loaded guidelines batch {i // batch_size + 1}: {loaded_count}/{total}")
+
+        except Exception as e:
+            logger.error(f"Error loading guidelines batch {i // batch_size + 1}: {e}")
+
+    logger.info(f"Completed loading {loaded_count} guidelines")
+    return loaded_count
+

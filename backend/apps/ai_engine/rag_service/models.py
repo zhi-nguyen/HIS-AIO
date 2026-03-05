@@ -21,6 +21,7 @@ class VectorDocument(UUIDModel):
         ICD10_CODES = 'icd10_codes', 'ICD-10 Codes'
         DRUGS = 'drugs', 'Drugs & Interactions'
         MEDICAL_PROTOCOLS = 'medical_protocols', 'Medical Protocols'
+        GUIDELINES = 'guidelines', 'Clinical Guidelines (Phác đồ điều trị)'
         HOSPITAL_PROCESS = 'hospital_process', 'Hospital Process Q&A'
         DEPARTMENTS = 'departments', 'Departments'
     

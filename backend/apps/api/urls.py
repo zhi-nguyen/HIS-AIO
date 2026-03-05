@@ -17,6 +17,7 @@ from . import data_views
 from apps.core_services.appointments import booking_api as booking_views
 from apps.core_services.qms import views as qms_views
 from apps.core_services.kiosk import views as kiosk_views
+from apps.medical_services.pharmacy.views.cdss_views import CDSSCheckView
 from .routers import router
 
 app_name = 'api'
@@ -101,5 +102,10 @@ urlpatterns = [
     # EMR DATA ENDPOINTS
     # ==========================================================================
     path('emr/<uuid:visit_id>/ai-suggestions/', data_views.get_ai_suggestions, name='emr_ai_suggestions'),
+
+    # ==========================================================================
+    # CDSS ENDPOINTS (Clinical Decision Support)
+    # ==========================================================================
+    path('cdss/check/', CDSSCheckView.as_view(), name='cdss_check'),
 ]
 
