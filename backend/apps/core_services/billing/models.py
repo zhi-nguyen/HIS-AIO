@@ -1,4 +1,5 @@
 from django.db import models
+from django.db.models import Sum, Q
 from apps.core_services.core.models import UUIDModel
 
 
@@ -229,17 +230,23 @@ class Invoice(UUIDModel):
         verbose_name = "Hóa đơn"
         verbose_name_plural = "Các hóa đơn"
         ordering = ['-created_time']
+        indexes = [
+            models.Index(fields=['status'], name='invoice_status_idx'),
+            models.Index(fields=['visit', 'status'], name='invoice_visit_status_idx'),
+            models.Index(fields=['patient'], name='invoice_patient_idx'),
+        ]
 
     def __str__(self):
         return f"[{self.invoice_number}] {self.patient.fullname}"
     
     def calculate_totals(self):
         """Tính toán lại tổng tiền từ các line items"""
-        from django.db.models import Sum
         total = self.items.aggregate(total=Sum('total_price'))['total'] or 0
         self.total_amount = total
         self.patient_payable = total - self.discount_amount - self.insurance_coverage
-        self.save()
+        if self.patient_payable < 0:
+            self.patient_payable = 0
+        self.save(update_fields=['total_amount', 'patient_payable'])
 
 
 class InvoiceLineItem(UUIDModel):
@@ -364,20 +371,22 @@ class Payment(UUIDModel):
         verbose_name = "Thanh toán"
         verbose_name_plural = "Các khoản thanh toán"
         ordering = ['-payment_time']
+        indexes = [
+            models.Index(fields=['invoice'], name='payment_invoice_idx'),
+        ]
 
     def __str__(self):
         return f"[{self.receipt_number}] {self.amount:,.0f} VND"
     
     def save(self, *args, **kwargs):
         super().save(*args, **kwargs)
-        # Update invoice paid amount
-        from django.db.models import Sum
-        total_paid = self.invoice.payments.filter(is_refund=False).aggregate(
-            total=Sum('amount')
-        )['total'] or 0
-        total_refund = self.invoice.payments.filter(is_refund=True).aggregate(
-            total=Sum('amount')
-        )['total'] or 0
+        # Cập nhật số tiền đã thanh toán trên hóa đơn bằng 1 query tổng hợp
+        totals = self.invoice.payments.aggregate(
+            paid=Sum('amount', filter=Q(is_refund=False)),
+            refunded=Sum('amount', filter=Q(is_refund=True))
+        )
+        total_paid = totals['paid'] or 0
+        total_refund = totals['refunded'] or 0
         
         self.invoice.paid_amount = total_paid - total_refund
         
@@ -386,7 +395,7 @@ class Payment(UUIDModel):
         elif self.invoice.paid_amount > 0:
             self.invoice.status = InvoiceStatus.PARTIAL
         
-        self.invoice.save()
+        self.invoice.save(update_fields=['paid_amount', 'status'])
 
 
 class DepositPayment(UUIDModel):

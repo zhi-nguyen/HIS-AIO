@@ -5,7 +5,11 @@ from .models import Prescription, Medication
 from .serializers import PrescriptionSerializer, MedicationSerializer
 
 class PrescriptionViewSet(viewsets.ModelViewSet):
-    queryset = Prescription.objects.all().order_by('-prescription_date')
+    queryset = Prescription.objects.select_related(
+        'visit', 'visit__patient', 'doctor'
+    ).prefetch_related(
+        'details', 'details__medication'
+    ).order_by('-prescription_date')
     serializer_class = PrescriptionSerializer
     filter_backends = [filters.SearchFilter, DjangoFilterBackend]
     search_fields = ['prescription_code', 'visit__visit_code']
@@ -15,7 +19,7 @@ class MedicationViewSet(viewsets.ReadOnlyModelViewSet):
     """
     Catalog of Drugs
     """
-    queryset = Medication.objects.filter(is_active=True).order_by('name')
+    queryset = Medication.objects.filter(is_active=True).select_related('category').order_by('name')
     serializer_class = MedicationSerializer
     filter_backends = [filters.SearchFilter, DjangoFilterBackend]
     search_fields = ['code', 'name', 'active_ingredient']
