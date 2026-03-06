@@ -3,31 +3,12 @@
 Tools cho Pharmacist Agent (Dược sĩ lâm sàng)
 
 Cung cấp các tool kiểm tra tương tác thuốc và gợi ý thuốc thay thế.
+CDSS Track 3: check_drug_interaction và check_patient_allergy giờ dùng
+CDSSService thay vì hardcoded dict — dữ liệu quản lý trong DrugInteraction model.
 """
 
 from langchain_core.tools import tool
 from typing import List
-
-
-# ==============================================================================
-# CONSTANTS
-# ==============================================================================
-
-class InteractionSeverity:
-    """Mức độ tương tác thuốc."""
-    MAJOR = "SEVERITY_MAJOR"       # Nghiêm trọng - KHÔNG dùng chung
-    MODERATE = "SEVERITY_MODERATE" # Trung bình - Cần theo dõi
-    MINOR = "SEVERITY_MINOR"       # Nhẹ - Có thể dùng, lưu ý
-
-    @classmethod
-    def get_description(cls, severity: str) -> str:
-        """Lấy mô tả tiếng Việt cho mức độ."""
-        descriptions = {
-            cls.MAJOR: "Nghiêm trọng - KHÔNG được dùng chung, cần đổi thuốc",
-            cls.MODERATE: "Trung bình - Cân nhắc kỹ, cần theo dõi chặt chẽ",
-            cls.MINOR: "Nhẹ - Có thể dùng, lưu ý theo dõi"
-        }
-        return descriptions.get(severity, "Không xác định")
 
 
 # ==============================================================================
@@ -39,48 +20,27 @@ def check_drug_interaction(drug_names: List[str]) -> str:
     """
     Kiểm tra tương tác giữa danh sách các thuốc.
     Trả về cảnh báo nếu có tương tác nguy hiểm.
-    
+    Dữ liệu từ DrugInteraction model (quản trị viên cập nhật qua Admin).
+
     Args:
-        drug_names: Danh sách tên thuốc (ví dụ: ["Aspirin", "Warfarin"]).
-    
+        drug_names: Danh sách tên thuốc hoặc hoạt chất (ví dụ: ["Aspirin", "Warfarin"]).
+
     Returns:
         Kết quả kiểm tra tương tác với mức độ nghiêm trọng.
     """
-    # TODO: Kết nối với Drug Interaction Database (DrugBank API, RxNorm)
-    
-    drug_str = ", ".join(drug_names)
-    drug_set = set(d.lower() for d in drug_names)
-    
-    # Các tương tác đã biết
-    if {"aspirin", "warfarin"} <= drug_set:
-        return (
-            f"[{InteractionSeverity.MAJOR}] CẢNH BÁO TƯƠNG TÁC NGHIÊM TRỌNG\n"
-            f"Aspirin + Warfarin: Tăng nguy cơ chảy máu nghiêm trọng.\n"
-            f"Khuyến nghị: KHÔNG dùng chung. Thay Aspirin bằng Paracetamol nếu cần giảm đau."
-        )
-    
-    if {"ibuprofen", "warfarin"} <= drug_set:
-        return (
-            f"[{InteractionSeverity.MAJOR}] CẢNH BÁO TƯƠNG TÁC NGHIÊM TRỌNG\n"
-            f"Ibuprofen (NSAID) + Warfarin: Tăng nguy cơ xuất huyết tiêu hóa.\n"
-            f"Khuyến nghị: Dùng Paracetamol thay thế. Theo dõi INR chặt chẽ."
-        )
-    
-    if {"metformin", "alcohol"} <= drug_set:
-        return (
-            f"[{InteractionSeverity.MODERATE}] CẢNH BÁO\n"
-            f"Metformin + Alcohol: Tăng nguy cơ nhiễm toan lactic.\n"
-            f"Khuyến nghị: Hạn chế rượu bia khi đang dùng Metformin."
-        )
-    
-    if {"lisinopril", "potassium"} <= drug_set or {"enalapril", "potassium"} <= drug_set:
-        return (
-            f"[{InteractionSeverity.MODERATE}] CẢNH BÁO\n"
-            f"ACE Inhibitor + Potassium: Nguy cơ tăng kali máu.\n"
-            f"Khuyến nghị: Theo dõi nồng độ kali máu định kỳ."
-        )
-    
-    return f"[{InteractionSeverity.MINOR}] Không tìm thấy tương tác đáng kể giữa: {drug_str}."
+    from apps.medical_services.pharmacy.services.cdss_service import CDSSService
+
+    alerts = CDSSService.check_drug_interaction(drug_names)
+
+    if not alerts:
+        drug_str = ", ".join(drug_names)
+        return f"[AN TOÀN] Không tìm thấy tương tác đáng kể giữa: {drug_str}."
+
+    lines = []
+    for alert in alerts:
+        lines.append(alert['message'])
+        lines.append(f"  Khuyến nghị: {alert.get('recommendation', '')}")
+    return "\n".join(lines)
 
 
 @tool
@@ -124,3 +84,30 @@ def suggest_drug_alternative(drug_name: str, reason: str) -> str:
         return alternatives[drug_lower]
     
     return f"Đang tra cứu thuốc thay thế cho {drug_name}. Vui lòng chờ hoặc tham vấn dược sĩ trực tiếp."
+
+
+@tool
+def check_patient_allergy(patient_id: str, drug_names: List[str]) -> str:
+    """
+    Kiểm tra bệnh nhân có dị ứng với thuốc đang kê không.
+    Tra cứu từ hồ sơ dị ứng (PatientAllergy) và so sánh với hoạt chất thuốc.
+
+    Args:
+        patient_id: UUID của bệnh nhân.
+        drug_names: Danh sách tên thuốc hoặc hoạt chất đang kê đơn.
+
+    Returns:
+        Thông báo cảnh báo dị ứng hoặc xác nhận an toàn.
+    """
+    from apps.medical_services.pharmacy.services.cdss_service import CDSSService
+
+    alerts = CDSSService.check_allergy_alert(patient_id, drug_names)
+
+    if not alerts:
+        return f"[AN TOÀN] Không phát hiện dị ứng với các thuốc: {', '.join(drug_names)}."
+
+    lines = []
+    for alert in alerts:
+        lines.append(alert['message'])
+    return "\n".join(lines)
+

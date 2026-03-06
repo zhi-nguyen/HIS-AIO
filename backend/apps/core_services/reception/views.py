@@ -38,12 +38,12 @@ class VisitViewSet(viewsets.ModelViewSet):
             queue_number=queue_number
         )
 
-        # Integrate with QMS to enqueue manually created visits
+        # Integrate with QMS: đưa vào hàng đợi điểm tiếp đón
         try:
-            from apps.core_services.qms.models import ServiceStation, StationType, QueueEntry, QueueStatus, QueueSourceType
+            from apps.core_services.qms.models import ServiceStation, StationType, QueueSourceType
             from apps.core_services.qms.services import QueueService
 
-            # Default to the passed station_id, else find the first RECEPTION station
+            # Tìm station dựa theo station_id hoặc station RECEPTION đầu tiên đang active
             station_id = self.request.data.get('station_id')
             if station_id:
                 station = ServiceStation.objects.filter(id=station_id, is_active=True).first()
@@ -54,25 +54,31 @@ class VisitViewSet(viewsets.ModelViewSet):
                 ).first()
             
             if station:
-                q_num = QueueService.generate_queue_number(visit, station)
-                
-                # Determine priority according to QMS clinical rules
+                # Xác định priority theo loại bệnh nhân
                 priority = 0
+                source_type = QueueSourceType.WALK_IN
                 if visit.priority == 'EMERGENCY':
-                    # PRIORITY_EMERGENCY
                     priority = 100
+                    source_type = QueueSourceType.EMERGENCY
                 elif visit.priority == 'PRIORITY':
                     priority = 5
 
-                QueueEntry.objects.create(
-                    queue_number=q_num,
+                # Dùng QueueService để tạo QueueNumber + QueueEntry đúng cách
+                # (đảm bảo QueueNumber.visit được liên kết với visit)
+                queue_entry = QueueService.add_to_queue(
+                    visit=visit,
                     station=station,
-                    status=QueueStatus.WAITING,
                     priority=priority,
-                    source_type=QueueSourceType.WALK_IN,
+                )
+                queue_entry.source_type = source_type
+                queue_entry.save(update_fields=['source_type'])
+                
+                logger.info(
+                    f"Visit {visit.visit_code} enqueued at {station.code}: "
+                    f"queue_number={queue_entry.queue_number.number_code}, priority={priority}"
                 )
         except Exception as e:
-            logger.error(f"Failed to enqueue manually created visit to QMS: {e}")
+            logger.error(f"Failed to enqueue manually created visit to QMS: {e}", exc_info=True)
 
     @action(detail=True, methods=['post'], url_path='triage')
     def run_triage(self, request, pk=None):

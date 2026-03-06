@@ -17,8 +17,9 @@ from apps.medical_services.emr.views import ClinicalRecordViewSet
 router.register(r'emr/records', ClinicalRecordViewSet)
 
 # ... (Previous registrations)
-from apps.core_services.billing.views import ServiceCatalogViewSet
+from apps.core_services.billing.views import ServiceCatalogViewSet, InvoiceViewSet
 router.register(r'billing/services', ServiceCatalogViewSet)
+router.register(r'billing/invoices', InvoiceViewSet, basename='invoice')
 
 # Paraclinical & Pharmacy
 from apps.medical_services.lis.views import LabOrderViewSet, LabTestViewSet
