@@ -667,9 +667,9 @@ export default function CreateVisitModal({ open, onClose, onSuccess, emergencyMo
         </Modal>
     );
 
-    // ── Patient form fields (shared) ───────────────────────────
+    // ── Patient form fields (shared) — responsive 4-col desktop, 1-col mobile ──
     const PatientFormFields = (
-        <div className="grid grid-cols-2 gap-x-4">
+        <div className="modal-form-grid-4">
             <Form.Item name="last_name" label="Họ" rules={[{ required: true, message: 'Vui lòng nhập Họ' }]}>
                 <Input placeholder="VD: Nguyễn" />
             </Form.Item>
@@ -695,7 +695,7 @@ export default function CreateVisitModal({ open, onClose, onSuccess, emergencyMo
             <Form.Item name="insurance_number" label="Mã BHYT">
                 <Input placeholder="Số thẻ BHYT" />
             </Form.Item>
-            <Form.Item name="address_detail" label="Địa chỉ" className="col-span-2">
+            <Form.Item name="address_detail" label="Địa chỉ">
                 <Input placeholder="Chi tiết địa chỉ" />
             </Form.Item>
         </div>
@@ -717,17 +717,18 @@ export default function CreateVisitModal({ open, onClose, onSuccess, emergencyMo
                     open={open}
                     onCancel={handleClose}
                     footer={
-                        <div className="flex justify-end gap-2">
+                        <div className="modal-sticky-footer" style={{ justifyContent: 'flex-end', display: 'flex', gap: 8 }}>
                             <Button onClick={handleClose}>Hủy</Button>
                             <Button type="primary" danger onClick={handleEmergencyWithInfo} loading={isSubmitting}>
-                                Tiếp nhận cấp cứu (Có thông tin)
+                                Tiếp nhận (Có thông tin)
                             </Button>
                             <Button type="primary" danger ghost onClick={handleEmergencySubmit} loading={isSubmitting}>
-                                Tiếp nhận cấp cứu (Ẩn danh)
+                                Ẩn danh
                             </Button>
                         </div>
                     }
-                    width={650}
+                    width="min(90vw, 900px)"
+                    style={{ top: 20 }}
                 >
                     {/* CCCD Scan */}
                     {CccdScanSection}
@@ -773,7 +774,8 @@ export default function CreateVisitModal({ open, onClose, onSuccess, emergencyMo
                 open={open}
                 onCancel={handleClose}
                 footer={null}
-                width={650}
+                width="min(90vw, 900px)"
+                style={{ top: 20 }}
             >
                 {/* CCCD Scan */}
                 {CccdScanSection}
@@ -889,12 +891,12 @@ export default function CreateVisitModal({ open, onClose, onSuccess, emergencyMo
 
                     <Divider className="my-3" />
 
-                    <Space style={{ width: '100%', justifyContent: 'flex-end', marginTop: 16 }}>
+                    <div className="modal-sticky-footer" style={{ position: 'sticky', bottom: 0, background: '#fff', padding: '12px 0 4px', borderTop: '1px solid #f0f0f0', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
                         <Button onClick={handleClose}>Hủy</Button>
                         <Button type="primary" htmlType="submit" icon={<PlusOutlined />} disabled={!selectedPatient && !showNewPatientForm} loading={isSubmitting}>
                             Tiếp nhận
                         </Button>
-                    </Space>
+                    </div>
                 </Form>
             </Modal>
             {DiffModal}
