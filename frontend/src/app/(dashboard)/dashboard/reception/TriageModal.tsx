@@ -113,7 +113,7 @@ const VitalSignsCard = React.memo(({
                 body: { padding: '12px' },
             }}
         >
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px 16px' }}>
+            <div className="modal-form-grid-4" style={{ gap: '10px 16px' }}>
                 {/* Mạch */}
                 <div>
                     <Text type="secondary" style={{ fontSize: 12 }}>Mạch (bpm)</Text>
@@ -467,7 +467,7 @@ export default function TriageModal({ visit, open, departments, onClose, onSucce
         <Modal
             title={
                 <Space>
-                    <MedicineBoxOutlined className="text-orange-500" />
+                    <MedicineBoxOutlined style={{ color: '#fa8c16' }} />
                     <span style={{ fontSize: 16 }}>Phân luồng — {visit?.visit_code}</span>
                 </Space>
             }
@@ -475,7 +475,8 @@ export default function TriageModal({ visit, open, departments, onClose, onSucce
             onCancel={onClose}
             afterOpenChange={handleAfterOpenChange}
             footer={null}
-            width={1100}
+            width="min(95vw, 1200px)"
+            style={{ top: 20 }}
             destroyOnHidden
         >
             {visit && (

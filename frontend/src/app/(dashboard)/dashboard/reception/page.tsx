@@ -590,17 +590,17 @@ export default function ReceptionPage() {
     return (
         <div className="space-y-4">
             {/* Page Header */}
-            <div className="flex justify-between items-center">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 }}>
                 <div>
                     <Title level={3} className="!mb-0">Tiếp nhận Khám bệnh</Title>
                     <Text type="secondary">Quản lý lượt khám và tiếp nhận bệnh nhân</Text>
                 </div>
-                <Space>
+                <Space wrap>
                     <Select
                         placeholder="Chọn điểm dịch vụ"
                         value={selectedStation}
                         onChange={setSelectedStation}
-                        style={{ width: 220 }}
+                        style={{ width: 200 }}
                         options={stations.map((s) => ({
                             value: s.id,
                             label: `[${s.code}] ${s.name}`,
@@ -608,7 +608,7 @@ export default function ReceptionPage() {
                     />
                     <Input.Search
                         placeholder="Mã màn hình"
-                        style={{ width: 160 }}
+                        style={{ width: 150 }}
                         enterButton="Liên kết"
                         onSearch={async (code) => {
                             if (!code.trim()) return;
@@ -633,39 +633,43 @@ export default function ReceptionPage() {
                             onClick={toggleSound}
                         />
                     </Tooltip>
-                    <Button type="primary" icon={<UserAddOutlined />} onClick={() => setIsModalOpen(true)}>
-                        Tiếp nhận mới
-                    </Button>
-                    <Button danger icon={<AlertOutlined />} onClick={() => setIsEmergencyModalOpen(true)}>
-                        Tiếp nhận cấp cứu
-                    </Button>
+                    <Tooltip title="Tiếp nhận bệnh nhân mới">
+                        <Button type="primary" icon={<UserAddOutlined />} onClick={() => setIsModalOpen(true)}>
+                            <span className="hide-mobile">Tiếp nhận mới</span>
+                        </Button>
+                    </Tooltip>
+                    <Tooltip title="Tiếp nhận cấp cứu">
+                        <Button danger icon={<AlertOutlined />} onClick={() => setIsEmergencyModalOpen(true)}>
+                            <span className="hide-mobile">Cấp cứu</span>
+                        </Button>
+                    </Tooltip>
                 </Space>
             </div>
 
             {/* Stats Cards */}
-            <div className="grid grid-cols-4 gap-4">
+            <div className="stats-grid stats-grid-4">
                 <Card size="small">
                     <div className="text-center">
                         <Text type="secondary">Tổng hôm nay</Text>
-                        <div className="text-2xl font-bold text-blue-600">{stats.total}</div>
+                        <div style={{ fontSize: 28, fontWeight: 700, color: '#1E88E5' }}>{stats.total}</div>
                     </div>
                 </Card>
                 <Card size="small">
                     <div className="text-center">
                         <Text type="secondary">Đang chờ</Text>
-                        <div className="text-2xl font-bold text-orange-500">{stats.waiting}</div>
+                        <div style={{ fontSize: 28, fontWeight: 700, color: '#FF9800' }}>{stats.waiting}</div>
                     </div>
                 </Card>
                 <Card size="small">
                     <div className="text-center">
                         <Text type="secondary">Đang khám</Text>
-                        <div className="text-2xl font-bold text-blue-500">{stats.inProgress}</div>
+                        <div style={{ fontSize: 28, fontWeight: 700, color: '#1E88E5' }}>{stats.inProgress}</div>
                     </div>
                 </Card>
                 <Card size="small">
                     <div className="text-center">
                         <Text type="secondary">Hoàn thành</Text>
-                        <div className="text-2xl font-bold text-green-500">{stats.completed}</div>
+                        <div style={{ fontSize: 28, fontWeight: 700, color: '#4CAF50' }}>{stats.completed}</div>
                     </div>
                 </Card>
             </div>
@@ -687,18 +691,20 @@ export default function ReceptionPage() {
                 }
                 extra={
                     <Space>
-                        <Button
-                            type="primary"
-                            icon={<SoundOutlined />}
-                            onClick={handleCallNext}
-                            loading={callLoading}
-                            disabled={!selectedStation || currentlyServing.length >= MAX_CONCURRENT}
-                        >
-                            Gọi tiếp
-                        </Button>
-                        <Button icon={<ReloadOutlined />} onClick={fetchQueueBoard}>
-                            Làm mới
-                        </Button>
+                        <Tooltip title="Gọi bệnh nhân tiếp theo">
+                            <Button
+                                type="primary"
+                                icon={<SoundOutlined />}
+                                onClick={handleCallNext}
+                                loading={callLoading}
+                                disabled={!selectedStation || currentlyServing.length >= MAX_CONCURRENT}
+                            >
+                                <span className="hide-mobile">Gọi tiếp</span>
+                            </Button>
+                        </Tooltip>
+                        <Tooltip title="Làm mới danh sách">
+                            <Button icon={<ReloadOutlined />} onClick={fetchQueueBoard} />
+                        </Tooltip>
                     </Space>
                 }
                 className="border-blue-200"
@@ -846,9 +852,9 @@ export default function ReceptionPage() {
                     </Space>
                 }
                 extra={
-                    <Button icon={<ReloadOutlined />} onClick={fetchVisits}>
-                        Làm mới
-                    </Button>
+                    <Tooltip title="Làm mới danh sách">
+                        <Button icon={<ReloadOutlined />} onClick={fetchVisits} />
+                    </Tooltip>
                 }
             >
                 <Table
