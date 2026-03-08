@@ -378,9 +378,23 @@ class StreamingService:
                     chunk = event_data.get("chunk")
                     if chunk and hasattr(chunk, "content") and chunk.content:
                         content = chunk.content
-                        thinking_tokens.append(content)
-                        # Stream thinking token
-                        yield StreamEvent.thinking(content).to_dict()
+                        content_str = ""
+                        
+                        if isinstance(content, list):
+                            for item in content:
+                                if isinstance(item, dict) and "text" in item:
+                                    content_str += item["text"]
+                                elif isinstance(item, str):
+                                    content_str += item
+                                else:
+                                    content_str += str(item)
+                        else:
+                            content_str = str(content)
+                            
+                        if content_str:
+                            thinking_tokens.append(content_str)
+                            # Stream thinking token
+                            yield StreamEvent.thinking(content_str).to_dict()
                 
                 elif event_kind == "on_chain_end":
                     # Check if this is the final output
@@ -419,6 +433,17 @@ class StreamingService:
                 
                 # FALLBACK: Nếu không extract được đủ data từ message,
                 # thử parse JSON từ thinking content (vì LLM có thể output JSON trong thinking)
+                import re
+                
+                def _strip_internal_codes(text):
+                    if not isinstance(text, str): return text
+                    return re.sub(r'\[(?:SEVERITY_[A-Z]+|CODE_[A-Z]+|CẢNH BÁO)\]\s*', '', text).strip()
+                
+                # Strip on the existing structured_result message if present
+                for msg_key in ["message", "final_response"]:
+                    if structured_result and structured_result.get(msg_key):
+                        structured_result[msg_key] = _strip_internal_codes(structured_result[msg_key])
+
                 if structured_result and not structured_result.get("drug_interactions"):
                     full_thinking = "".join(thinking_tokens)
                     parsed_from_thinking = self._extract_json_from_thinking(full_thinking)
@@ -430,8 +455,9 @@ class StreamingService:
                             elif key == "drug_interactions" and value:
                                 structured_result[key] = value
                             elif key == "final_response" and value and "Đang kiểm tra" not in str(value):
-                                structured_result["message"] = value
-                                structured_result["final_response"] = value
+                                clean_val = _strip_internal_codes(value)
+                                structured_result["message"] = clean_val
+                                structured_result["final_response"] = clean_val
                 
                 # Add metadata
                 if structured_result:
@@ -554,6 +580,17 @@ class StreamingService:
                 "triage_code": result.get("triage_code"),
                 "requires_human": result.get("requires_human_intervention", False),
             }
+            
+            # Clean up user-facing text
+            import re
+            
+            def _strip_internal_codes(text):
+                if not isinstance(text, str): return text
+                return re.sub(r'\[(?:SEVERITY_[A-Z]+|CODE_[A-Z]+|CẢNH BÁO)\]\s*', '', text).strip()
+            
+            for msg_key in ["message", "final_response"]:
+                if structured_result.get(msg_key):
+                    structured_result[msg_key] = _strip_internal_codes(structured_result[msg_key])
             
             return structured_result
             
