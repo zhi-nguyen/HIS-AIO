@@ -20,6 +20,7 @@ from apps.ai_engine.agents.security import (
     is_agent_allowed, 
     REJECTION_MESSAGE,
 )
+from apps.ai_engine.agents.message_utils import log_llm_response
 
 
 # ==============================================================================
@@ -202,7 +203,7 @@ def supervisor_node(state: AgentState) -> Dict[str, Any]:
     try:
         # LLM sẽ stream text thinking - streaming service sẽ capture
         response = llm_pro.invoke(prompt_messages)
-        text_response = response.content
+        text_response = log_llm_response(response, "SUPERVISOR")
         
         # Parse text để extract routing decision
         next_agent = extract_agent_from_text(text_response)

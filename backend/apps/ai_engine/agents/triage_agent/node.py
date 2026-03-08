@@ -12,9 +12,13 @@ from typing import Dict, Any, List, Optional
 import re
 from langchain_core.messages import SystemMessage, AIMessage, HumanMessage, ToolMessage
 
+# Giới hạn số lần tool call tối đa để tránh vòng lặp vô hạn
+# Chỉ có 1 tool (lookup_department) nên limit = 2 (1 lần + safety margin)
+MAX_TOOL_ITERATIONS = 2
+
 from apps.ai_engine.graph.state import AgentState
-from apps.ai_engine.graph.llm_config import llm_triage_with_tools, logging_node_execution
-from apps.ai_engine.agents.message_utils import convert_and_filter_messages, log_llm_response, extract_final_response
+from apps.ai_engine.graph.llm_config import llm_triage_with_tools, llm_pro, logging_node_execution
+from apps.ai_engine.agents.message_utils import convert_and_filter_messages, log_llm_response, extract_final_response, _extract_text
 from .prompts import TRIAGE_THINKING_PROMPT
 
 
@@ -347,16 +351,50 @@ def triage_node(state: AgentState) -> Dict[str, Any]:
     
     prompt = [SystemMessage(content=TRIAGE_THINKING_PROMPT)] + converted_messages
     
-    # Phase 1: Gọi LLM với tools binding
-    response = llm_triage_with_tools.invoke(prompt)
+    # ============================================================
+    # Smart Tool Dedup: Track tools đã gọi, chặn gọi lại tool trùng
+    # ============================================================
+    called_tools = set()
+    for m in messages:
+        # AIMessage có tool_calls → ghi nhận tool name
+        if isinstance(m, AIMessage) and hasattr(m, 'tool_calls') and m.tool_calls:
+            for tc in m.tool_calls:
+                called_tools.add(tc.get('name', ''))
+    
+    existing_tool_count = sum(1 for m in messages if isinstance(m, ToolMessage))
+    all_tools_exhausted = existing_tool_count >= MAX_TOOL_ITERATIONS
+    
+    if all_tools_exhausted:
+        print(f"[TRIAGE] All tools exhausted ({existing_tool_count}/{MAX_TOOL_ITERATIONS}). Called: {called_tools}. Using LLM without tools.")
+    elif called_tools:
+        print(f"[TRIAGE] Tools already called: {called_tools} ({existing_tool_count}/{MAX_TOOL_ITERATIONS})")
+    
+    # Phase 1: Gọi LLM
+    # Nếu đã dùng hết tools → dùng LLM KHÔNG CÓ tools (buộc trả text kết luận)
+    if all_tools_exhausted:
+        response = llm_pro.invoke(prompt)
+    else:
+        response = llm_triage_with_tools.invoke(prompt)
     
     # Nếu LLM quyết định gọi tool
-    if hasattr(response, "tool_calls") and response.tool_calls:
-        print(f"[TRIAGE] Tool calls detected: {[tc['name'] for tc in response.tool_calls]}")
-        return {
-            "messages": [response],
-            "current_agent": "triage"
-        }
+    if hasattr(response, "tool_calls") and response.tool_calls and not all_tools_exhausted:
+        # Lọc bỏ tool calls trùng (đã gọi rồi)
+        new_tool_calls = [tc for tc in response.tool_calls if tc.get('name', '') not in called_tools]
+        
+        if new_tool_calls:
+            # Có tool MỚI → cho phép gọi (chỉ giữ tool mới)
+            response.tool_calls = new_tool_calls
+            print(f"[TRIAGE] New tool calls: {[tc['name'] for tc in new_tool_calls]}")
+            return {
+                "messages": [response],
+                "current_agent": "triage"
+            }
+        else:
+            # Tất cả tool calls đều là duplicate → bỏ qua, buộc text response
+            dup_names = [tc.get('name', '') for tc in response.tool_calls]
+            print(f"[TRIAGE] Blocked duplicate tool calls: {dup_names}. Forcing text response.")
+            # Re-invoke WITHOUT tools để có clean text response
+            response = llm_pro.invoke(prompt)
     
     # Log response
     text_analysis = log_llm_response(response, "TRIAGE")
@@ -382,10 +420,10 @@ def triage_node(state: AgentState) -> Dict[str, Any]:
             user_text = ""
             for msg in reversed(messages):
                 if hasattr(msg, 'type') and msg.type == 'human':
-                    user_text = msg.content if hasattr(msg, 'content') else ""
+                    user_text = _extract_text(getattr(msg, 'content', ''))
                     break
                 elif isinstance(msg, HumanMessage):
-                    user_text = msg.content
+                    user_text = _extract_text(msg.content)
                     break
             
             vitals_override = _check_critical_vitals(user_text + " " + text_analysis)
@@ -403,6 +441,23 @@ def triage_node(state: AgentState) -> Dict[str, Any]:
         if triage_code in ("CODE_RED", "CODE_BLUE"):
             department_code = "CC"
             print(f"[TRIAGE] ⚠ CODE={triage_code} → Override department to CC (Cấp Cứu)")
+            
+            # ============================================================
+            # SIDE EFFECT: Gửi cảnh báo khẩn cấp tự động (không qua LLM)
+            # ============================================================
+            try:
+                from .tools import trigger_emergency_alert
+                # Tìm tên bệnh nhân từ user message
+                patient_info = last_user_message[:100] if last_user_message else "Không rõ"
+                alert_result = trigger_emergency_alert.invoke({
+                    "level": triage_code,
+                    "location": "Sảnh tiếp nhận",
+                    "patient_info": patient_info,
+                    "vitals": vitals_override or "",
+                })
+                print(f"[TRIAGE] ✅ Emergency alert sent: {alert_result[:80]}...")
+            except Exception as alert_err:
+                print(f"[TRIAGE] ⚠ Failed to send alert: {alert_err}")
         
         # ============================================================
         # Extract matched departments từ tool messages  

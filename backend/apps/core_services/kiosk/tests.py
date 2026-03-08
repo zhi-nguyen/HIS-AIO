@@ -42,7 +42,7 @@ class KioskIdentifyTests(TestCase):
         self.assertEqual(result['patient'].id, self.patient.id)
         self.assertFalse(result['is_new_patient'])
         self.assertIsNotNone(result['insurance_info'])
-        self.assertEqual(result['insurance_info']['patient_name'], 'NGUYEN VAN AN')
+        self.assertEqual(result['insurance_info']['patient_name'], 'NGUYỄN VĂN AN')
         self.assertEqual(result['insurance_info']['benefit_rate'], 100)
 
     def test_identify_valid_bhyt_full(self):
@@ -237,7 +237,7 @@ class KioskAPITests(TestCase):
     def test_api_identify_success(self):
         """POST /api/kiosk/identify/ → 200 + patient data."""
         response = self.client.post(
-            '/api/kiosk/identify/',
+            '/api/v1/kiosk/identify/',
             {'scan_data': '092200012345'},
             format='json',
         )
@@ -249,7 +249,7 @@ class KioskAPITests(TestCase):
     def test_api_identify_invalid(self):
         """POST /api/kiosk/identify/ với dữ liệu sai → 400."""
         response = self.client.post(
-            '/api/kiosk/identify/',
+            '/api/v1/kiosk/identify/',
             {'scan_data': 'abc'},
             format='json',
         )
@@ -258,7 +258,7 @@ class KioskAPITests(TestCase):
     def test_api_register_success(self):
         """POST /api/kiosk/register/ → 201 + queue number."""
         response = self.client.post(
-            '/api/kiosk/register/',
+            '/api/v1/kiosk/register/',
             {
                 'patient_id': str(self.patient.id),
                 'chief_complaint': 'Đau đầu chóng mặt',
@@ -274,7 +274,7 @@ class KioskAPITests(TestCase):
         """Đăng ký 2 lần → 409 Conflict."""
         # Lần 1: thành công
         self.client.post(
-            '/api/kiosk/register/',
+            '/api/v1/kiosk/register/',
             {
                 'patient_id': str(self.patient.id),
                 'chief_complaint': 'Đau đầu',
@@ -284,7 +284,7 @@ class KioskAPITests(TestCase):
         
         # Lần 2: bị chặn
         response = self.client.post(
-            '/api/kiosk/register/',
+            '/api/v1/kiosk/register/',
             {
                 'patient_id': str(self.patient.id),
                 'chief_complaint': 'Đau bụng',
@@ -301,7 +301,7 @@ class KioskAPITests(TestCase):
         """Layer 3: Vượt quá rate limit → 429."""
         for i in range(4):
             response = self.client.post(
-                '/api/kiosk/identify/',
+                '/api/v1/kiosk/identify/',
                 {'scan_data': '092200012345'},
                 format='json',
             )
