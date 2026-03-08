@@ -9,7 +9,6 @@ import {
     Steps,
     Tag,
     Descriptions,
-    Result,
     Spin,
     Alert,
 } from 'antd';
@@ -56,10 +55,10 @@ const KioskClock = memo(() => {
 
     return (
         <div className="text-right">
-            <div className="text-3xl font-bold text-cyan-400 tracking-wider font-mono">
+            <div style={{ fontSize: 28, fontWeight: 700, color: '#0077b6', fontVariantNumeric: 'tabular-nums', lineHeight: 1.2 }}>
                 {currentTime.toLocaleTimeString('vi-VN')}
             </div>
-            <div className="text-blue-300 text-xs">
+            <div style={{ color: '#475569', fontSize: 13 }}>
                 {currentTime.toLocaleDateString('vi-VN', {
                     weekday: 'long',
                     day: 'numeric',
@@ -203,10 +202,6 @@ export default function KioskPage() {
         setShowScanner(false);
         const parsed = parseCccdQrData(decodedText);
 
-        console.log('--- KHÁCH HÀNG QUÉT QR TẠI KIOSK ---');
-        console.log('Dữ liệu thô quét được:', decodedText);
-        console.log('Thông tin phân tích:', parsed);
-
         if (!parsed) {
             setError('Mã QR không hợp lệ hoặc không phải CCCD');
             return;
@@ -220,106 +215,145 @@ export default function KioskPage() {
     // RENDER
     // ======================================================================
     return (
-        <div className="min-h-screen bg-gradient-to-br from-blue-900 via-indigo-900 to-purple-900 flex flex-col">
+        <div style={{
+            minHeight: '100vh',
+            background: 'linear-gradient(135deg, #dbeafe 0%, #f0f9ff 45%, #e0e7ff 100%)',
+            display: 'flex',
+            flexDirection: 'column',
+            fontFamily: "'Roboto', sans-serif",
+        }}>
             {/* ── Header ── */}
-            <header className="flex items-center justify-between px-8 py-5 bg-black/20 backdrop-blur-sm border-b border-white/10">
-                <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-cyan-400 to-blue-500 flex items-center justify-center shadow-lg shadow-cyan-500/30">
-                        <MedicineBoxOutlined className="text-2xl text-white" />
+            <header style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '16px 32px',
+                background: 'rgba(255,255,255,0.85)',
+                backdropFilter: 'blur(12px)',
+                borderBottom: '1px solid rgba(148,163,184,0.2)',
+                boxShadow: '0 1px 8px rgba(0,0,0,0.06)',
+            }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                    <div style={{
+                        width: 52, height: 52,
+                        borderRadius: 14,
+                        background: '#0077b6',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        boxShadow: '0 4px 12px rgba(0,119,182,0.3)',
+                    }}>
+                        <MedicineBoxOutlined style={{ fontSize: 26, color: '#fff' }} />
                     </div>
                     <div>
-                        <Title level={3} className="!text-white !mb-0 tracking-tight">
+                        <div style={{ fontSize: 22, fontWeight: 700, color: '#1e3a5f', lineHeight: 1.2 }}>
                             Bệnh Viện Đa Khoa ABC
-                        </Title>
-                        <Text className="text-blue-300 text-sm">
+                        </div>
+                        <div style={{ fontSize: 14, color: '#475569', marginTop: 2 }}>
                             Kiosk Tự Phục Vụ — Đăng Ký Khám Bệnh
-                        </Text>
+                        </div>
                     </div>
                 </div>
-                {/* Clock Isolated */}
                 <KioskClock />
             </header>
 
             {/* ── Steps Indicator ── */}
-            <div className="px-8 py-4 max-w-3xl mx-auto w-full">
+            <div style={{ padding: '20px 32px 8px', maxWidth: 720, margin: '0 auto', width: '100%' }}>
                 <Steps
                     current={currentStep}
                     items={[
-                        { title: <span className="text-white">Quét mã</span>, icon: <ScanOutlined className="text-cyan-400" /> },
-                        { title: <span className="text-white">Xác nhận</span>, icon: <CheckCircleOutlined className="text-cyan-400" /> },
-                        { title: <span className="text-white">Hoàn thành</span>, icon: <IdcardOutlined className="text-cyan-400" /> },
+                        {
+                            title: <span style={{ fontWeight: 600 }}>Quét mã</span>,
+                            icon: <ScanOutlined style={{ color: currentStep >= 0 ? '#0077b6' : '#94a3b8' }} />,
+                        },
+                        {
+                            title: <span style={{ fontWeight: 600 }}>Xác nhận</span>,
+                            icon: <CheckCircleOutlined style={{ color: currentStep >= 1 ? '#0077b6' : '#94a3b8' }} />,
+                        },
+                        {
+                            title: <span style={{ fontWeight: 600 }}>Hoàn thành</span>,
+                            icon: <IdcardOutlined style={{ color: currentStep >= 2 ? '#0077b6' : '#94a3b8' }} />,
+                        },
                     ]}
                     className="kiosk-steps"
                 />
             </div>
 
             {/* ── Main Content ── */}
-            <main className="flex-1 flex items-center justify-center px-8 pb-8">
-                <div className="w-full max-w-2xl">
+            <main style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px 32px 32px' }}>
+                <div style={{ width: '100%', maxWidth: 640 }}>
 
                     {/* ════════ STEP 0: Quét mã ════════ */}
                     {currentStep === 0 && (
                         <Card
-                            className="rounded-3xl shadow-2xl border-0"
                             style={{
-                                background: 'rgba(255,255,255,0.08)',
-                                backdropFilter: 'blur(20px)',
-                                border: '1px solid rgba(255,255,255,0.15)',
+                                background: 'rgba(255,255,255,0.92)',
+                                border: '1px solid rgba(148,163,184,0.3)',
+                                borderRadius: 24,
+                                boxShadow: '0 8px 32px rgba(0,0,0,0.08)',
                             }}
-                            styles={{ body: { padding: '48px' } }}
+                            styles={{ body: { padding: 40 } }}
                         >
-                            <div className="text-center mb-8">
-                                <div className="w-20 h-20 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-cyan-400 to-blue-500 flex items-center justify-center shadow-lg shadow-cyan-500/30">
-                                    <ScanOutlined className="text-4xl text-white" />
+                            {/* Icon + heading */}
+                            <div style={{ textAlign: 'center', marginBottom: 32 }}>
+                                <div style={{
+                                    width: 80, height: 80,
+                                    borderRadius: 20,
+                                    background: '#0077b6',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    margin: '0 auto 16px',
+                                    boxShadow: '0 6px 20px rgba(0,119,182,0.3)',
+                                }}>
+                                    <ScanOutlined style={{ fontSize: 38, color: '#fff' }} />
                                 </div>
-                                <Title level={2} className="!text-white !mb-2">
+                                <Title level={2} style={{ color: '#1e3a5f', marginBottom: 8, fontSize: 28 }}>
                                     Quét mã CCCD hoặc BHYT
                                 </Title>
-                                <Paragraph className="text-blue-300 text-base !mb-0">
+                                <Paragraph style={{ color: '#475569', fontSize: 17, marginBottom: 0 }}>
                                     Đặt thẻ CCCD hoặc thẻ BHYT lên máy quét, hoặc nhập mã số bên dưới
                                 </Paragraph>
                             </div>
 
-                            <div className="space-y-6">
-                                <Input
-                                    ref={scanInputRef}
-                                    value={scanData}
-                                    onChange={e => { setScanData(e.target.value); setError(null); }}
-                                    onPressEnter={handleIdentify}
-                                    placeholder="Nhập mã CCCD (12 số) hoặc mã BHYT (10/15 ký tự)..."
-                                    size="large"
-                                    prefix={<IdcardOutlined className="text-blue-400" />}
-                                    className="!bg-white/10 !border-white/20 !text-white placeholder:!text-blue-300/50"
-                                    style={{ height: 56, fontSize: 18, borderRadius: 16 }}
-                                    maxLength={15}
-                                    autoFocus
-                                />
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                                {/* Input */}
+                                <div className="kiosk-input-field">
+                                    <Input
+                                        ref={scanInputRef}
+                                        value={scanData}
+                                        onChange={e => { setScanData(e.target.value); setError(null); }}
+                                        onPressEnter={handleIdentify}
+                                        placeholder="Nhập mã CCCD (12 số) hoặc mã BHYT..."
+                                        size="large"
+                                        prefix={<IdcardOutlined />}
+                                        style={{ height: 58, fontSize: 18, borderRadius: 14 }}
+                                        maxLength={15}
+                                        autoFocus
+                                    />
+                                </div>
 
                                 {error && (
                                     <Alert
                                         type="error"
-                                        title={error}
+                                        message={error}
                                         showIcon
                                         icon={<WarningOutlined />}
-                                        className="!rounded-xl"
+                                        style={{ borderRadius: 12, fontSize: 16 }}
                                     />
                                 )}
 
-                                <div className="grid grid-cols-2 gap-4">
+                                {/* Action buttons */}
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                                     <Button
-                                        type="default"
                                         size="large"
                                         block
                                         onClick={() => setShowScanner(true)}
                                         icon={<QrcodeOutlined />}
                                         style={{
-                                            height: 56,
+                                            height: 64,
                                             fontSize: 16,
-                                            borderRadius: 16,
-                                            background: 'rgba(255,255,255,0.1)',
-                                            borderColor: 'rgba(255,255,255,0.2)',
-                                            color: '#fff',
+                                            borderRadius: 14,
+                                            borderColor: '#94a3b8',
+                                            color: '#1e3a5f',
                                             fontWeight: 500,
+                                            background: '#fff',
                                         }}
                                     >
                                         Quét QR Camera
@@ -333,10 +367,10 @@ export default function KioskPage() {
                                         disabled={!scanData.trim()}
                                         icon={<ScanOutlined />}
                                         style={{
-                                            height: 56,
+                                            height: 64,
                                             fontSize: 18,
-                                            borderRadius: 16,
-                                            background: 'linear-gradient(135deg, #00b4d8, #0077b6)',
+                                            borderRadius: 14,
+                                            background: '#0077b6',
                                             border: 'none',
                                             fontWeight: 600,
                                         }}
@@ -347,15 +381,29 @@ export default function KioskPage() {
                             </div>
 
                             {/* Mock data hints */}
-                            <div className="mt-8 p-4 rounded-xl bg-white/5 border border-white/10">
-                                <Text className="text-blue-300/70 text-xs block mb-2">
+                            <div style={{
+                                marginTop: 28,
+                                padding: 16,
+                                borderRadius: 14,
+                                background: '#f0f9ff',
+                                border: '1px solid #bae6fd',
+                            }}>
+                                <Text style={{ color: '#0369a1', fontSize: 13, display: 'block', marginBottom: 8 }}>
                                     💡 Mã mẫu để thử nghiệm:
                                 </Text>
-                                <div className="flex flex-wrap gap-2">
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                                     {['092200012345', '079085001234', '0000000123', 'TE1790000000123'].map(code => (
                                         <Tag
                                             key={code}
-                                            className="cursor-pointer !bg-white/10 !border-white/20 !text-blue-200 hover:!bg-white/20 transition-colors"
+                                            style={{
+                                                cursor: 'pointer',
+                                                background: '#fff',
+                                                borderColor: '#7dd3fc',
+                                                color: '#0369a1',
+                                                fontSize: 13,
+                                                padding: '2px 10px',
+                                                borderRadius: 8,
+                                            }}
                                             onClick={() => { setScanData(code); setError(null); }}
                                         >
                                             {code}
@@ -369,42 +417,49 @@ export default function KioskPage() {
                     {/* ════════ STEP 1: Xác nhận thông tin ════════ */}
                     {currentStep === 1 && identifyResult && (
                         <Card
-                            className="rounded-3xl shadow-2xl border-0"
                             style={{
-                                background: 'rgba(255,255,255,0.08)',
-                                backdropFilter: 'blur(20px)',
-                                border: '1px solid rgba(255,255,255,0.15)',
+                                background: 'rgba(255,255,255,0.92)',
+                                border: '1px solid rgba(148,163,184,0.3)',
+                                borderRadius: 24,
+                                boxShadow: '0 8px 32px rgba(0,0,0,0.08)',
                             }}
-                            styles={{ body: { padding: '40px' } }}
+                            styles={{ body: { padding: 36 } }}
                         >
-                            {/* ── Active Visit Warning ── */}
+                            {/* Active Visit Warning */}
                             {identifyResult.has_active_visit && (
                                 <Alert
                                     type="warning"
                                     showIcon
                                     icon={<WarningOutlined />}
-                                    title="Bạn đang có lượt khám chưa hoàn thành"
+                                    message="Bạn đang có lượt khám chưa hoàn thành"
                                     description={`Mã lượt khám: ${identifyResult.active_visit_code}. Bạn vẫn có thể đăng ký mới nếu cần.`}
-                                    className="!rounded-xl mb-6"
+                                    style={{ borderRadius: 12, marginBottom: 20, fontSize: 16 }}
                                 />
                             )}
 
-                            {/* ── Patient Info ── */}
-                            <div className="flex items-start gap-4 mb-6">
-                                <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-emerald-400 to-green-500 flex items-center justify-center shadow-lg shadow-emerald-500/30 flex-shrink-0">
-                                    <UserOutlined className="text-2xl text-white" />
+                            {/* Patient Info */}
+                            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 20 }}>
+                                <div style={{
+                                    width: 56, height: 56,
+                                    borderRadius: 16,
+                                    background: '#10b981',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    flexShrink: 0,
+                                    boxShadow: '0 4px 12px rgba(16,185,129,0.3)',
+                                }}>
+                                    <UserOutlined style={{ fontSize: 24, color: '#fff' }} />
                                 </div>
-                                <div className="flex-1">
-                                    <div className="flex items-center gap-3 mb-1">
-                                        <Title level={3} className="!text-white !mb-0">
+                                <div style={{ flex: 1 }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 4 }}>
+                                        <span style={{ fontSize: 22, fontWeight: 700, color: '#1e3a5f' }}>
                                             {identifyResult.patient.full_name}
-                                        </Title>
+                                        </span>
                                         {identifyResult.patient.is_new_patient && (
-                                            <Tag color="green" className="!rounded-full">BN mới</Tag>
+                                            <Tag color="green" style={{ borderRadius: 20 }}>BN mới</Tag>
                                         )}
                                     </div>
-                                    <Text className="text-blue-300">
-                                        Mã BN: {identifyResult.patient.patient_code}
+                                    <Text style={{ color: '#475569', fontSize: 15 }}>
+                                        Mã BN: <strong>{identifyResult.patient.patient_code}</strong>
                                     </Text>
                                 </div>
                             </div>
@@ -412,31 +467,36 @@ export default function KioskPage() {
                             <Descriptions
                                 column={2}
                                 size="small"
-                                className="mb-6 kiosk-descriptions"
-                                labelStyle={{ color: 'rgba(147,197,253,0.8)', fontWeight: 500 }}
-                                contentStyle={{ color: '#fff' }}
+                                className="kiosk-descriptions"
+                                style={{ marginBottom: 20 }}
                             >
                                 <Descriptions.Item label="Ngày sinh">
-                                    {identifyResult.patient.date_of_birth || '—'}
+                                    <span style={{ fontSize: 15, fontWeight: 600 }}>{identifyResult.patient.date_of_birth || '—'}</span>
                                 </Descriptions.Item>
                                 <Descriptions.Item label="Giới tính">
-                                    {identifyResult.patient.gender === 'M' ? 'Nam' : identifyResult.patient.gender === 'F' ? 'Nữ' : 'Khác'}
+                                    <span style={{ fontSize: 15, fontWeight: 600 }}>
+                                        {identifyResult.patient.gender === 'M' ? 'Nam' : identifyResult.patient.gender === 'F' ? 'Nữ' : 'Khác'}
+                                    </span>
                                 </Descriptions.Item>
                             </Descriptions>
 
-                            {/* ── Insurance Info ── */}
+                            {/* Insurance Info */}
                             {identifyResult.insurance_info && (
-                                <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/20 mb-6">
-                                    <div className="flex items-center gap-2 mb-3">
-                                        <SafetyCertificateOutlined className="text-emerald-400 text-lg" />
-                                        <Text className="text-emerald-300 font-semibold">Thông tin BHYT</Text>
+                                <div style={{
+                                    padding: 16,
+                                    borderRadius: 14,
+                                    background: '#f0fdf4',
+                                    border: '1px solid #86efac',
+                                    marginBottom: 20,
+                                }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                                        <SafetyCertificateOutlined style={{ color: '#16a34a', fontSize: 18 }} />
+                                        <Text style={{ color: '#166534', fontWeight: 600, fontSize: 15 }}>Thông tin BHYT</Text>
                                     </div>
                                     <Descriptions
                                         column={2}
                                         size="small"
                                         className="kiosk-descriptions"
-                                        labelStyle={{ color: 'rgba(110,231,183,0.7)', fontSize: 12 }}
-                                        contentStyle={{ color: '#d1fae5', fontSize: 13 }}
                                     >
                                         <Descriptions.Item label="Mã BHYT">
                                             {identifyResult.insurance_info.insurance_code}
@@ -451,48 +511,50 @@ export default function KioskPage() {
                                 </div>
                             )}
 
-                            {/* ── Chief Complaint Input ── */}
-                            <div className="mb-6">
-                                <div className="flex items-center gap-2 mb-3">
-                                    <FileTextOutlined className="text-cyan-400" />
-                                    <Text className="text-white font-semibold text-base">
-                                        Lý do khám <span className="text-red-400">*</span>
+                            {/* Chief Complaint Input */}
+                            <div style={{ marginBottom: 20 }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                                    <FileTextOutlined style={{ color: '#0077b6', fontSize: 18 }} />
+                                    <Text style={{ color: '#1e3a5f', fontWeight: 600, fontSize: 17 }}>
+                                        Lý do khám <span style={{ color: '#dc2626' }}>*</span>
                                     </Text>
                                 </div>
-                                <TextArea
-                                    value={chiefComplaint}
-                                    onChange={e => { setChiefComplaint(e.target.value); setError(null); }}
-                                    placeholder="Mô tả triệu chứng hoặc lý do bạn muốn khám hôm nay... (VD: Đau đầu, chóng mặt 2 ngày)"
-                                    rows={3}
-                                    maxLength={1000}
-                                    showCount
-                                    className="!bg-white/10 !border-white/20 !text-white placeholder:!text-blue-300/50 !rounded-xl"
-                                    style={{ fontSize: 16 }}
-                                />
+                                <div className="kiosk-textarea">
+                                    <TextArea
+                                        value={chiefComplaint}
+                                        onChange={e => { setChiefComplaint(e.target.value); setError(null); }}
+                                        placeholder="Mô tả triệu chứng hoặc lý do bạn muốn khám hôm nay... (VD: Đau đầu, chóng mặt 2 ngày)"
+                                        rows={3}
+                                        maxLength={1000}
+                                        showCount
+                                        style={{ fontSize: 16, borderRadius: 14, borderColor: '#94a3b8', color: '#1e3a5f' }}
+                                    />
+                                </div>
                             </div>
 
                             {error && (
                                 <Alert
                                     type="error"
-                                    title={error}
+                                    message={error}
                                     showIcon
-                                    icon={<WarningOutlined />}
-                                    className="!rounded-xl mb-6"
+                                    style={{ borderRadius: 12, marginBottom: 20, fontSize: 15 }}
                                 />
                             )}
 
-                            {/* ── Action Buttons ── */}
-                            <div className="flex gap-4">
+                            {/* Action Buttons */}
+                            <div style={{ display: 'flex', gap: 12 }}>
                                 <Button
                                     size="large"
                                     onClick={handleReset}
                                     icon={<ReloadOutlined />}
                                     style={{
-                                        height: 52,
+                                        height: 60,
                                         borderRadius: 14,
-                                        background: 'rgba(255,255,255,0.1)',
-                                        border: '1px solid rgba(255,255,255,0.2)',
-                                        color: '#fff',
+                                        borderColor: '#94a3b8',
+                                        color: '#475569',
+                                        fontWeight: 500,
+                                        fontSize: 16,
+                                        minWidth: 120,
                                     }}
                                 >
                                     Quay lại
@@ -506,12 +568,10 @@ export default function KioskPage() {
                                     disabled={!chiefComplaint.trim() || chiefComplaint.trim().length < 3}
                                     icon={<CheckCircleOutlined />}
                                     style={{
-                                        height: 52,
-                                        fontSize: 17,
+                                        height: 60,
+                                        fontSize: 18,
                                         borderRadius: 14,
-                                        background: identifyResult.has_active_visit
-                                            ? 'linear-gradient(135deg, #f59e0b, #d97706)'
-                                            : 'linear-gradient(135deg, #10b981, #059669)',
+                                        background: identifyResult.has_active_visit ? '#d97706' : '#059669',
                                         border: 'none',
                                         fontWeight: 600,
                                     }}
@@ -525,71 +585,105 @@ export default function KioskPage() {
                     {/* ════════ STEP 2: Hoàn thành ════════ */}
                     {currentStep === 2 && registerResult && (
                         <Card
-                            className="rounded-3xl shadow-2xl border-0"
                             style={{
-                                background: 'rgba(255,255,255,0.08)',
-                                backdropFilter: 'blur(20px)',
-                                border: '1px solid rgba(255,255,255,0.15)',
+                                background: 'rgba(255,255,255,0.92)',
+                                border: '1px solid rgba(148,163,184,0.3)',
+                                borderRadius: 24,
+                                boxShadow: '0 8px 32px rgba(0,0,0,0.08)',
                             }}
-                            styles={{ body: { padding: '48px', textAlign: 'center' } }}
+                            styles={{ body: { padding: 40, textAlign: 'center' } }}
                         >
-                            {/* Confetti-like success icon */}
-                            <div className="mb-4">
-                                <div className="w-20 h-20 mx-auto rounded-full bg-gradient-to-br from-emerald-400 to-green-500 flex items-center justify-center shadow-lg shadow-emerald-500/40 animate-bounce">
-                                    <CheckCircleOutlined className="text-4xl text-white" />
+                            {/* Success icon — pop animation, no bounce */}
+                            <div style={{ marginBottom: 16 }}>
+                                <div
+                                    className="kiosk-success-pop"
+                                    style={{
+                                        width: 88, height: 88,
+                                        borderRadius: '50%',
+                                        background: '#059669',
+                                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                        margin: '0 auto',
+                                        boxShadow: '0 6px 24px rgba(5,150,105,0.35)',
+                                    }}
+                                >
+                                    <CheckCircleOutlined style={{ fontSize: 44, color: '#fff' }} />
                                 </div>
                             </div>
 
-                            <Title level={2} className="!text-emerald-400 !mb-2">
+                            <Title level={2} style={{ color: '#059669', marginBottom: 8, fontSize: 30 }}>
                                 Đăng ký thành công!
                             </Title>
 
-                            <Paragraph className="text-blue-300 text-base !mb-8">
+                            <Paragraph style={{ color: '#475569', fontSize: 17, marginBottom: 28 }}>
                                 Vui lòng chờ gọi số trên màn hình
                             </Paragraph>
 
-                            {/* ── Queue Number (BIG display) ── */}
-                            <div className="mb-8 p-8 rounded-2xl bg-white/10 border border-cyan-400/30">
-                                <Text className="text-blue-300 text-sm block mb-2">SỐ THỨ TỰ CỦA BẠN</Text>
-                                <div
-                                    className="font-bold tracking-wider"
-                                    style={{
-                                        fontSize: 80,
-                                        lineHeight: 1,
-                                        background: 'linear-gradient(135deg, #22d3ee, #06b6d4, #0891b2)',
-                                        WebkitBackgroundClip: 'text',
-                                        WebkitTextFillColor: 'transparent',
-                                    }}
-                                >
+                            {/* Queue Number — large display */}
+                            <div style={{
+                                marginBottom: 24,
+                                padding: '24px 32px',
+                                borderRadius: 20,
+                                background: '#f0f9ff',
+                                border: '2px solid #7dd3fc',
+                            }}>
+                                <Text style={{ color: '#0369a1', fontSize: 14, display: 'block', marginBottom: 6, fontWeight: 500, letterSpacing: 2 }}>
+                                    SỐ THỨ TỰ CỦA BẠN
+                                </Text>
+                                <div style={{
+                                    fontSize: 88,
+                                    lineHeight: 1,
+                                    fontWeight: 900,
+                                    color: '#0077b6',
+                                    fontVariantNumeric: 'tabular-nums',
+                                }}>
                                     {registerResult.daily_sequence}
                                 </div>
-                                <Text className="text-blue-400 text-xs mt-2 block">
+                                <Text style={{ color: '#0369a1', fontSize: 14, marginTop: 4, display: 'block' }}>
                                     {registerResult.queue_number}
                                 </Text>
                             </div>
 
-                            {/* ── Info cards ── */}
-                            <div className="grid grid-cols-2 gap-4 mb-8">
-                                <div className="p-4 rounded-xl bg-white/5 border border-white/10">
-                                    <ClockCircleOutlined className="text-2xl text-amber-400 mb-2" />
-                                    <div className="text-white text-2xl font-bold">
+                            {/* Info cards */}
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 24 }}>
+                                <div style={{
+                                    padding: 16,
+                                    borderRadius: 14,
+                                    background: '#fffbeb',
+                                    border: '1px solid #fde68a',
+                                }}>
+                                    <ClockCircleOutlined style={{ fontSize: 24, color: '#d97706', display: 'block', marginBottom: 6 }} />
+                                    <div style={{ fontSize: 24, fontWeight: 700, color: '#1e3a5f' }}>
                                         ~{registerResult.estimated_wait_minutes} phút
                                     </div>
-                                    <Text className="text-blue-300 text-xs">Thời gian chờ ước tính</Text>
+                                    <Text style={{ color: '#78716c', fontSize: 13 }}>Thời gian chờ ước tính</Text>
                                 </div>
-                                <div className="p-4 rounded-xl bg-white/5 border border-white/10">
-                                    <FileTextOutlined className="text-2xl text-cyan-400 mb-2" />
-                                    <div className="text-white text-sm font-medium truncate px-2">
+                                <div style={{
+                                    padding: 16,
+                                    borderRadius: 14,
+                                    background: '#f0f9ff',
+                                    border: '1px solid #bae6fd',
+                                }}>
+                                    <FileTextOutlined style={{ fontSize: 24, color: '#0077b6', display: 'block', marginBottom: 6 }} />
+                                    <div style={{ fontSize: 14, fontWeight: 600, color: '#1e3a5f', wordBreak: 'break-all' }}>
                                         {registerResult.visit_code}
                                     </div>
-                                    <Text className="text-blue-300 text-xs">Mã lượt khám</Text>
+                                    <Text style={{ color: '#78716c', fontSize: 13 }}>Mã lượt khám</Text>
                                 </div>
                             </div>
 
-                            {/* ── Instructions ── */}
-                            <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/20 mb-8 text-left">
-                                <Text className="text-amber-300 font-semibold block mb-2">📋 Hướng dẫn tiếp theo:</Text>
-                                <ol className="text-amber-100/80 text-sm space-y-1 pl-4 list-decimal">
+                            {/* Instructions */}
+                            <div style={{
+                                padding: 20,
+                                borderRadius: 14,
+                                background: '#fffde7',
+                                border: '1px solid #fde68a',
+                                marginBottom: 24,
+                                textAlign: 'left',
+                            }}>
+                                <Text style={{ color: '#92400e', fontWeight: 700, display: 'block', marginBottom: 10, fontSize: 16 }}>
+                                    📋 Hướng dẫn tiếp theo:
+                                </Text>
+                                <ol style={{ color: '#78350f', fontSize: 15, lineHeight: 2, paddingLeft: 20, margin: 0 }}>
                                     <li>Ngồi chờ tại khu vực phòng khám</li>
                                     <li>Chú ý màn hình hiển thị và loa gọi số</li>
                                     <li>Khi được gọi, đến phòng đo sinh hiệu</li>
@@ -597,10 +691,10 @@ export default function KioskPage() {
                                 </ol>
                             </div>
 
-                            {/* ── Auto-reset countdown ── */}
-                            <div className="mb-4">
-                                <Text className="text-blue-400/70 text-xs">
-                                    Tự động quay về màn hình chính sau {countdown} giây
+                            {/* Countdown */}
+                            <div style={{ marginBottom: 16 }}>
+                                <Text style={{ color: '#64748b', fontSize: 14 }}>
+                                    Tự động quay về màn hình chính sau <strong>{countdown}</strong> giây
                                 </Text>
                             </div>
 
@@ -609,12 +703,13 @@ export default function KioskPage() {
                                 onClick={handleReset}
                                 icon={<ReloadOutlined />}
                                 style={{
-                                    height: 48,
+                                    height: 56,
                                     borderRadius: 14,
-                                    background: 'rgba(255,255,255,0.1)',
-                                    border: '1px solid rgba(255,255,255,0.2)',
-                                    color: '#fff',
+                                    borderColor: '#94a3b8',
+                                    color: '#1e3a5f',
                                     fontWeight: 500,
+                                    fontSize: 16,
+                                    paddingInline: 28,
                                 }}
                             >
                                 Đăng ký bệnh nhân khác
@@ -625,8 +720,16 @@ export default function KioskPage() {
             </main>
 
             {/* ── Footer ── */}
-            <footer className="text-center py-4 text-blue-400/50 text-xs border-t border-white/5">
-                Vui lòng giữ gìn thiết bị • Hotline hỗ trợ: <span className="text-cyan-400">1900 1234</span>
+            <footer style={{
+                textAlign: 'center',
+                padding: '12px 32px',
+                color: '#64748b',
+                fontSize: 13,
+                borderTop: '1px solid rgba(148,163,184,0.2)',
+                background: 'rgba(255,255,255,0.6)',
+            }}>
+                Vui lòng giữ gìn thiết bị • Hotline hỗ trợ:{' '}
+                <span style={{ color: '#0077b6', fontWeight: 600 }}>1900 1234</span>
             </footer>
 
             <ScannerModal
@@ -634,85 +737,6 @@ export default function KioskPage() {
                 onCancel={() => setShowScanner(false)}
                 onScanSuccess={handleQrScanSuccess}
             />
-
-            {/* ── Custom Styles ── */}
-            <style jsx global>{`
-                /* Steps indicator on dark background */
-                .kiosk-steps .ant-steps-item-title {
-                    color: rgba(255,255,255,0.7) !important;
-                }
-                .kiosk-steps .ant-steps-item-finish .ant-steps-item-title {
-                    color: #22d3ee !important;
-                }
-                .kiosk-steps .ant-steps-item-process .ant-steps-item-title {
-                    color: #fff !important;
-                }
-                .kiosk-steps .ant-steps-item-tail::after {
-                    background-color: rgba(255,255,255,0.15) !important;
-                }
-                .kiosk-steps .ant-steps-item-finish .ant-steps-item-tail::after {
-                    background-color: #22d3ee !important;
-                }
-                .kiosk-steps .ant-steps-item-icon {
-                    background: rgba(255,255,255,0.1) !important;
-                    border-color: rgba(255,255,255,0.2) !important;
-                }
-                .kiosk-steps .ant-steps-item-finish .ant-steps-item-icon,
-                .kiosk-steps .ant-steps-item-process .ant-steps-item-icon {
-                    background: linear-gradient(135deg, #06b6d4, #0891b2) !important;
-                    border-color: #22d3ee !important;
-                }
-
-                /* Descriptions on dark bg */
-                .kiosk-descriptions .ant-descriptions-item-label {
-                    background: transparent !important;
-                    border: none !important;
-                }
-                .kiosk-descriptions .ant-descriptions-item-content {
-                    border: none !important;
-                }
-                .kiosk-descriptions .ant-descriptions-view {
-                    border: none !important;
-                }
-                .kiosk-descriptions .ant-descriptions-row {
-                    border: none !important;
-                }
-
-                /* Input styles for dark bg */
-                .ant-input-affix-wrapper:has(input[class*="text-white"]) {
-                    background: rgba(255,255,255,0.1) !important;
-                    border-color: rgba(255,255,255,0.2) !important;
-                }
-                .ant-input-affix-wrapper:has(input[class*="text-white"]):hover,
-                .ant-input-affix-wrapper:has(input[class*="text-white"]):focus-within {
-                    border-color: #22d3ee !important;
-                    box-shadow: 0 0 0 2px rgba(34,211,238,0.2) !important;
-                }
-
-                /* TextArea on dark bg */
-                .ant-input-textarea textarea.ant-input {
-                    background: rgba(255,255,255,0.1) !important;
-                    border-color: rgba(255,255,255,0.2) !important;
-                    color: #fff !important;
-                }
-                .ant-input-textarea textarea.ant-input:hover,
-                .ant-input-textarea textarea.ant-input:focus {
-                    border-color: #22d3ee !important;
-                    box-shadow: 0 0 0 2px rgba(34,211,238,0.2) !important;
-                }
-                .ant-input-textarea .ant-input-data-count {
-                    color: rgba(147,197,253,0.5) !important;
-                }
-
-                /* Bounce animation */
-                @keyframes bounce {
-                    0%, 100% { transform: translateY(0); }
-                    50% { transform: translateY(-10px); }
-                }
-                .animate-bounce {
-                    animation: bounce 1s ease-in-out 3;
-                }
-            `}</style>
         </div>
     );
 }
