@@ -151,9 +151,18 @@ CHANNEL_LAYERS = {
 
 # RAG Service Configuration
 import os
+# AI Model Configuration
+# Đổi model trong .env là toàn bộ hệ thống dùng model mới không cần sửa code
+AGENT_COMPLEX_MODEL = config('AGENT_COMPLEX_MODEL', default='gemini-2.0-flash')
+AGENT_FAST_MODEL    = config('AGENT_FAST_MODEL',    default='gemini-2.0-flash')
+AGENT_DEFAULT_MODEL = config('AGENT_DEFAULT_MODEL', default='gemini-2.0-flash')
+AGENT_TEMPERATURE   = config('AGENT_TEMPERATURE',   default=0.7, cast=float)
+AGENT_MAX_TOKENS    = config('AGENT_MAX_TOKENS',    default=2048, cast=int)
+
+# RAG Service Configuration
 RAG_VECTOR_DB = config('RAG_VECTOR_DB', default='pgvector')
 RAG_EMBEDDING_PROVIDER = config('RAG_EMBEDDING_PROVIDER', default='google')
-RAG_EMBEDDING_MODEL = config('RAG_EMBEDDING_MODEL', default='')
+RAG_EMBEDDING_MODEL = config('RAG_EMBEDDING_MODEL', default='gemini-embedding-001')
 RAG_EMBEDDING_DIMENSION = config('RAG_EMBEDDING_DIMENSION', default=768, cast=int)
 RAG_TOP_K_RESULTS = config('RAG_TOP_K_RESULTS', default=5, cast=int)
 RAG_SIMILARITY_THRESHOLD = config('RAG_SIMILARITY_THRESHOLD', default=0.5, cast=float)

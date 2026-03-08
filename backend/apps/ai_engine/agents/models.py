@@ -13,8 +13,17 @@ class AgentProfile(UUIDModel):
         CORE = 'CORE', 'Core'
         
     class ModelName(models.TextChoices):
-        GEMINI_2_5_PRO = 'gemini-2.5-pro', 'Gemini 2.5 Pro'
-        GEMINI_2_0_FLASH = 'gemini-2.0-flash', 'Gemini 2.0 Flash'
+        # Thêm model mới vào đây nếu muốn hiển thị trong Django Admin dropdown
+        GEMINI_2_5_PRO  = 'gemini-2.5-pro',   'Gemini 2.5 Pro'
+        GEMINI_2_0_FLASH= 'gemini-2.0-flash',  'Gemini 2.0 Flash'
+        GEMINI_1_5_PRO  = 'gemini-1.5-pro',   'Gemini 1.5 Pro'
+        GEMINI_1_5_FLASH= 'gemini-1.5-flash',  'Gemini 1.5 Flash'
+
+    @staticmethod
+    def _default_model():
+        """Runtime default: đọc từ AGENT_DEFAULT_MODEL trong .env."""
+        from django.conf import settings
+        return getattr(settings, 'AGENT_DEFAULT_MODEL', 'gemini-2.0-flash')
 
     name = models.CharField(max_length=100, help_text="Tên định danh của Agent (VD: Bác sĩ AI Khoa Nhi)")
     role = models.CharField(
@@ -23,9 +32,9 @@ class AgentProfile(UUIDModel):
         default=Role.CORE
     )
     model_name = models.CharField(
-        max_length=30,
+        max_length=50,  # Tăng từ 30 → 50 cho tên model dài hơn
         choices=ModelName.choices,
-        default=ModelName.GEMINI_2_0_FLASH
+        default=_default_model.__func__,  # Đọc từ settings/.env lúc runtime
     )
     temperature = models.FloatField(default=0.7, help_text="Độ sáng tạo (0.0 - 1.0)")
     system_instructions = models.TextField(blank=True, help_text="Prompt hướng dẫn hành vi cốt lõi")
