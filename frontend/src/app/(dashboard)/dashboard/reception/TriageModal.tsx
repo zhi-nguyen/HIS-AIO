@@ -278,8 +278,8 @@ export default function TriageModal({ visit, open, departments, onClose, onSucce
             setShowFullAnalysis(false);
             setConfirmLoading(false);
 
-            // Nếu visit đã qua AI (status TRIAGE), restore tất cả state đã lưu
-            if (visit.status === 'TRIAGE' && visit.triage_code) {
+            // Nếu visit đã qua AI (có triage_code), restore tất cả state đã lưu
+            if (visit.triage_code) {
                 // Restore vital signs
                 if (visit.vital_signs && typeof visit.vital_signs === 'object') {
                     const vs = visit.vital_signs as Record<string, unknown>;
@@ -381,8 +381,6 @@ export default function TriageModal({ visit, open, departments, onClose, onSucce
                 if (match) setSelectedDeptId(match.id);
             }
             message.success('AI đã hoàn tất phân luồng!');
-            // Refresh bảng visits ở parent để nút "Chốt khoa" hiện đúng
-            onSuccess();
         } catch (error) {
             console.error('Triage error:', error);
             message.error('Không thể gọi AI phân luồng');

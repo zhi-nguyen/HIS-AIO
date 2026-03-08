@@ -290,10 +290,12 @@ class StreamingService:
         )
         
         # Config for LangGraph with thread_id for checkpointing
+        # recursion_limit = safety net chống vòng lặp vô hạn
         config = {
             "configurable": {
                 "thread_id": session_id
-            }
+            },
+            "recursion_limit": 15,
         }
         
         # Track state for final response assembly
@@ -518,7 +520,8 @@ class StreamingService:
         config = {
             "configurable": {
                 "thread_id": session_id
-            }
+            },
+            "recursion_limit": 15,
         }
         
         start_time = datetime.now()

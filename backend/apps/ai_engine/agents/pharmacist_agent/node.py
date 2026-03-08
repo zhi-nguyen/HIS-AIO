@@ -20,7 +20,7 @@ from apps.ai_engine.graph.llm_config import (
 )
 from apps.ai_engine.agents.schemas import PharmacistResponse, DrugInteraction
 from apps.ai_engine.agents.utils import format_structured_response_to_message
-from apps.ai_engine.agents.message_utils import extract_final_response
+from apps.ai_engine.agents.message_utils import extract_final_response, log_llm_response
 from .prompts import PHARMACIST_THINKING_PROMPT, PHARMACIST_STRUCTURE_PROMPT
 
 
@@ -266,9 +266,7 @@ def pharmacist_node(state: AgentState) -> Dict[str, Any]:
         }
     
     # Phase 2: Parse text response thành structured format
-    text_analysis = response.content
-    print(f"[PHARMACIST] Text analysis length: {len(text_analysis)} chars")
-    print(f"[PHARMACIST] Raw response content: {text_analysis[:200] if text_analysis else '(empty)'}...")
+    text_analysis = log_llm_response(response, "PHARMACIST")
     
     try:
         # Extract components từ text
