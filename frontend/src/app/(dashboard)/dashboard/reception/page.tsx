@@ -505,13 +505,14 @@ export default function ReceptionPage() {
             title: 'Mã khám',
             dataIndex: 'visit_code',
             key: 'visit_code',
-            width: 140,
+            width: 180,
             render: (code: string) => <Text strong className="text-blue-600">{code}</Text>,
         },
         {
             title: 'Bệnh nhân',
             dataIndex: 'patient',
             key: 'patient',
+            width: 320,
             render: (_: unknown, record: Visit) => {
                 const patient = record.patient_detail || record.patient;
                 if (typeof patient === 'object' && patient) {
@@ -542,6 +543,7 @@ export default function ReceptionPage() {
                 return <Tag color={config.color}>{config.label}</Tag>;
             },
         },
+
         {
             title: 'Trạng thái',
             dataIndex: 'status',
@@ -555,7 +557,6 @@ export default function ReceptionPage() {
         {
             title: 'Khoa',
             key: 'department',
-            width: 140,
             render: (_: unknown, record: Visit) => {
                 if (record.confirmed_department_detail) {
                     return <Tag color="blue" icon={<CheckOutlined />}>{record.confirmed_department_detail.name}</Tag>;
@@ -564,23 +565,6 @@ export default function ReceptionPage() {
                     return <Tag color="orange">{record.recommended_department_detail.name} (AI)</Tag>;
                 }
                 return <Text type="secondary">-</Text>;
-            },
-        },
-        {
-            title: 'Trạng thái',
-            key: 'status_display',
-            width: 160,
-            render: (_: unknown, record: Visit) => {
-                const config = statusConfig[record.status] || { color: 'default', label: record.status };
-                if (record.confirmed_department_detail) {
-                    return (
-                        <Space direction="vertical" size={2}>
-                            <Tag color={config.color}>{config.label}</Tag>
-                            <Tag color="blue" icon={<CheckOutlined />}>{record.confirmed_department_detail.name}</Tag>
-                        </Space>
-                    );
-                }
-                return <Tag color={config.color}>{config.label}</Tag>;
             },
         },
     ], []);
@@ -647,29 +631,29 @@ export default function ReceptionPage() {
             </div>
 
             {/* Stats Cards */}
-            <div className="stats-grid stats-grid-4">
-                <Card size="small">
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-4 mb-4">
+                <Card size="small" styles={{ body: { padding: '12px 8px' } }}>
                     <div className="text-center">
-                        <Text type="secondary">Tổng hôm nay</Text>
-                        <div style={{ fontSize: 28, fontWeight: 700, color: '#1E88E5' }}>{stats.total}</div>
+                        <Text type="secondary" className="text-xs md:text-sm">Tổng hôm nay</Text>
+                        <div className="text-2xl md:text-3xl font-bold" style={{ color: '#1E88E5', lineHeight: 1.2, marginTop: 4 }}>{stats.total}</div>
                     </div>
                 </Card>
-                <Card size="small">
+                <Card size="small" styles={{ body: { padding: '12px 8px' } }}>
                     <div className="text-center">
-                        <Text type="secondary">Đang chờ</Text>
-                        <div style={{ fontSize: 28, fontWeight: 700, color: '#FF9800' }}>{stats.waiting}</div>
+                        <Text type="secondary" className="text-xs md:text-sm">Đang chờ</Text>
+                        <div className="text-2xl md:text-3xl font-bold" style={{ color: '#FF9800', lineHeight: 1.2, marginTop: 4 }}>{stats.waiting}</div>
                     </div>
                 </Card>
-                <Card size="small">
+                <Card size="small" styles={{ body: { padding: '12px 8px' } }}>
                     <div className="text-center">
-                        <Text type="secondary">Đang khám</Text>
-                        <div style={{ fontSize: 28, fontWeight: 700, color: '#1E88E5' }}>{stats.inProgress}</div>
+                        <Text type="secondary" className="text-xs md:text-sm">Đang khám</Text>
+                        <div className="text-2xl md:text-3xl font-bold" style={{ color: '#1E88E5', lineHeight: 1.2, marginTop: 4 }}>{stats.inProgress}</div>
                     </div>
                 </Card>
-                <Card size="small">
+                <Card size="small" styles={{ body: { padding: '12px 8px' } }}>
                     <div className="text-center">
-                        <Text type="secondary">Hoàn thành</Text>
-                        <div style={{ fontSize: 28, fontWeight: 700, color: '#4CAF50' }}>{stats.completed}</div>
+                        <Text type="secondary" className="text-xs md:text-sm">Hoàn thành</Text>
+                        <div className="text-2xl md:text-3xl font-bold" style={{ color: '#4CAF50', lineHeight: 1.2, marginTop: 4 }}>{stats.completed}</div>
                     </div>
                 </Card>
             </div>

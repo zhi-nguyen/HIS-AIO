@@ -32,8 +32,16 @@ from .nodes import (
     paraclinical_tools,
 )
 from langgraph.prebuilt import ToolNode, tools_condition
+from langchain_core.messages import ToolMessage, AIMessage
 
 logger = logging.getLogger(__name__)
+
+# Giới hạn số lần tool call tối đa cho mỗi agent flow
+# Triage chỉ có 1 tool (lookup_department) nên limit = 2 (1 lần + safety margin)
+MAX_TOOL_ITERATIONS = 2
+
+# Giới hạn tổng số bước graph (safety net toàn cục)
+GRAPH_RECURSION_LIMIT = 15
 
 
 # =============================================================================
@@ -251,9 +259,27 @@ def build_agent_graph(
 
     # Triage flow: Triage -> Tools? -> Triage -> Human Check? -> End
     def triage_routing(state):
+        # 0. Đếm số lần tool đã gọi + check duplicate — tránh vòng lặp vô hạn
+        tool_count = sum(1 for m in state["messages"] if isinstance(m, ToolMessage))
+        if tool_count >= MAX_TOOL_ITERATIONS:
+            logger.warning(f"Triage: all tools exhausted ({tool_count}/{MAX_TOOL_ITERATIONS}). Routing to END.")
+            return check_human_intervention(state)
+        
         # 1. Check for tool calls
         last_message = state["messages"][-1]
         if hasattr(last_message, "tool_calls") and last_message.tool_calls:
+            # Check duplicate tool calls
+            called_tools = set()
+            for m in state["messages"]:
+                if isinstance(m, AIMessage) and hasattr(m, 'tool_calls') and m.tool_calls and m is not last_message:
+                    for tc in m.tool_calls:
+                        called_tools.add(tc.get('name', ''))
+            
+            new_calls = [tc for tc in last_message.tool_calls if tc.get('name', '') not in called_tools]
+            if not new_calls:
+                logger.warning(f"Triage: all tool calls are duplicates. Routing to END.")
+                return check_human_intervention(state)
+            
             return "tools"
         # 2. Check for human intervention
         return check_human_intervention(state)
@@ -357,9 +383,12 @@ async def run_agent_async(
         initial_message=message
     )
     
-    # Default config with thread_id for checkpointing
+    # Default config with thread_id for checkpointing + recursion limit
     if config is None:
-        config = {"configurable": {"thread_id": session_id}}
+        config = {
+            "configurable": {"thread_id": session_id},
+            "recursion_limit": GRAPH_RECURSION_LIMIT,
+        }
     
     # Run the graph
     result = await graph.ainvoke(initial_state, config)
@@ -386,7 +415,10 @@ def run_agent_sync(
     )
     
     if config is None:
-        config = {"configurable": {"thread_id": session_id}}
+        config = {
+            "configurable": {"thread_id": session_id},
+            "recursion_limit": GRAPH_RECURSION_LIMIT,
+        }
     
     result = graph.invoke(initial_state, config)
     

@@ -85,6 +85,7 @@ class Staff(UUIDModel):
 
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='staff_profile')
     role = models.CharField(max_length=20, choices=StaffRole.choices)
+    staff_code = models.CharField(max_length=20, unique=True, null=True, blank=True, verbose_name="Mã nhân viên")
     department_link = models.ForeignKey(
         'departments.Department',
         on_delete=models.SET_NULL,
@@ -93,8 +94,8 @@ class Staff(UUIDModel):
         related_name='staff_members',
         verbose_name="Thuộc khoa (Link)"
     )
-    department = models.CharField(max_length=100)
-    hire_date = models.DateField()
+    department = models.CharField(max_length=100, blank=True, default='')
+    hire_date = models.DateField(null=True, blank=True)
 
 class Certification(UUIDModel):
     staff = models.ForeignKey(Staff, on_delete=models.CASCADE, related_name='certifications')

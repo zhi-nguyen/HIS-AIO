@@ -12,7 +12,6 @@ from apps.ai_engine.agents.pharmacist_agent.tools import (
 )
 from apps.ai_engine.agents.triage_agent.tools import (
     trigger_emergency_alert,
-    assess_vital_signs,
     lookup_department,
 )
 from apps.ai_engine.agents.paraclinical_agent.tools import (
@@ -26,17 +25,19 @@ from apps.ai_engine.agents.paraclinical_agent.tools import (
 )
 
 # ==============================================================================
-# CONFIGURATION
+# CONFIGURATION — đọc từ Django settings (= .env)
+# Chỉ cần sửa .env là toàn bộ agents dùng model mới
 # ==============================================================================
+from django.conf import settings as django_settings
 
 MODEL_CONFIG = {
-    "complex": "gemini-2.0-flash", # Using flash for dev, typically pro
-    "fast": "gemini-2.0-flash"
+    "complex": getattr(django_settings, 'AGENT_COMPLEX_MODEL', 'gemini-2.0-flash'),
+    "fast":    getattr(django_settings, 'AGENT_FAST_MODEL',    'gemini-2.0-flash'),
 }
 
 TEMPERATURE_CONFIG = {
-    "creative": 0.7,
-    "precise": 0.2
+    "creative": getattr(django_settings, 'AGENT_TEMPERATURE', 0.7),
+    "precise":  0.2,
 }
 
 # ==============================================================================
@@ -65,7 +66,8 @@ llm_flash = ChatGoogleGenerativeAI(
 
 consultant_tools = [check_appointment_slots, open_booking_form]
 pharmacist_tools = [check_drug_interaction, suggest_drug_alternative]
-triage_tools = [trigger_emergency_alert, assess_vital_signs, lookup_department]
+# Triage chỉ cần lookup_department — trigger_emergency_alert gọi tự động trong code
+triage_tools = [lookup_department]
 paraclinical_tools = [
     receive_clinical_order,
     check_contraindications,

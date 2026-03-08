@@ -276,7 +276,7 @@ YÊU CẦU:
             visit.triage_confidence = confidence
             visit.triage_key_factors = key_factors if key_factors else None
             visit.triage_matched_departments = matched_departments if matched_departments else None
-            visit.status = Visit.Status.TRIAGE
+            # Không đổi status ở đây — giữ nguyên CHECK_IN cho đến khi user xác nhận (confirm-triage)
             
             if recommended_dept:
                 visit.recommended_department = recommended_dept

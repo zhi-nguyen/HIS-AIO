@@ -28,6 +28,7 @@ import {
 import ScannerModal from '@/components/ScannerModal';
 import { parseCccdQrData } from '@/utils/cccd';
 import { kioskApi } from '@/lib/services';
+import { useScannerListener } from '@/hooks/useScannerListener';
 import type {
     KioskSelfServiceIdentifyResponse,
     KioskSelfServiceRegisterResponse,
@@ -41,6 +42,18 @@ const { TextArea } = Input;
 // CONSTANTS
 // ======================================================================
 const AUTO_RESET_SECONDS = 30;
+
+// ======================================================================
+// HELPERS
+// ======================================================================
+function isCCCD(raw: string): boolean {
+    return /^\d{12}$/.test(raw.trim());
+}
+
+function isBHYT(raw: string): boolean {
+    const trimmed = raw.trim();
+    return /^[A-Z]{2}\d{8,13}$/.test(trimmed) || /^\d{10,15}$/.test(trimmed);
+}
 
 // ======================================================================
 // Memoized Clock Component
@@ -133,7 +146,7 @@ export default function KioskPage() {
     }, [currentStep, handleReset]);
 
     // --- Step 1: Identify ---
-    const handleIdentify = async (overrideScanData?: any) => {
+    const handleIdentify = useCallback(async (overrideScanData?: any) => {
         const dataToScan = typeof overrideScanData === 'string' ? overrideScanData : scanData.trim();
         if (!dataToScan) return;
 
@@ -161,7 +174,51 @@ export default function KioskPage() {
         } finally {
             setLoading(false);
         }
-    };
+    }, [scanData]);
+
+    // --- Scanner Integration ---
+    const processScanData = useCallback((data: string) => {
+        if (currentStep !== 0) return; // Automatically identifying only works on step 0
+        if (!data) return;
+
+        let extractedData = data.trim();
+
+        // Check if it looks like a full QR code (contains |)
+        if (extractedData.includes('|')) {
+            const parsed = parseCccdQrData(extractedData);
+            if (parsed && parsed.cccd) {
+                extractedData = parsed.cccd;
+            } else {
+                setError('Mã QR không hợp lệ hoặc không phải CCCD');
+                return;
+            }
+        } else {
+            // Maybe it's a raw string that just has the CCCD embedded without pipes.
+            // Very fast inputs might drop pipes or send them differently.
+            // Try to extract 12 consecutive digits (CCCD format) or basic BHYT format.
+            const cccdMatch = extractedData.match(/\d{12}/);
+            if (cccdMatch) {
+                extractedData = cccdMatch[0];
+            } else if (!isBHYT(extractedData) && !isCCCD(extractedData)) {
+                // MIGHT be a partial read or different encoding, but we strict check for now
+                setError(`Mã quét không hợp lệ: ${extractedData.substring(0, 30)}${extractedData.length > 30 ? '...' : ''}`);
+                return;
+            }
+        }
+
+        setScanData(extractedData);
+        handleIdentify(extractedData);
+    }, [currentStep, handleIdentify]);
+
+    useEffect(() => {
+        const handleScanEvent = (e: Event) => processScanData((e as CustomEvent).detail as string);
+        window.addEventListener('HIS_SCANNED_DATA', handleScanEvent);
+        return () => window.removeEventListener('HIS_SCANNED_DATA', handleScanEvent);
+    }, [processScanData]);
+
+    useScannerListener({
+        onScan: processScanData,
+    });
 
     // --- Step 2: Register ---
     const handleRegister = async () => {

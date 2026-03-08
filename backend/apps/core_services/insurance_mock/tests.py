@@ -36,7 +36,7 @@ class InsuranceLookupAPITest(TestCase):
         data = response.json()
         self.assertEqual(data["status"], "success")
         self.assertIsNotNone(data["data"])
-        self.assertEqual(data["data"]["patient_name"], "NGUYEN VAN AN")
+        self.assertEqual(data["data"]["patient_name"], "NGUYỄN VĂN AN")
         self.assertEqual(data["data"]["benefit_code"], "TE")
         self.assertEqual(data["data"]["benefit_rate"], 100)
         self.assertIn("check_time", data["data"])
@@ -54,7 +54,7 @@ class InsuranceLookupAPITest(TestCase):
         self.assertEqual(response.status_code, 200)
         data = response.json()
         self.assertEqual(data["status"], "success")
-        self.assertEqual(data["data"]["patient_name"], "TRAN THI BICH")
+        self.assertEqual(data["data"]["patient_name"], "TRẦN THỊ BÍCH")
         self.assertEqual(data["data"]["benefit_code"], "DN")
         self.assertEqual(data["data"]["benefit_rate"], 80)
 
@@ -71,7 +71,7 @@ class InsuranceLookupAPITest(TestCase):
         self.assertEqual(response.status_code, 200)
         data = response.json()
         self.assertEqual(data["status"], "success")
-        self.assertEqual(data["data"]["patient_name"], "PHAM VAN DUNG")
+        self.assertEqual(data["data"]["patient_name"], "PHẠM VĂN DỤNG")
         self.assertEqual(data["data"]["benefit_code"], "HT")
         self.assertEqual(data["data"]["benefit_rate"], 95)
         self.assertTrue(data["data"]["is_5_years_consecutive"])
@@ -86,7 +86,7 @@ class InsuranceLookupAPITest(TestCase):
         self.assertEqual(response.status_code, 200)
         data = response.json()
         self.assertEqual(data["status"], "success")
-        self.assertEqual(data["data"]["patient_name"], "PHAM VAN DUNG")
+        self.assertEqual(data["data"]["patient_name"], "PHẠM VĂN DỤNG")
 
     # ------------------------------------------------------------------
     # 4. Tra cứu thẻ hết hạn
@@ -102,7 +102,7 @@ class InsuranceLookupAPITest(TestCase):
         data = response.json()
         self.assertEqual(data["status"], "expired")
         self.assertIsNotNone(data["data"])
-        self.assertEqual(data["data"]["patient_name"], "DO THI HANH")
+        self.assertEqual(data["data"]["patient_name"], "ĐỖ THỊ HẠNH")
 
     # ------------------------------------------------------------------
     # 5. Tra cứu không tồn tại
