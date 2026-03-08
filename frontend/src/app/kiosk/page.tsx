@@ -189,8 +189,20 @@ export default function KioskPage() {
             if (parsed && parsed.cccd) {
                 extractedData = parsed.cccd;
             } else {
-                setError('Mã QR không hợp lệ hoặc không phải CCCD');
-                return;
+                // If parseCccdQrData fails (maybe format changed slightly or missing fields)
+                // but we know the first part is often the CCCD, or we can fallback to regex.
+                const firstPart = extractedData.split('|')[0].trim();
+                if (isCCCD(firstPart)) {
+                    extractedData = firstPart;
+                } else {
+                    const cccdMatch = extractedData.match(/\d{12}/);
+                    if (cccdMatch) {
+                        extractedData = cccdMatch[0];
+                    } else {
+                        setError('Mã QR không hợp lệ hoặc không phải CCCD');
+                        return;
+                    }
+                }
             }
         } else {
             // Maybe it's a raw string that just has the CCCD embedded without pipes.

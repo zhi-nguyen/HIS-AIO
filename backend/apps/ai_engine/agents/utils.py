@@ -20,16 +20,18 @@ GLOBAL_LANGUAGE_RULE = """
 ## Quy Tắc Ngôn Ngữ
 
 Bạn PHẢI trả lời bằng tiếng Việt. Tuy nhiên, đối với các thuật ngữ y khoa chuyên môn 
-(bệnh, thuốc, triệu chứng, xét nghiệm), hãy giữ nguyên tiếng Anh hoặc cung cấp 
-thuật ngữ tiếng Anh trong ngoặc đơn.
+(bệnh, thuốc, triệu chứng, xét nghiệm), hãy ưu tiên tiếng Việt trước và để tiếng Anh trong ngoặc đơn nếu cần. Đối với tên các Khoa phòng của bệnh viện, BẮT BUỘC dùng tiếng Việt thuần túy.
 
 Ví dụ cách trả lời đúng:
-- "Bệnh nhân bị Hypertension (Tăng huyết áp)"
-- "Cần làm xét nghiệm Complete Blood Count (CBC)"
-- "Tôi nghi ngờ đây là Acute Myocardial Infarction (Nhồi máu cơ tim cấp)"
+- "Bệnh nhân bị Tăng huyết áp (Hypertension)"
+- "Cần làm xét nghiệm Công thức máu toàn bộ (Complete Blood Count - CBC)"
+- "Tôi nghi ngờ đây là Nhồi máu cơ tim cấp (Acute Myocardial Infarction)"
+- "... tại Khoa Nội Tổng quát (Internal Medicine)"
 
-KHÔNG được trả lời hoàn toàn bằng tiếng Anh.
-KHÔNG sử dụng emoji trong phản hồi. Thay vào đó, dùng các mã code như [CODE_RED], [SEVERITY_MAJOR].
+TUYỆT ĐỐI KHÔNG:
+1. Không được trả lời hoàn toàn bằng tiếng Anh hoặc để tiếng Anh đứng trước. (Sai: "Cardiology (Tim mạch)" -> Đúng: "Tim mạch (Cardiology)")
+2. KHÔNG sử dụng emoji trong phản hồi.
+3. TUYỆT ĐỐI KHÔNG in các mã code nội bộ như [CODE_RED], [SEVERITY_MAJOR], [CODE_BLUE] vào phần tin nhắn cuối cùng gửi cho bệnh nhân. Các mã code chỉ dùng trong thinking_progress hoặc dữ liệu JSON.
 """
 
 
@@ -86,14 +88,14 @@ Ví dụ thinking_progress cho Clinical Agent:
 {
   "thinking_progress": [
     "Bước 1: Xác định triệu chứng chính - Bệnh nhân báo đau ngực trái, khó thở khi gắng sức",
-    "Bước 2: Đối chiếu tiền sử - Có tiền sử Hypertension 5 năm, đang dùng Amlodipine",
-    "Bước 3: Đánh giá mức độ khẩn cấp - Triệu chứng gợi ý Angina Pectoris, cần loại trừ ACS",
-    "Bước 4: Đề xuất xét nghiệm - ECG + Troponin để đánh giá, nếu bình thường có thể làm stress test"
+    "Bước 2: Đối chiếu tiền sử - Có tiền sử Tăng huyết áp 5 năm, đang dùng Amlodipine",
+    "Bước 3: Đánh giá mức độ khẩn cấp - Triệu chứng gợi ý Cơn đau thắt ngực, cần loại trừ Hội chứng vành cấp",
+    "Bước 4: Đề xuất xét nghiệm - Điện tâm đồ (ECG) + Troponin để đánh giá, nếu bình thường có thể làm stress test"
   ],
-  "final_response": "Dựa trên triệu chứng đau ngực trái...",
+  "final_response": "Dựa trên triệu chứng đau ngực trái của anh/chị, tôi nghĩ chúng ta cần kiểm tra kỹ hơn bằng Điện tâm đồ (ECG)...",
   "symptom_analysis": "Đau ngực điển hình, liên quan gắng sức",
-  "differential_diagnosis": ["Stable Angina", "Unstable Angina", "GERD"],
-  "recommended_tests": ["ECG", "Troponin I", "Chest X-ray"],
+  "differential_diagnosis": ["Cơn đau thắt ngực ổn định", "Cơn đau thắt ngực không ổn định", "Trào ngược dạ dày thực quản"],
+  "recommended_tests": ["Điện tâm đồ (ECG)", "Troponin I", "X-quang ngực"],
   "requires_urgent_care": false,
   "confidence_score": 0.75
 }
@@ -104,13 +106,13 @@ Ví dụ thinking_progress cho Triage Agent:
 ```json
 {
   "thinking_progress": [
-    "Bước 1: Kiểm tra chỉ số sinh hiệu - BP 180/110, HR 120, SpO2 95%",
-    "Bước 2: Đánh giá theo ngưỡng - BP > 180 là Hypertensive Crisis, HR tăng",
-    "Bước 3: Xác định mức độ khẩn cấp - Có dấu hiệu tổn thương cơ quan đích?",
+    "Bước 1: Kiểm tra chỉ số sinh hiệu - Huyết áp 180/110, Nhịp tim 120, SpO2 95%",
+    "Bước 2: Đánh giá theo ngưỡng - Huyết áp > 180 là Cơn tăng huyết áp cấp cứu, Nhịp tim tăng",
+    "Bước 3: Xác định mức độ khẩn cấp - Cần thăm khám ngay tại phòng cấp cứu để hạ áp",
     "Bước 4: Phân loại - CODE_RED, cần xử lý dưới 10 phút"
   ],
   "triage_code": "CODE_RED",
-  "final_response": "[CẢNH BÁO] Hypertensive Crisis...",
+  "final_response": "Dạ, hiện tại chỉ số huyết áp của anh/chị đang ở mức rất cao và nguy hiểm. Xin vui lòng đến Khoa Cấp Cứu ngay lập tức để được hỗ trợ...",
   "trigger_alert": true,
   "confidence_score": 0.95
 }
@@ -126,7 +128,7 @@ Ví dụ thinking_progress cho Pharmacist Agent:
     "Bước 3: Đánh giá nguy cơ - Tăng nguy cơ xuất huyết đáng kể",
     "Bước 4: Đề xuất thay thế - Dùng Paracetamol thay Aspirin nếu mục đích giảm đau"
   ],
-  "final_response": "[SEVERITY_MAJOR] Phát hiện tương tác nghiêm trọng...",
+  "final_response": "Dạ, hệ thống phát hiện có tương tác thuốc nghiêm trọng giữa Warfarin và Aspirin làm tăng nguy cơ xuất huyết...",
   "drug_interactions": [...],
   "alternative_drugs": ["Paracetamol"],
   "confidence_score": 0.9
