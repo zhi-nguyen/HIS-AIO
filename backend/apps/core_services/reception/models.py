@@ -54,6 +54,23 @@ class Visit(UUIDModel):
     triage_confidence = models.IntegerField(null=True, blank=True, verbose_name='Độ tin cậy (%)')
     triage_key_factors = models.JSONField(null=True, blank=True, verbose_name='Cơ sở phân luồng')
     triage_matched_departments = models.JSONField(null=True, blank=True, verbose_name='Khoa phù hợp (AI)')
+
+    # --- Summarize Agent Output (Pre-triage) ---
+    pre_triage_summary = models.TextField(
+        null=True, blank=True,
+        verbose_name='Tóm tắt tiền phân luồng',
+        help_text='Toàn bộ tóm tắt bệnh án từ Summarize Agent sau khi bệnh nhân đăng ký kiosk'
+    )
+    vital_sign_recommendations = models.JSONField(
+        null=True, blank=True,
+        verbose_name='Chỉ số SH được AI đề xuất thu thập',
+        help_text='Danh sách key chỉ số SH Summarize Agent khuyến nghị (VD: ["spo2", "bp_systolic"])'
+    )
+    triage_hints = models.TextField(
+        null=True, blank=True,
+        verbose_name='Lời nhắc cho Agent Phân Luồng',
+        help_text='Tóm tắt ngắn từ Summarize Agent để Agent Triage chú ý (VD: BN THA mạn - chú ý BP_SYS)'
+    )
     recommended_department = models.ForeignKey(
         'departments.Department',
         on_delete=models.SET_NULL,

@@ -215,13 +215,31 @@ BỆNH ÁN CŨ:
 {medical_history_text}
 """
         
+        # === MỚI: Inject context từ Summarize Agent (chạy lúc bệnh nhân đăng ký kiosk) ===
+        if visit.triage_hints:
+            structured_message += f"""
+══ PHÂN TÍCH TIỀN PHÂN LUỒNG (Agent Tóm Tắt bệnh án) ══
+LỜI NHẮC QUAN TRỌNG từ AI đã phân tích bệnh án + lý do khám:
+{visit.triage_hints}
+"""
+
+        if visit.pre_triage_summary:
+            # Giới hạn độ dài để không làm hỏng context window
+            summary_preview = visit.pre_triage_summary[:2000]
+            structured_message += f"""
+TÓM TẮT BỆNH ÁN ĐẦY ĐỦ:
+{summary_preview}
+"""
+        # =========================================================
+
         structured_message += """
-YÊU CẦU: 
+YÊU CẦU:
 1. Đánh giá mức độ ưu tiên (triage code: CODE_RED/CODE_YELLOW/CODE_GREEN)
 2. Đề xuất khoa phù hợp nhất (chọn 1 trong các khoa có sẵn trong bệnh viện)
 3. Ước tính mức độ tin cậy (confidence) từ 0-100%
-4. Giải thích ngắn gọn lý do
+4. Giải thích ngắn gọn lý do, có tham chiếu tới bệnh nền và lời nhắc tiền phân luồng (nếu có)
 5. Nếu có chỉ số sinh hiệu bất thường, hãy cảnh báo rõ ràng"""
+
 
         import time
         session_id = f"triage-{visit.visit_code}-{int(time.time())}"
@@ -399,6 +417,62 @@ YÊU CẦU:
         visit.triage_confirmed_at = timezone.now()
         visit.status = Visit.Status.WAITING
         visit.save()
+        
+        # --- Chuyển bệnh nhân sang phòng khám của khoa ---
+        try:
+            from apps.core_services.qms.models import StationType, QueueStatus, QueueSourceType
+            from apps.core_services.qms.services import ClinicalQueueService, QueueService
+            
+            # 1. Tìm QueueEntry hiện tại ở RECEPTION và hoàn thành nó
+            current_entry = visit.queue_numbers.first().entries.filter(
+                station__station_type__in=[StationType.RECEPTION, StationType.TRIAGE],
+                status__in=[QueueStatus.WAITING, QueueStatus.CALLED, QueueStatus.IN_PROGRESS]
+            ).first()
+            
+            base_priority = 0
+            source_type = QueueSourceType.WALK_IN
+            
+            if current_entry:
+                QueueService.complete_service(current_entry)
+                base_priority = current_entry.priority
+                source_type = current_entry.source_type
+                
+            # 2. Tính điểm ưu tiên cộng thêm từ Triage Code
+            triage_bonus = 0
+            if visit.triage_code == 'CODE_BLUE':
+                triage_bonus = 100
+            elif visit.triage_code == 'CODE_RED':
+                triage_bonus = 50
+            elif visit.triage_code == 'CODE_YELLOW':
+                triage_bonus = 10
+                
+            new_priority = base_priority + triage_bonus
+            
+            # 3. Tìm phòng khám optimal của khoa vừa chọn
+            optimal_station = ClinicalQueueService.get_optimal_station_for_department(
+                station_type=StationType.DOCTOR,
+                department=department
+            )
+            
+            # 4. Chuyển bệnh nhân vào phòng khám
+            new_entry = QueueService.transfer_to_station(
+                visit=visit,
+                new_station=optimal_station,
+                priority=new_priority
+            )
+            
+            # Giữ nguyên source type
+            if new_entry.source_type != source_type:
+                new_entry.source_type = source_type
+                new_entry.save(update_fields=['source_type'])
+                
+            logger.info(
+                f"Triage transfer: visit={visit.visit_code} -> station={optimal_station.code}, "
+                f"priority={new_priority} (base: {base_priority}, bonus: {triage_bonus})"
+            )
+            
+        except Exception as e:
+            logger.error(f"Failed to transfer patient after triage: {e}", exc_info=True)
         
         logger.info(
             f"Triage confirmed: visit={visit.visit_code}, "

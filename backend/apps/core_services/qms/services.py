@@ -671,6 +671,139 @@ class ClinicalQueueService:
         return station
 
     @staticmethod
+    def get_optimal_station_for_department(station_type: StationType, department) -> ServiceStation:
+        """
+        Tìm điểm dịch vụ (VD: Phòng khám) có tải trọng (số người đang chờ hoặc đang phục vụ) thấp nhất
+        thuộc về một khoa (department) cụ thể.
+        
+        Nếu chưa có trạm nào thuộc khoa này đang active, tạo mới 1 trạm mặc định cho khoa đó.
+        """
+        import logging
+        logger = logging.getLogger('qms')
+        
+        active_statuses = [QueueStatus.WAITING, QueueStatus.CALLED, QueueStatus.IN_PROGRESS]
+        
+        stations = ServiceStation.objects.filter(
+            station_type=station_type,
+            department=department,
+            is_active=True
+        ).annotate(
+            active_load=Count(
+                'queue_entries',
+                filter=Q(
+                    queue_entries__status__in=active_statuses,
+                    queue_entries__entered_queue_time__date=timezone.now().date()
+                )
+            )
+        ).order_by('active_load', 'code')
+        
+        optimal_station = stations.first()
+        
+        if optimal_station:
+            logger.info(
+                f"[LOAD_BALANCE] Chọn phòng {optimal_station.code} ({optimal_station.name}) "
+                f"thuộc khoa {department.name} với tải {optimal_station.active_load}"
+            )
+            return optimal_station
+            
+        # Fallback: Tạo một phòng khám mặc định cho khoa
+        logger.warning(
+            f"[LOAD_BALANCE] Khoa {department.name} chưa có phòng {station_type} nào đang hoạt động. Tạo mới."
+        )
+        
+        import uuid
+        short_id = str(uuid.uuid4())[:4].upper()
+        
+        # Mặc định prefix cho khoa
+        prefix_map = {
+            StationType.DOCTOR: 'PK',
+            StationType.LIS: 'XN',
+            StationType.RIS: 'CDHA',
+        }
+        prefix = prefix_map.get(station_type, str(station_type))
+        dept_code = department.code if getattr(department, 'code', None) else "DEPT"
+        
+        code = f"{prefix}-{dept_code}-{short_id}"
+        name = f"Phòng {prefix} {department.name} 01"
+        
+        station = ServiceStation.objects.create(
+            code=code,
+            name=name,
+            station_type=station_type,
+            department=department,
+            is_active=True,
+        )
+        return station
+        """
+        Tìm điểm dịch vụ có tải trọng (số người đang chờ hoặc đang phục vụ) thấp nhất
+        để phân luồng bệnh nhân vào nhằm cân bằng tải.
+        
+        Nếu chưa có trạm nào thuộc loại này thì tạo mới 1 trạm mặc định.
+        """
+        import logging
+        logger = logging.getLogger('qms')
+        
+        # Chỉ các trạng thái xếp hàng trực tiếp mới tính là tải thực tế
+        active_statuses = [QueueStatus.WAITING, QueueStatus.CALLED, QueueStatus.IN_PROGRESS]
+        
+        # Query stations of the requested type that are active
+        stations = ServiceStation.objects.filter(
+            station_type=station_type,
+            is_active=True
+        ).annotate(
+            active_load=Count(
+                'queue_entries',
+                filter=Q(
+                    queue_entries__status__in=active_statuses,
+                    queue_entries__entered_queue_time__date=timezone.now().date()
+                )
+            )
+        ).order_by('active_load', 'code')
+        
+        optimal_station = stations.first()
+        
+        if optimal_station:
+            logger.info(
+                f"[LOAD_BALANCE] Chọn điểm {optimal_station.code} ({optimal_station.name}) "
+                f"cho type {station_type} với tải {optimal_station.active_load}"
+            )
+            return optimal_station
+            
+        # Fallback: Create a default station if none exists
+        logger.warning(f"[LOAD_BALANCE] Không tìm thấy điểm dịch vụ active nào loại {station_type}. Tạo mới.")
+        
+        # Mặc định tạo trạm dựa trên tên loại
+        default_codes = {
+            StationType.RECEPTION: 'TIEP-DON-01',
+            StationType.TRIAGE: 'PHAN-LUONG-01',
+            StationType.DOCTOR: 'PK-01',
+            StationType.LIS: 'LIS-01',
+            StationType.RIS: 'RIS-01',
+            StationType.PHARMACY: 'NHATHUOC-01',
+            StationType.CASHIER: 'THUNGAN-01',
+        }
+        default_names = {
+            StationType.RECEPTION: 'Quầy Tiếp Đón',
+            StationType.TRIAGE: 'Quầy Phân Luồng',
+            StationType.DOCTOR: 'Phòng Khám Bệnh',
+            StationType.LIS: 'Phòng Xét Nghiệm',
+            StationType.RIS: 'Phòng CĐHA',
+            StationType.PHARMACY: 'Nhà Thuốc',
+            StationType.CASHIER: 'Quầy Thu Ngân',
+        }
+        
+        code = default_codes.get(station_type, f"{station_type}-01")
+        name = default_names.get(station_type, f"Điểm dịch vụ {station_type}")
+        
+        station = ServiceStation.objects.create(
+            code=code,
+            name=name,
+            station_type=station_type,
+            is_active=True,
+        )
+        return station
+
+    @staticmethod
     def get_queue_board(station):
         """
         Lấy danh sách hàng đợi cho bảng LED trước phòng khám.

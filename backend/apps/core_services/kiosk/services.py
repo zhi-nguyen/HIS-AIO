@@ -534,12 +534,35 @@ class KioskService:
                 # Lấy kết quả từ AI
                 ai_messages = result.get("messages", [])
                 if ai_messages:
-                    ai_content = ai_messages[0].content
-                    # Lưu vào Visit.triage_ai_response để reception / triage agent thấy
+                    ai_msg = ai_messages[0]
+                    ai_content = ai_msg.content
+                    
+                    # Extract structured data từ additional_kwargs
+                    kwargs = getattr(ai_msg, 'additional_kwargs', {})
+                    vital_recommendations = kwargs.get('vital_sign_recommendations', [])
+                    triage_hints_text = kwargs.get('triage_hints', None)
+                    
+                    # Lưu vào Visit — cả tóm tắt cũ lẫn các trường mới
                     visit.refresh_from_db()
-                    visit.triage_ai_response = ai_content
-                    visit.save(update_fields=['triage_ai_response'])
-                    logger.info(f"[KIOSK] AI Summary completed for visit: {visit.visit_code}")
+                    visit.triage_ai_response = ai_content  # Legacy field
+                    visit.pre_triage_summary = ai_content  # Trường mới: toàn bộ tóm tắt
+                    if vital_recommendations:
+                        visit.vital_sign_recommendations = vital_recommendations
+                    if triage_hints_text:
+                        visit.triage_hints = triage_hints_text
+                    
+                    update_fields = ['triage_ai_response', 'pre_triage_summary']
+                    if vital_recommendations:
+                        update_fields.append('vital_sign_recommendations')
+                    if triage_hints_text:
+                        update_fields.append('triage_hints')
+                    visit.save(update_fields=update_fields)
+                    
+                    logger.info(
+                        f"[KIOSK] AI Summary completed for visit: {visit.visit_code} | "
+                        f"vital_recs={vital_recommendations} | "
+                        f"hints={'YES' if triage_hints_text else 'NO'}"
+                    )
                 else:
                     logger.warning(f"[KIOSK] AI Summary returned empty for visit: {visit.visit_code}")
                 
