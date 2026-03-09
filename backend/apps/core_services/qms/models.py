@@ -218,3 +218,37 @@ class QueueEntry(UUIDModel):
             delta = timezone.now() - self.entered_queue_time
             return int(delta.total_seconds() / 60)
         return None
+
+    @property
+    def priority_label(self) -> str:
+        """Nhãn điểm ưu tiên thân thiện với người dùng (VD: Ưu tiên: Đặt lịch, Cao tuổi...)"""
+        if self.source_type == QueueSourceType.EMERGENCY:
+            return "Cấp cứu"
+        
+        # Kiểm tra visit và patient
+        if not hasattr(self.queue_number, 'visit'):
+            return "Bình thường"
+            
+        visit = self.queue_number.visit
+        patient = visit.patient
+        
+        # Nếu là đặt lịch
+        if self.source_type == QueueSourceType.ONLINE_BOOKING:
+            return "Đặt lịch"
+            
+        # Kiểm tra Dịch vụ (Không có mã bảo hiểm)
+        if not patient.insurance_number:
+            return "Dịch vụ"
+            
+        # Tuổi tác:
+        if patient.date_of_birth:
+            today = timezone.now().date()
+            age = today.year - patient.date_of_birth.year
+            if (today.month, today.day) < (patient.date_of_birth.month, patient.date_of_birth.day):
+                age -= 1
+            if age >= 60:
+                return "Cao tuổi"
+            if age <= 6:
+                return "Trẻ em"
+                
+        return "BHYT"

@@ -20,8 +20,9 @@ from apps.ai_engine.graph.llm_config import (
 )
 from apps.ai_engine.agents.schemas import PharmacistResponse, DrugInteraction
 from apps.ai_engine.agents.utils import format_structured_response_to_message
-from apps.ai_engine.agents.message_utils import extract_final_response, log_llm_response
-from .prompts import PHARMACIST_THINKING_PROMPT, PHARMACIST_STRUCTURE_PROMPT
+from apps.ai_engine.agents.message_utils import convert_and_filter_messages, log_llm_response, extract_final_response, _extract_text
+from apps.ai_engine.graph.prompts import get_system_prompt
+from .prompts import PHARMACIST_STRUCTURE_PROMPT
 
 
 def parse_severity(text: str) -> str:
@@ -235,7 +236,7 @@ def pharmacist_node(state: AgentState) -> Dict[str, Any]:
                 converted_messages.append(HumanMessage(content=msg.get('content', '')))
                 break
     
-    prompt = [SystemMessage(content=PHARMACIST_THINKING_PROMPT)] + converted_messages
+    prompt = [SystemMessage(content=get_system_prompt("pharmacist"))] + converted_messages
 
     
     # Get last user message for context

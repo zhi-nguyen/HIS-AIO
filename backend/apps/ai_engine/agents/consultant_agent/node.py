@@ -15,7 +15,7 @@ from langchain_core.messages import SystemMessage, AIMessage, HumanMessage
 from apps.ai_engine.graph.state import AgentState
 from apps.ai_engine.graph.llm_config import llm_consultant_with_tools, logging_node_execution
 from apps.ai_engine.agents.message_utils import convert_and_filter_messages, log_llm_response, extract_final_response
-from .prompts import CONSULTANT_THINKING_PROMPT
+from apps.ai_engine.graph.prompts import get_system_prompt
 
 
 def extract_thinking_steps(text: str) -> List[str]:
@@ -81,7 +81,7 @@ def consultant_node(state: AgentState) -> Dict[str, Any]:
             except (json.JSONDecodeError, TypeError):
                 pass
     
-    prompt = [SystemMessage(content=CONSULTANT_THINKING_PROMPT)] + converted_messages
+    prompt = [SystemMessage(content=get_system_prompt("consultant"))] + converted_messages
     
     # Phase 1: Gọi LLM với tools binding
     response = llm_consultant_with_tools.invoke(prompt)

@@ -38,3 +38,6 @@ class TechnicalServiceAdmin(admin.ModelAdmin):
     list_display = ('code', 'name', 'group', 'unit_price', 'bhyt_price', 'is_covered_by_bhyt', 'is_active')
     search_fields = ('code', 'name')
     list_filter = ('group', 'is_covered_by_bhyt', 'is_active')
+
+admin.site.register(Province)
+admin.site.register(Ward)

@@ -53,3 +53,7 @@ class PaymentAdmin(admin.ModelAdmin):
 class DepositPaymentAdmin(admin.ModelAdmin):
     list_display = ['receipt_number', 'patient', 'amount', 'used_amount', 'deposit_time']
     search_fields = ['receipt_number', 'patient__fullname']
+
+from .models import InvoiceLineItem
+
+admin.site.register(InvoiceLineItem)

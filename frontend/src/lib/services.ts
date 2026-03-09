@@ -98,6 +98,8 @@ export const visitApi = {
         page?: number;
         status?: string;
         patient?: string;
+        today?: boolean;
+        station_id?: string;
     }): Promise<PaginatedResponse<Visit>> => {
         const response = await api.get('/reception/visits/', { params });
         return response.data;

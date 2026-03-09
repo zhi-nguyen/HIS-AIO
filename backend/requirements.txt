@@ -91,3 +91,4 @@ daphne==4.1.2
 uvicorn[standard]==0.34.0
 celery==5.4.0
 edge-tts
+whitenoise==6.8.2
