@@ -362,25 +362,10 @@ class KioskService:
         Flow:
         1. Tìm Patient
         2. Check active visit (Layer 2)
-        3. Gọi ClinicalQueueService.checkin_walkin() — tạo Visit + Queue trong 1 lần
-        4. Cập nhật Visit.chief_complaint (để reception thấy lý do khám)
-        5. Trigger AI summarize (background)
-        
-        ⚠️ CHÚ Ý: KHÔNG gọi ReceptionService.create_visit() riêng!
-           checkin_walkin() đã gọi create_visit() bên trong rồi.
-        
-        Returns:
-            {
-                'visit': Visit,
-                'queue_number': str,
-                'daily_sequence': int,
-                'estimated_wait_minutes': int,
-                'message': str,
-            }
-        
-        Raises:
-            PatientNotFoundError: Patient không tồn tại
-            ActiveVisitExistsError: Có lượt khám chưa xong
+        3. Kiểm tra xem bệnh nhân có Appointment trong hôm nay không
+        4. Gọi checkin_from_booking (nếu có hẹn) hoặc checkin_walkin (vãng lai)
+        5. Cập nhật Visit.chief_complaint
+        6. Trigger AI summarize
         """
         # 1. Tìm Patient
         try:
@@ -391,21 +376,48 @@ class KioskService:
         # 2. Check active visit (Layer 2)
         cls.check_active_visit(patient)
         
-        # 3. Tạo Visit + Queue bằng checkin_walkin (1 lần duy nhất)
-        station = cls._get_default_reception_station()
-        
-        result = ClinicalQueueService.checkin_walkin(
+        # 3. Mặc định check-in Kiosk tự động chuyển bệnh nhân vào hàng đợi Phân Luồng (Triage) có tải thấp nhất
+        station = ClinicalQueueService.get_optimal_station(StationType.TRIAGE)
+
+        # 4. Kiểm tra Appointment trong ngày
+        from apps.core_services.appointments.models import Appointment
+        today = timezone.now().date()
+        appointment = Appointment.objects.filter(
             patient=patient,
-            station=station,
-            reason=chief_complaint,
-            extra_priority=0,
-        )
-        
-        visit = result['visit']
+            scheduled_time__date=today,
+            status=Appointment.Status.SCHEDULED
+        ).first()
+
+        if appointment:
+            # Luồng ưu tiên: Có đặt lịch trước
+            result = ClinicalQueueService.checkin_from_booking(
+                appointment_id=appointment.id,
+                station=station
+            )
+            visit = result['visit']
+            queue_entry = result['queue_entry']
+            queue_number = result['queue_number']
+            
+            # Message update
+            priority_text = f" (Ưu tiên: {queue_entry.priority_label})" if queue_entry.priority_label and queue_entry.priority_label != "Bình thường" else ""
+            msg = f"Đăng ký thành công!{priority_text} Số thứ tự: {queue_number.daily_sequence}"
+        else:
+            # Luồng vãng lai (hoặc không có lịch hẹn)
+            result = ClinicalQueueService.checkin_walkin(
+                patient=patient,
+                station=station,
+                reason=chief_complaint,
+                extra_priority=0,
+            )
+            visit = result['visit']
+            queue_entry = result['queue_entry']
+            queue_number = result['queue_number']
+            
+            # Message update
+            priority_text = f" (Ưu tiên: {queue_entry.priority_label})" if queue_entry.priority_label and queue_entry.priority_label != "Bình thường" else ""
+            msg = f"Đăng ký thành công!{priority_text} Số thứ tự của bạn: {queue_number.daily_sequence}"
         
         # 4. Cập nhật Visit.chief_complaint để reception frontend thấy
-        #    (ReceptionService.create_visit chỉ set ClinicalRecord.chief_complaint,
-        #     nhưng TriageModal đọc từ visit.chief_complaint)
         visit.chief_complaint = chief_complaint
         visit.save(update_fields=['chief_complaint'])
         
@@ -418,46 +430,27 @@ class KioskService:
         # 7. TTS: Pre-generate audio for this patient (best-effort)
         try:
             from apps.core_services.qms.tts_service import generate_tts_audio
-            generate_tts_audio.delay(str(result['queue_entry'].id))
+            generate_tts_audio.delay(str(queue_entry.id))
         except Exception:
             pass  # TTS is best-effort
         
         logger.info(
             f"[KIOSK] Register: {patient.patient_code} | "
             f"visit={visit.visit_code} | "
-            f"queue={result['queue_number'].number_code} | "
-            f"seq={result['queue_number'].daily_sequence}"
+            f"queue={queue_number.number_code} | "
+            f"seq={queue_number.daily_sequence}"
         )
         
         return {
             'visit': visit,
-            'queue_number': result['queue_number'].number_code,
-            'daily_sequence': result['queue_number'].daily_sequence,
+            'queue_number': queue_number.number_code,
+            'daily_sequence': queue_number.daily_sequence,
+            'priority_label': getattr(queue_entry, 'priority_label', None),
             'estimated_wait_minutes': estimated_wait,
-            'message': f"Đăng ký thành công! Số thứ tự của bạn: {result['queue_number'].daily_sequence}",
+            'message': msg,
         }
 
-    @staticmethod
-    def _get_default_reception_station() -> ServiceStation:
-        """
-        Lấy station RECEPTION mặc định.
-        Nếu chưa có → tạo mới.
-        """
-        station = ServiceStation.objects.filter(
-            station_type=StationType.RECEPTION,
-            is_active=True,
-        ).first()
-        
-        if not station:
-            station = ServiceStation.objects.create(
-                code='KIOSK-01',
-                name='Kiosk Tự Phục Vụ',
-                station_type=StationType.RECEPTION,
-                is_active=True,
-            )
-            logger.info(f"[KIOSK] Tạo ServiceStation mặc định: {station.code}")
-        
-        return station
+
 
     # ------------------------------------------------------------------
     # AI SUMMARY (Background Task)

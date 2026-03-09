@@ -67,3 +67,8 @@ class ClinicalGuidelineAdmin(admin.ModelAdmin):
         ('ICD-10 liên quan', {'fields': ('icd10_codes',)}),
         ('Nội dung', {'fields': ('content',)}),
     )
+
+from .models import PrescriptionDetail, DispenseRecord
+
+admin.site.register(PrescriptionDetail)
+admin.site.register(DispenseRecord)

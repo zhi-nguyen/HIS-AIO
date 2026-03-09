@@ -694,7 +694,28 @@ export default function KioskPage() {
                                 borderRadius: 20,
                                 background: '#f0f9ff',
                                 border: '2px solid #7dd3fc',
+                                position: 'relative',
                             }}>
+                                {/* Badge ưu tiên (nếu có) */}
+                                {registerResult.priority_label && registerResult.priority_label !== 'Bình thường' && (
+                                    <div style={{
+                                        position: 'absolute',
+                                        top: -16,
+                                        left: '50%',
+                                        transform: 'translateX(-50%)',
+                                        background: '#fbbf24',
+                                        color: '#78350f',
+                                        padding: '4px 16px',
+                                        borderRadius: 20,
+                                        fontWeight: 700,
+                                        fontSize: 14,
+                                        boxShadow: '0 4px 12px rgba(251,191,36,0.3)',
+                                        border: '2px solid #fff',
+                                    }}>
+                                        Ưu tiên: {registerResult.priority_label}
+                                    </div>
+                                )}
+
                                 <Text style={{ color: '#0369a1', fontSize: 14, display: 'block', marginBottom: 6, fontWeight: 500, letterSpacing: 2 }}>
                                     SỐ THỨ TỰ CỦA BẠN
                                 </Text>

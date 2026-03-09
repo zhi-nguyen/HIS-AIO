@@ -21,6 +21,29 @@ class VisitViewSet(viewsets.ModelViewSet):
     search_fields = ['visit_code', 'patient__patient_code', 'patient__first_name']
     filterset_fields = ['status', 'priority', 'patient']
 
+    def get_queryset(self):
+        qs = Visit.objects.select_related(
+            'patient', 'recommended_department', 'confirmed_department'
+        ).all().order_by('-check_in_time')
+
+        # Filter: chỉ lấy hôm nay
+        today_param = self.request.query_params.get('today')
+        if today_param and today_param.lower() in ('true', '1', 'yes'):
+            today = timezone.now().date()
+            qs = qs.filter(check_in_time__date=today)
+
+        # Filter: chỉ lấy visits được đưa vào hàng đợi tại station này hôm nay
+        station_id = self.request.query_params.get('station_id')
+        if station_id:
+            if not today_param:
+                today = timezone.now().date()
+                qs = qs.filter(check_in_time__date=today)
+            qs = qs.filter(
+                queue_numbers__entries__station_id=station_id
+            ).distinct()
+
+        return qs
+
     def perform_create(self, serializer):
         # Auto-generate visit_code and queue_number
         today = timezone.now().date()

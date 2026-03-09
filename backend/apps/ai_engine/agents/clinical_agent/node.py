@@ -14,7 +14,7 @@ from langchain_core.messages import SystemMessage, AIMessage, HumanMessage
 from apps.ai_engine.graph.state import AgentState
 from apps.ai_engine.graph.llm_config import llm_pro, logging_node_execution
 from apps.ai_engine.agents.message_utils import convert_and_filter_messages, log_llm_response, extract_final_response
-from .prompts import CLINICAL_THINKING_PROMPT
+from apps.ai_engine.graph.prompts import get_system_prompt
 
 
 def extract_thinking_steps(text: str) -> List[str]:
@@ -65,7 +65,7 @@ def clinical_node(state: AgentState) -> Dict[str, Any]:
     # Convert và filter messages
     converted_messages, last_user_message = convert_and_filter_messages(messages, "CLINICAL")
     
-    prompt = [SystemMessage(content=CLINICAL_THINKING_PROMPT)] + converted_messages
+    prompt = [SystemMessage(content=get_system_prompt("clinical"))] + converted_messages
     
     try:
         # Direct LLM invoke (text response, không structured output)
