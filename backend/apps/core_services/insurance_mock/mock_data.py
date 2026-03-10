@@ -29,10 +29,10 @@ MOCK_RECORDS = [
         "data": {
             "patient_name": "NGUYỄN VĂN AN",
             "insurance_code": "TE1790000000123",
-            "dob": "2021-03-15",
+            "dob": "2025-03-15",
             "gender": "male",
             "address": "Phường An Khánh, Quận Ninh Kiều, TP Cần Thơ",
-            "card_issue_date": "2021-03-15",
+            "card_issue_date": "2025-03-15",
             "card_expire_date": "2027-03-15",
             "benefit_rate": 100,
             "benefit_code": "TE",

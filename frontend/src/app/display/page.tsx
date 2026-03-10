@@ -289,6 +289,11 @@ export default function PublicDisplayPage() {
                                     <div className="text-xl font-semibold text-white">
                                         {p.patient_name || 'Bệnh nhân'}
                                     </div>
+                                    {p.priority_label && p.priority_label !== 'Bình thường' && (
+                                        <div className="mt-2 text-yellow-400 font-bold text-lg" style={{ animation: 'pulse 1s infinite' }}>
+                                            ⭐ ƯU TIÊN: {p.priority_label.toUpperCase()}
+                                        </div>
+                                    )}
                                     {p.source_type === 'EMERGENCY' && (
                                         <div className="mt-2 text-red-400 font-bold text-lg" style={{ animation: 'pulse 1s infinite' }}>
                                             🚨 CẤP CỨU
@@ -334,9 +339,9 @@ export default function PublicDisplayPage() {
                                             {entry.patient_name || 'BN'}
                                         </div>
                                     </div>
-                                    {entry.priority > 0 && (
+                                    {entry.priority_label && entry.priority_label !== 'Bình thường' && (
                                         <div className="text-xs px-2 py-0.5 rounded bg-orange-900 text-orange-300">
-                                            P{entry.priority}
+                                            {entry.priority_label}
                                         </div>
                                     )}
                                 </div>

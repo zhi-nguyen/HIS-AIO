@@ -10,4 +10,8 @@ websocket_urlpatterns = [
         r'ws/qms/display/(?P<station_id>[0-9a-f-]+)/$',
         consumers.QueueDisplayConsumer.as_asgi(),
     ),
+    re_path(
+        r'ws/clinical/(?P<station_id>[0-9a-f-]+)/$',
+        consumers.ClinicalConsumer.as_asgi(),
+    ),
 ]

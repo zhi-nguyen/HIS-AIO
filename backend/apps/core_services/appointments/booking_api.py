@@ -17,7 +17,10 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework import status
 
-from .models import Appointment
+from apps.core_services.appointments.models import Appointment
+from apps.core_services.patients.models import Patient
+from apps.core_services.departments.models import Department
+
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +35,7 @@ def create_booking(request):
         {
             "patient_name": "Nguyễn Văn A",
             "phone": "0901234567",
+            "id_card": "001099123456",
             "department": "Cardiology",
             "date": "2026-02-11",
             "time": "08:00",
@@ -65,21 +69,57 @@ def create_booking(request):
         time_suffix = datetime.now().strftime('%H%M')
         booking_ref = f"BK-{phone_suffix}-{time_suffix}"
         
-        # TODO: Kết nối với Appointment model thực tế
-        # Hiện tại cần lookup Patient và Department từ database
-        # Tạm thời trả về mock response
-        #
-        # Khi có đầy đủ dữ liệu:
-        # patient = Patient.objects.get_or_create(phone=data['phone'], defaults={...})
-        # department = Department.objects.get(name__icontains=data['department'])
-        # appointment = Appointment.objects.create(
-        #     appointment_code=booking_ref,
-        #     patient=patient,
-        #     department=department,
-        #     scheduled_time=f"{data['date']}T{data['time']}:00",
-        #     reason_for_visit=data.get('reason', ''),
-        #     status=Appointment.Status.SCHEDULED,
-        # )
+        # Determine patient name parts
+        full_name = data['patient_name'].strip()
+        name_parts = full_name.split()
+        first_name = name_parts[-1] if name_parts else 'Unknown'
+        last_name = ' '.join(name_parts[:-1]) if len(name_parts) > 1 else ''
+
+        id_card = data.get('id_card', '').strip() or None
+
+        # Find or create patient
+        # Prioritize finding by id_card if provided
+        patient = None
+        if id_card:
+            patient = Patient.objects.filter(id_card=id_card).first()
+        
+        if not patient:
+            # Fallback to finding by contact_number or creating a new one
+            patient, created = Patient.objects.get_or_create(
+                contact_number=data['phone'], 
+                defaults={
+                    'first_name': first_name,
+                    'last_name': last_name,
+                    'id_card': id_card,
+                }
+            )
+            # If the patient exists but didn't have id_card, update it
+            if not created and id_card and not patient.id_card:
+                patient.id_card = id_card
+                patient.save(update_fields=['id_card'])
+
+        # Find department
+        department = Department.objects.filter(name__icontains=data['department']).first()
+        if not department:
+            # Create a fallback/default department or just raise error. Assuming department exists for now
+            department = Department.objects.first() # Just fallback
+
+        # Find a default doctor for the department (Appointments require a doctor)
+        from apps.core_services.authentication.models import Staff
+        doctor = Staff.objects.filter(department_link=department, role='DOCTOR').first()
+        if not doctor:
+            doctor = Staff.objects.filter(role='DOCTOR').first()
+
+        # Create Appointment
+        appointment = Appointment.objects.create(
+            appointment_code=booking_ref,
+            patient=patient,
+            department=department,
+            doctor=doctor,
+            scheduled_time=f"{data['date']}T{data['time']}:00",
+            reason_for_visit=data.get('reason', ''),
+            status=Appointment.Status.SCHEDULED,
+        )
         
         logger.info(
             f"[BOOKING] Đặt lịch: {booking_ref} | "

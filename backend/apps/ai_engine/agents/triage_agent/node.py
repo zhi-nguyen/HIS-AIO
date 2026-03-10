@@ -19,7 +19,7 @@ MAX_TOOL_ITERATIONS = 2
 from apps.ai_engine.graph.state import AgentState
 from apps.ai_engine.graph.llm_config import llm_triage_with_tools, llm_pro, logging_node_execution
 from apps.ai_engine.agents.message_utils import convert_and_filter_messages, log_llm_response, extract_final_response, _extract_text
-from .prompts import TRIAGE_THINKING_PROMPT
+from apps.ai_engine.graph.prompts import get_system_prompt
 
 
 def extract_thinking_steps(text: str) -> List[str]:
@@ -349,7 +349,7 @@ def triage_node(state: AgentState) -> Dict[str, Any]:
     # Convert và filter messages
     converted_messages, last_user_message = convert_and_filter_messages(messages, "TRIAGE")
     
-    prompt = [SystemMessage(content=TRIAGE_THINKING_PROMPT)] + converted_messages
+    prompt = [SystemMessage(content=get_system_prompt("triage"))] + converted_messages
     
     # ============================================================
     # Smart Tool Dedup: Track tools đã gọi, chặn gọi lại tool trùng

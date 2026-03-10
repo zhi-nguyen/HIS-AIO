@@ -79,8 +79,10 @@ class Staff(UUIDModel):
         DOCTOR = "DOCTOR", 'Doctor'
         NURSE = "NURSE", 'Nurse'
         RECEPTIONIST = "RECEPTIONIST", 'Receptionist'
-        LAB_TECHNICIAN = "LAB_TECHNICIAN", 'Lab Technician'
+        RIS_TECHNICIAN = "RIS_TECHNICIAN", 'RIS Technician'
+        LIS_TECHNICIAN = "LIS_TECHNICIAN", 'LIS Technician'
         PHARMACIST = "PHARMACIST", 'Pharmacist'
+        BILLING = "BILLING", 'Billing'
         AI_AGENT = "AI_AGENT", 'AI Agent'
 
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='staff_profile')

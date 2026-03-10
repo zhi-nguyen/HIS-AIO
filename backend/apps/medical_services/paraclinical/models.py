@@ -12,6 +12,7 @@ class ServiceList(UUIDModel):
 
 class ServiceOrder(UUIDModel):
     class Status(models.TextChoices):
+        UNPAID = 'UNPAID', 'Chưa thanh toán'
         DRAFT = 'DRAFT', 'Nháp'
         ORDERED = 'ORDERED', 'Đã chỉ định'
         PROCESSING = 'PROCESSING', 'Đang thực hiện'
@@ -36,7 +37,7 @@ class ServiceOrder(UUIDModel):
     status = models.CharField(
         max_length=20,
         choices=Status.choices,
-        default=Status.DRAFT
+        default=Status.UNPAID
     )
     priority = models.CharField(max_length=20, default="ROUTINE", help_text="STAT, URGENT, ROUTINE")
     clinical_note = models.TextField(verbose_name="Chẩn đoán sơ bộ/Lý do chỉ định", null=True, blank=True)

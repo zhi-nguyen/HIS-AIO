@@ -18,6 +18,7 @@ from apps.core_services.appointments import booking_api as booking_views
 from apps.core_services.qms import views as qms_views
 from apps.core_services.kiosk import views as kiosk_views
 from apps.medical_services.pharmacy.views import CDSSCheckView
+from apps.medical_services.paraclinical.views import batch_create_orders
 from .routers import router
 
 app_name = 'api'
@@ -28,6 +29,7 @@ urlpatterns = [
     # ==========================================================================
     path('token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
+    path('auth/me/', views.me_view, name='auth_me'),
     
     # ==========================================================================
     # REST API ROUTER (CRUD)
@@ -107,5 +109,10 @@ urlpatterns = [
     # CDSS ENDPOINTS (Clinical Decision Support)
     # ==========================================================================
     path('cdss/check/', CDSSCheckView.as_view(), name='cdss_check'),
+
+    # ==========================================================================
+    # CLS (Paraclinical) BATCH ORDER
+    # ==========================================================================
+    path('cls/batch-order/', batch_create_orders, name='cls_batch_order'),
 ]
 

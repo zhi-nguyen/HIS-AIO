@@ -134,6 +134,10 @@ export interface Visit {
     confirmed_department_detail?: Department;
     triage_confirmed_at?: string;
     triage_method?: 'AI' | 'MANUAL';
+    pending_merge?: boolean;
+    pre_triage_summary?: string;
+    vital_sign_recommendations?: string[];
+    triage_hints?: string;
     // Display helpers
     status_display?: string;
     priority_display?: string;
@@ -188,6 +192,7 @@ export interface CalledPatient {
     patient_name: string;
     source_type: QueueSourceType;
     priority: number;
+    priority_label?: string;
     display_label: string;
     station_code: string;
     station_name: string;
@@ -204,6 +209,7 @@ export interface QueueBoardEntry {
     patient_name: string;
     source_type: QueueSourceType;
     priority: number;
+    priority_label?: string;
     wait_time_minutes: number | null;
 }
 
@@ -519,6 +525,7 @@ export interface KioskSelfServiceRegisterResponse {
     visit_code: string;
     queue_number: string;
     daily_sequence: number;
+    priority_label?: string;
     estimated_wait_minutes: number;
     message: string;
 }

@@ -4,7 +4,7 @@ QMS Services - Business logic for Queue Management System
 from datetime import date
 from django.utils import timezone
 from django.db import transaction
-from django.db.models import Max
+from django.db.models import Max, Count, Q
 
 from .models import ServiceStation, QueueNumber, QueueEntry, QueueStatus, QueueSourceType, StationType
 
@@ -208,11 +208,13 @@ class ClinicalQueueService:
 
     # --- Priority Constants ---
     PRIORITY_EMERGENCY = 100
-    PRIORITY_BOOKING_ON_TIME = 7    # Đúng giờ hoặc trễ ≤15 phút
-    PRIORITY_BOOKING_LATE = 3       # Trễ 15-30 phút
-    PRIORITY_BOOKING_EXPIRED = 0    # Trễ > 30 phút → mất ưu tiên
+    PRIORITY_BOOKING_ON_TIME = 20    # Đúng giờ hoặc trễ ≤15 phút
+    PRIORITY_SERVICE = 15            # Khám Dịch vụ -> ưu tiên trước BHYT
+    PRIORITY_ELDERLY_CHILD = 10      # Cao tuổi hoặc Trẻ em
+    PRIORITY_BHYT = 5                # Khám BHYT thông thường
+    PRIORITY_BOOKING_LATE = 3        # Trễ 15-30 phút
+    PRIORITY_BOOKING_EXPIRED = 0     # Trễ > 30 phút → mất ưu tiên
     PRIORITY_WALK_IN = 0
-    PRIORITY_ELDERLY_CHILD_BONUS = 5
 
     # --- Lateness Thresholds (minutes) ---
     LATE_THRESHOLD_MILD = 15    # ≤15p: vẫn ưu tiên đầy đủ
@@ -252,30 +254,63 @@ class ClinicalQueueService:
             )
 
     @staticmethod
+    def _calculate_walkin_priority(patient) -> int:
+        """Tính priority point cho Walk-In dựa trên tuổi và đối tượng phí liệu có BHYT hay ko"""
+        if not patient.insurance_number:
+            return ClinicalQueueService.PRIORITY_SERVICE
+            
+        if patient.date_of_birth:
+            today = timezone.now().date()
+            age = today.year - patient.date_of_birth.year
+            if (today.month, today.day) < (patient.date_of_birth.month, patient.date_of_birth.day):
+                age -= 1
+            if age >= 60 or age <= 6:
+                return ClinicalQueueService.PRIORITY_ELDERLY_CHILD
+                
+        return ClinicalQueueService.PRIORITY_BHYT
+
+    @staticmethod
     def checkin_walkin(patient, station, reason='', extra_priority=0):
         """
-        Luồng 3: Vãng lai — FCFS
+        Luồng 3: Vãng lai
         
-        Bệnh nhân đến trực tiếp, lấy số xếp cuối hàng.
+        Bệnh nhân đến trực tiếp, lấy số dựa theo chính sách đối tượng.
         
         Args:
             patient: Patient instance
             station: ServiceStation cần xếp hàng
             reason: Lý do khám
-            extra_priority: Bonus ưu tiên (VD: người già +5)
+            extra_priority: Bonus ưu tiên (có thể truyền tay nhưng check system trước)
         
         Returns:
             dict: {visit, queue_entry, queue_number}
         """
         from apps.core_services.reception.services import ReceptionService
         
-        priority = ClinicalQueueService.PRIORITY_WALK_IN + extra_priority
+        base_priority = ClinicalQueueService._calculate_walkin_priority(patient)
+        priority = max(base_priority + extra_priority, 0)
+        
+        visit_priority = 'NORMAL'
+        if base_priority == ClinicalQueueService.PRIORITY_SERVICE:
+            visit_priority = 'SERVICE'
+        elif base_priority == ClinicalQueueService.PRIORITY_ELDERLY_CHILD:
+            if patient.date_of_birth:
+                today = timezone.now().date()
+                age = today.year - patient.date_of_birth.year
+                if (today.month, today.day) < (patient.date_of_birth.month, patient.date_of_birth.day):
+                    age -= 1
+                if age >= 60:
+                    visit_priority = 'ELDERLY'
+                else:
+                    visit_priority = 'CHILD'
+            else:
+                visit_priority = 'PRIORITY'
         
         # Tạo Visit
         visit = ReceptionService.create_visit(
             patient=patient,
             reason=reason,
-            priority='NORMAL'
+            priority=visit_priority
         )
         
         # Sinh STT & vào hàng đợi
@@ -500,10 +535,10 @@ class ClinicalQueueService:
         patient = visit.patient
         
         display_label = entry.queue_number.number_code
-        if entry.source_type == QueueSourceType.ONLINE_BOOKING:
-            display_label += " (Đặt lịch)"
-        elif entry.source_type == QueueSourceType.EMERGENCY:
+        if entry.source_type == QueueSourceType.EMERGENCY:
             display_label += " 🚨 CẤP CỨU"
+        elif entry.priority_label and entry.priority_label != "Bình thường":
+            display_label += f" ({entry.priority_label})"
         
         # Patient model dùng @property full_name (có underscore)
         patient_name = getattr(patient, 'full_name', None) or str(patient)
@@ -545,6 +580,7 @@ class ClinicalQueueService:
             'patient_name': patient_name,
             'source_type': entry.source_type,
             'priority': entry.priority,
+            'priority_label': entry.priority_label,
             'display_label': display_label,
             'station_code': entry.station.code,
             'station_name': entry.station.name,
@@ -562,6 +598,210 @@ class ClinicalQueueService:
         except Exception:
             import logging
             logging.getLogger('qms').exception('Failed to trigger TTS pre-generation')
+
+    @staticmethod
+    def get_optimal_station(station_type: StationType) -> ServiceStation:
+        """
+        Tìm điểm dịch vụ có tải trọng (số người đang chờ hoặc đang phục vụ) thấp nhất
+        để phân luồng bệnh nhân vào nhằm cân bằng tải.
+        
+        Nếu chưa có trạm nào thuộc loại này thì tạo mới 1 trạm mặc định.
+        """
+        import logging
+        logger = logging.getLogger('qms')
+        
+        # Chỉ các trạng thái xếp hàng trực tiếp mới tính là tải thực tế
+        active_statuses = [QueueStatus.WAITING, QueueStatus.CALLED, QueueStatus.IN_PROGRESS]
+        
+        # Query stations of the requested type that are active
+        stations = ServiceStation.objects.filter(
+            station_type=station_type,
+            is_active=True
+        ).annotate(
+            active_load=Count(
+                'queue_entries',
+                filter=Q(
+                    queue_entries__status__in=active_statuses,
+                    queue_entries__entered_queue_time__date=timezone.now().date()
+                )
+            )
+        ).order_by('active_load', 'code')
+        
+        optimal_station = stations.first()
+        
+        if optimal_station:
+            logger.info(
+                f"[LOAD_BALANCE] Chọn điểm {optimal_station.code} ({optimal_station.name}) "
+                f"cho type {station_type} với tải {optimal_station.active_load}"
+            )
+            return optimal_station
+            
+        # Fallback: Create a default station if none exists
+        logger.warning(f"[LOAD_BALANCE] Không tìm thấy điểm dịch vụ active nào loại {station_type}. Tạo mới.")
+        
+        # Mặc định tạo trạm dựa trên tên loại
+        default_codes = {
+            StationType.RECEPTION: 'TIEP-DON-01',
+            StationType.TRIAGE: 'PHAN-LUONG-01',
+            StationType.DOCTOR: 'PK-01',
+            StationType.LIS: 'LIS-01',
+            StationType.RIS: 'RIS-01',
+            StationType.PHARMACY: 'NHATHUOC-01',
+            StationType.CASHIER: 'THUNGAN-01',
+        }
+        default_names = {
+            StationType.RECEPTION: 'Quầy Tiếp Đón',
+            StationType.TRIAGE: 'Quầy Phân Luồng',
+            StationType.DOCTOR: 'Phòng Khám Bệnh',
+            StationType.LIS: 'Phòng Xét Nghiệm',
+            StationType.RIS: 'Phòng CĐHA',
+            StationType.PHARMACY: 'Nhà Thuốc',
+            StationType.CASHIER: 'Quầy Thu Ngân',
+        }
+        
+        code = default_codes.get(station_type, f"{station_type}-01")
+        name = default_names.get(station_type, f"Điểm dịch vụ {station_type}")
+        
+        station = ServiceStation.objects.create(
+            code=code,
+            name=name,
+            station_type=station_type,
+            is_active=True,
+        )
+        return station
+
+    @staticmethod
+    def get_optimal_station_for_department(station_type: StationType, department) -> ServiceStation:
+        """
+        Tìm điểm dịch vụ (VD: Phòng khám) có tải trọng (số người đang chờ hoặc đang phục vụ) thấp nhất
+        thuộc về một khoa (department) cụ thể.
+        
+        Nếu chưa có trạm nào thuộc khoa này đang active, tạo mới 1 trạm mặc định cho khoa đó.
+        """
+        import logging
+        logger = logging.getLogger('qms')
+        
+        active_statuses = [QueueStatus.WAITING, QueueStatus.CALLED, QueueStatus.IN_PROGRESS]
+        
+        stations = ServiceStation.objects.filter(
+            station_type=station_type,
+            department=department,
+            is_active=True
+        ).annotate(
+            active_load=Count(
+                'queue_entries',
+                filter=Q(
+                    queue_entries__status__in=active_statuses,
+                    queue_entries__entered_queue_time__date=timezone.now().date()
+                )
+            )
+        ).order_by('active_load', 'code')
+        
+        optimal_station = stations.first()
+        
+        if optimal_station:
+            logger.info(
+                f"[LOAD_BALANCE] Chọn phòng {optimal_station.code} ({optimal_station.name}) "
+                f"thuộc khoa {department.name} với tải {optimal_station.active_load}"
+            )
+            return optimal_station
+            
+        # Fallback: Tạo một phòng khám mặc định cho khoa
+        logger.warning(
+            f"[LOAD_BALANCE] Khoa {department.name} chưa có phòng {station_type} nào đang hoạt động. Tạo mới."
+        )
+        
+        import uuid
+        short_id = str(uuid.uuid4())[:4].upper()
+        
+        # Mặc định prefix cho khoa
+        prefix_map = {
+            StationType.DOCTOR: 'PK',
+            StationType.LIS: 'XN',
+            StationType.RIS: 'CDHA',
+        }
+        prefix = prefix_map.get(station_type, str(station_type))
+        dept_code = department.code if getattr(department, 'code', None) else "DEPT"
+        
+        code = f"{prefix}-{dept_code}-{short_id}"
+        name = f"Phòng {prefix} {department.name} 01"
+        
+        station = ServiceStation.objects.create(
+            code=code,
+            name=name,
+            station_type=station_type,
+            department=department,
+            is_active=True,
+        )
+        return station
+        """
+        Tìm điểm dịch vụ có tải trọng (số người đang chờ hoặc đang phục vụ) thấp nhất
+        để phân luồng bệnh nhân vào nhằm cân bằng tải.
+        
+        Nếu chưa có trạm nào thuộc loại này thì tạo mới 1 trạm mặc định.
+        """
+        import logging
+        logger = logging.getLogger('qms')
+        
+        # Chỉ các trạng thái xếp hàng trực tiếp mới tính là tải thực tế
+        active_statuses = [QueueStatus.WAITING, QueueStatus.CALLED, QueueStatus.IN_PROGRESS]
+        
+        # Query stations of the requested type that are active
+        stations = ServiceStation.objects.filter(
+            station_type=station_type,
+            is_active=True
+        ).annotate(
+            active_load=Count(
+                'queue_entries',
+                filter=Q(
+                    queue_entries__status__in=active_statuses,
+                    queue_entries__entered_queue_time__date=timezone.now().date()
+                )
+            )
+        ).order_by('active_load', 'code')
+        
+        optimal_station = stations.first()
+        
+        if optimal_station:
+            logger.info(
+                f"[LOAD_BALANCE] Chọn điểm {optimal_station.code} ({optimal_station.name}) "
+                f"cho type {station_type} với tải {optimal_station.active_load}"
+            )
+            return optimal_station
+            
+        # Fallback: Create a default station if none exists
+        logger.warning(f"[LOAD_BALANCE] Không tìm thấy điểm dịch vụ active nào loại {station_type}. Tạo mới.")
+        
+        # Mặc định tạo trạm dựa trên tên loại
+        default_codes = {
+            StationType.RECEPTION: 'TIEP-DON-01',
+            StationType.TRIAGE: 'PHAN-LUONG-01',
+            StationType.DOCTOR: 'PK-01',
+            StationType.LIS: 'LIS-01',
+            StationType.RIS: 'RIS-01',
+            StationType.PHARMACY: 'NHATHUOC-01',
+            StationType.CASHIER: 'THUNGAN-01',
+        }
+        default_names = {
+            StationType.RECEPTION: 'Quầy Tiếp Đón',
+            StationType.TRIAGE: 'Quầy Phân Luồng',
+            StationType.DOCTOR: 'Phòng Khám Bệnh',
+            StationType.LIS: 'Phòng Xét Nghiệm',
+            StationType.RIS: 'Phòng CĐHA',
+            StationType.PHARMACY: 'Nhà Thuốc',
+            StationType.CASHIER: 'Quầy Thu Ngân',
+        }
+        
+        code = default_codes.get(station_type, f"{station_type}-01")
+        name = default_names.get(station_type, f"Điểm dịch vụ {station_type}")
+        
+        station = ServiceStation.objects.create(
+            code=code,
+            name=name,
+            station_type=station_type,
+            is_active=True,
+        )
+        return station
 
     @staticmethod
     def get_queue_board(station):
@@ -638,6 +878,7 @@ class ClinicalQueueService:
                     'patient_name': patient_name,
                     'source_type': entry.source_type,
                     'priority': entry.priority,
+                    'priority_label': entry.priority_label,
                     'wait_time_minutes': entry.wait_time_minutes,
                 })
             except Exception as exc:

@@ -10,6 +10,7 @@ import {
     CloseOutlined,
     ClockCircleOutlined,
     MedicineBoxOutlined,
+    IdcardOutlined,
 } from '@ant-design/icons';
 
 const { Text } = Typography;
@@ -53,6 +54,7 @@ export default function BookingForm({
 }: BookingFormProps) {
     const patientNameRef = useRef('');
     const phoneRef = useRef('');
+    const idCardRef = useRef('');
     const reasonRef = useRef(patientNote);
     const [selectedTime, setSelectedTime] = useState<string>(suggestedTimes[0] || '');
     const [submitting, setSubmitting] = useState(false);
@@ -84,6 +86,7 @@ export default function BookingForm({
                 body: JSON.stringify({
                     patient_name: patientNameRef.current.trim(),
                     phone: phoneRef.current.trim(),
+                    id_card: idCardRef.current.trim(),
                     department,
                     date,
                     time: selectedTime,
@@ -189,6 +192,21 @@ export default function BookingForm({
                         size="small"
                         style={{ borderRadius: '6px' }}
                         maxLength={11}
+                    />
+                </div>
+
+                <div>
+                    <Text style={{ fontSize: '12px', color: '#666', marginBottom: '4px', display: 'block' }}>
+                        CCCD / Mã BHYT
+                    </Text>
+                    <Input
+                        prefix={<IdcardOutlined style={{ color: '#bbb' }} />}
+                        placeholder="Nhập 12 số CCCD hoặc 10/15 ký tự BHYT để ưu tiên"
+                        defaultValue=""
+                        onChange={(e) => { idCardRef.current = e.target.value; }}
+                        size="small"
+                        style={{ borderRadius: '6px' }}
+                        maxLength={15}
                     />
                 </div>
 

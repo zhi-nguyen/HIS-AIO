@@ -1,5 +1,9 @@
 from django.db import models
 from apps.core_services.core.models import UUIDModel
+from django.db.models.signals import post_save
+from django.dispatch import receiver
+from channels.layers import get_channel_layer
+from asgiref.sync import async_to_sync
 
 
 class LabCategory(UUIDModel):
@@ -53,7 +57,8 @@ class LabOrder(UUIDModel):
         PENDING = 'PENDING', 'Chờ lấy mẫu'
         SAMPLING = 'SAMPLING', 'Đã lấy mẫu'
         PROCESSING = 'PROCESSING', 'Đang thực hiện'
-        COMPLETED = 'COMPLETED', 'Đã có kết quả'
+        COMPLETED = 'COMPLETED', 'Đã có kết quả (Chờ duyệt)'
+        VERIFIED = 'VERIFIED', 'Đã duyệt'
         CANCELLED = 'CANCELLED', 'Đã hủy'
 
     visit = models.ForeignKey(
@@ -86,9 +91,10 @@ class LabOrderDetail(UUIDModel):
     order = models.ForeignKey(LabOrder, on_delete=models.CASCADE, related_name='details')
     test = models.ForeignKey(LabTest, on_delete=models.PROTECT, related_name='order_details')
     price_at_time = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    service_name = models.CharField(max_length=255, null=True, blank=True, verbose_name="Dịch vụ gốc", help_text="Tên của ServiceList bên lâm sàng đã chỉ định (VD: Xét nghiệm đường huyết)")
 
     class Meta:
-        unique_together = ('order', 'test')
+        # unique_together = ('order', 'test')  # Gỡ bỏ constraint này vì các service khác nhau có thể chỉ định trùng test, có thể cần cộng dồn. Tạm thời xoá để tránh lỗi.
         verbose_name = "Chi tiết phiếu xét nghiệm"
         verbose_name_plural = "Các chi tiết phiếu xét nghiệm"
 
@@ -290,3 +296,31 @@ class LabResult(UUIDModel):
                 self.abnormal_flag = None
         
         super().save(*args, **kwargs)
+
+import logging
+logger = logging.getLogger(__name__)
+
+from django.db import transaction
+
+@receiver(post_save, sender=LabOrder)
+def lab_order_post_save(sender, instance, created, **kwargs):
+    logger.info(f"LabOrder post_save triggered for {instance.id}, created={created}")
+    def send_ws_update():
+        logger.info(f"Inside send_ws_update logic for LabOrder {instance.id}")
+        channel_layer = get_channel_layer()
+        if channel_layer is not None:
+            async_to_sync(channel_layer.group_send)(
+                "lis_updates",
+                {
+                    "type": "lis.order_updated",
+                    "action": "created" if created else "updated",
+                    "order_id": str(instance.id),
+                    "status": instance.status,
+                }
+            )
+        else:
+            logger.error("CHANNEL_LAYER is NONE, no ws message sent.")
+            
+    # Always call this on commit so that if it's within an atomic block, 
+    # the frontend only gets notified after the DB row is actually visible!
+    transaction.on_commit(send_ws_update)

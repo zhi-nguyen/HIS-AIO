@@ -18,6 +18,7 @@ import {
     App,
     Tooltip,
     Badge,
+    Collapse,
 } from 'antd';
 import {
     CheckOutlined,
@@ -28,9 +29,12 @@ import {
     InfoCircleOutlined,
     DownOutlined,
     UpOutlined,
+    BulbOutlined,
+    FileTextOutlined,
 } from '@ant-design/icons';
 import { visitApi } from '@/lib/services';
 import type { Visit, Department } from '@/types';
+
 
 const { Text } = Typography;
 const { TextArea } = Input;
@@ -83,6 +87,7 @@ interface VitalSignsCardProps {
     painScale?: number;
     consciousness: string;
     loading: boolean;
+    recommendedVitals: string[];
     onUpdateVitalSign: (key: keyof VitalSignsForm, value: number | null) => void;
     onUpdatePainScale: (value: number | null) => void;
     onUpdateConsciousness: (value: string) => void;
@@ -93,10 +98,33 @@ const VitalSignsCard = React.memo(({
     painScale,
     consciousness,
     loading,
+    recommendedVitals,
     onUpdateVitalSign,
     onUpdatePainScale,
     onUpdateConsciousness
 }: VitalSignsCardProps) => {
+    // Helper: check if vital key is AI-recommended
+    const isRecommended = (key: string) => recommendedVitals.includes(key);
+
+    // Helper: render label with AI badge if recommended
+    const renderLabel = (label: string, key: string) => (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 2 }}>
+            <Text type="secondary" style={{ fontSize: 12 }}>{label}</Text>
+            {isRecommended(key) && (
+                <Tooltip title="AI đề xuất ưu tiên đo chỉ số này">
+                    <Tag color="red" style={{ fontSize: 10, padding: '0 4px', lineHeight: '16px', cursor: 'default' }}>
+                        AI đề xuất
+                    </Tag>
+                </Tooltip>
+            )}
+        </div>
+    );
+
+    // Helper: get input style — red border if recommended
+    const getInputStyle = (key: string) => isRecommended(key)
+        ? { border: '1.5px solid #ff4d4f', borderRadius: 6, boxShadow: '0 0 0 2px rgba(255,77,79,0.12)' }
+        : {};
+
     return (
         <Card
             size="small"
@@ -115,73 +143,79 @@ const VitalSignsCard = React.memo(({
         >
             <div className="modal-form-grid-4" style={{ gap: '10px 16px' }}>
                 {/* Mạch */}
-                <div>
-                    <Text type="secondary" style={{ fontSize: 12 }}>Mạch (bpm)</Text>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    {renderLabel('Mạch (bpm)', 'heart_rate')}
                     <InputNumber
                         className="w-full"
                         min={0} max={300}
                         value={vitalSigns.heart_rate}
                         onChange={v => onUpdateVitalSign('heart_rate', v)}
                         disabled={loading}
+                        style={getInputStyle('heart_rate')}
                     />
                 </div>
                 {/* Huyết áp tâm thu */}
-                <div>
-                    <Text type="secondary" style={{ fontSize: 12 }}>HA tâm thu (mmHg)</Text>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    {renderLabel('HA tâm thu (mmHg)', 'bp_systolic')}
                     <InputNumber
                         className="w-full"
                         min={0} max={300}
                         value={vitalSigns.bp_systolic}
                         onChange={v => onUpdateVitalSign('bp_systolic', v)}
                         disabled={loading}
+                        style={getInputStyle('bp_systolic')}
                     />
                 </div>
                 {/* Huyết áp tâm trương */}
-                <div>
-                    <Text type="secondary" style={{ fontSize: 12 }}>HA tâm trương (mmHg)</Text>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    {renderLabel('HA tâm trương (mmHg)', 'bp_diastolic')}
                     <InputNumber
                         className="w-full"
                         min={0} max={200}
                         value={vitalSigns.bp_diastolic}
                         onChange={v => onUpdateVitalSign('bp_diastolic', v)}
                         disabled={loading}
+                        style={getInputStyle('bp_diastolic')}
                     />
                 </div>
                 {/* Nhịp thở */}
-                <div>
-                    <Text type="secondary" style={{ fontSize: 12 }}>Nhịp thở (/phút)</Text>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    {renderLabel('Nhịp thở (/phút)', 'respiratory_rate')}
                     <InputNumber
                         className="w-full"
                         min={0} max={60}
                         value={vitalSigns.respiratory_rate}
                         onChange={v => onUpdateVitalSign('respiratory_rate', v)}
                         disabled={loading}
+                        style={getInputStyle('respiratory_rate')}
                     />
                 </div>
                 {/* Nhiệt độ */}
-                <div>
-                    <Text type="secondary" style={{ fontSize: 12 }}>Nhiệt độ (°C)</Text>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    {renderLabel('Nhiệt độ (°C)', 'temperature')}
                     <InputNumber
                         className="w-full"
                         min={30} max={45} step={0.1}
                         value={vitalSigns.temperature}
                         onChange={v => onUpdateVitalSign('temperature', v)}
                         disabled={loading}
+                        style={getInputStyle('temperature')}
                     />
                 </div>
                 {/* SpO2 */}
-                <div>
-                    <Text type="secondary" style={{ fontSize: 12 }}>SpO2 (%)</Text>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    {renderLabel('SpO2 (%)', 'spo2')}
                     <InputNumber
                         className="w-full"
                         min={0} max={100}
                         value={vitalSigns.spo2}
                         onChange={v => onUpdateVitalSign('spo2', v)}
                         disabled={loading}
+                        style={getInputStyle('spo2')}
                     />
                 </div>
                 {/* Cân nặng */}
-                <div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                     <Text type="secondary" style={{ fontSize: 12 }}>Cân nặng (kg)</Text>
                     <InputNumber
                         className="w-full"
@@ -192,24 +226,13 @@ const VitalSignsCard = React.memo(({
                     />
                 </div>
                 {/* Chiều cao */}
-                <div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                     <Text type="secondary" style={{ fontSize: 12 }}>Chiều cao (cm)</Text>
                     <InputNumber
                         className="w-full"
                         min={0} max={250}
                         value={vitalSigns.height}
                         onChange={v => onUpdateVitalSign('height', v)}
-                        disabled={loading}
-                    />
-                </div>
-                {/* Thang đau */}
-                <div>
-                    <Text type="secondary" style={{ fontSize: 12 }}>Thang đau (0-10)</Text>
-                    <InputNumber
-                        className="w-full"
-                        min={0} max={10}
-                        value={painScale}
-                        onChange={v => onUpdatePainScale(v)}
                         disabled={loading}
                     />
                 </div>
@@ -268,6 +291,10 @@ export default function TriageModal({ visit, open, departments, onClose, onSucce
     const [selectedDeptId, setSelectedDeptId] = useState<string | null>(null);
     const [confirmLoading, setConfirmLoading] = useState(false);
     const [showFullAnalysis, setShowFullAnalysis] = useState(false);
+
+    // --- Pre-triage AI data (from Summarize Agent after kiosk checkin) ---
+    const [recommendedVitals, setRecommendedVitals] = useState<string[]>([]);
+    const [showPreTriageSummary, setShowPreTriageSummary] = useState(false);
 
     // Reset state khi mở modal — nếu visit đã có data từ AI, restore lại
     const handleAfterOpenChange = useCallback((isOpen: boolean) => {
@@ -328,6 +355,13 @@ export default function TriageModal({ visit, open, departments, onClose, onSucce
                 setTriageResult(null);
                 setSelectedDeptId(null);
             }
+
+            // Làm sạch trạng thái summary panel
+            setShowPreTriageSummary(false);
+
+            // Đọc vital_sign_recommendations từ visit (AI summarize agent đã lưu)
+            const recs = (visit as any).vital_sign_recommendations as string[] | null;
+            setRecommendedVitals(Array.isArray(recs) ? recs : []);
         }
     }, [visit]);
 
@@ -489,12 +523,77 @@ export default function TriageModal({ visit, open, departments, onClose, onSucce
                             </Descriptions>
                         </Card>
 
+                        {/* --- BANNER: AI tóm tắt bệnh án (Summarize Agent đã chạy sau khi đăng ký kiosk) --- */}
+                        {(visit as any).triage_hints && (
+                            <Alert
+                                type="info"
+                                showIcon
+                                icon={<BulbOutlined />}
+                                style={{ marginTop: 12 }}
+                                message={
+                                    <Text strong style={{ fontSize: 13 }}>
+                                        🤖 AI Tóm Tắt Bệnh Án — Lưu ý khi đo sinh hiệu
+                                    </Text>
+                                }
+                                description={
+                                    <div>
+                                        <div style={{ fontSize: 13, marginBottom: (visit as any).pre_triage_summary ? 6 : 0 }}>
+                                            {(visit as any).triage_hints}
+                                        </div>
+                                        {(visit as any).pre_triage_summary && (
+                                            <div
+                                                onClick={() => setShowPreTriageSummary(!showPreTriageSummary)}
+                                                style={{ cursor: 'pointer', color: '#1677ff', fontSize: 12, display: 'flex', alignItems: 'center', gap: 4 }}
+                                            >
+                                                <FileTextOutlined />
+                                                <span>{showPreTriageSummary ? 'Thu gọn tóm tắt bệnh án' : 'Xem tóm tắt bệnh án đầy đủ'}</span>
+                                                {showPreTriageSummary ? <UpOutlined style={{ fontSize: 10 }} /> : <DownOutlined style={{ fontSize: 10 }} />}
+                                            </div>
+                                        )}
+                                        {showPreTriageSummary && (visit as any).pre_triage_summary && (
+                                            <div style={{
+                                                marginTop: 8,
+                                                padding: '10px 12px',
+                                                background: '#f9fafb',
+                                                borderRadius: 6,
+                                                fontSize: 12,
+                                                whiteSpace: 'pre-wrap',
+                                                color: '#374151',
+                                                maxHeight: 200,
+                                                overflowY: 'auto',
+                                                border: '1px solid #e5e7eb',
+                                            }}>
+                                                {(visit as any).pre_triage_summary}
+                                            </div>
+                                        )}
+                                    </div>
+                                }
+                            />
+                        )}
+
+                        {/* Hint nếu có recommended vitals nhưng không có triage_hints */}
+                        {!(visit as any).triage_hints && recommendedVitals.length > 0 && (
+                            <Alert
+                                type="warning"
+                                showIcon
+                                icon={<BulbOutlined />}
+                                style={{ marginTop: 12 }}
+                                message={
+                                    <span style={{ fontSize: 13 }}>
+                                        AI đề xuất ưu tiên đo: {recommendedVitals.join(', ')}
+                                        <Tag color="orange" style={{ marginLeft: 6, fontSize: 11 }}>Viền đỏ</Tag>
+                                    </span>
+                                }
+                            />
+                        )}
+
                         {/* --- SINH HIỆU (Y tá nhập) --- */}
                         <VitalSignsCard
                             vitalSigns={vitalSigns}
                             painScale={painScale}
                             consciousness={consciousness}
                             loading={triageLoading}
+                            recommendedVitals={recommendedVitals}
                             onUpdateVitalSign={updateVitalSign}
                             onUpdatePainScale={updatePainScale}
                             onUpdateConsciousness={updateConsciousness}

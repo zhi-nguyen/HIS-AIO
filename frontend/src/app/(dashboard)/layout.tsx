@@ -380,12 +380,12 @@ export default function DashboardLayout({
 
                         {/* User Menu */}
                         <Dropdown menu={{ items: userMenuItems }} placement="bottomRight" arrow>
-                            <Space className="cursor-pointer hover:bg-gray-50 px-2 py-1 rounded">
+                            <div className="cursor-pointer hover:bg-gray-50 px-2 py-1 rounded flex items-center gap-2">
                                 <Avatar icon={<UserOutlined />} style={{ background: '#1E88E5' }} />
-                                <Text className="hidden md:inline" style={{ maxWidth: 140 }} ellipsis>
+                                <Text className="hidden md:block m-0" style={{ maxWidth: 140, lineHeight: '1.2' }} ellipsis>
                                     {user?.email || 'Người dùng'}
                                 </Text>
-                            </Space>
+                            </div>
                         </Dropdown>
                     </Space>
                 </Header>
