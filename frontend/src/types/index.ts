@@ -134,6 +134,10 @@ export interface Visit {
     confirmed_department_detail?: Department;
     triage_confirmed_at?: string;
     triage_method?: 'AI' | 'MANUAL';
+    pending_merge?: boolean;
+    pre_triage_summary?: string;
+    vital_sign_recommendations?: string[];
+    triage_hints?: string;
     // Display helpers
     status_display?: string;
     priority_display?: string;

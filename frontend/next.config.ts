@@ -1,6 +1,9 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
 
+  // Tắt StrictMode để tránh double-mount WebSocket trong development
+  reactStrictMode: false,
+
   // Rewrites để proxy API requests trong development
   async rewrites() {
     return [

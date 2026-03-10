@@ -85,3 +85,81 @@ class QueueDisplayConsumer(AsyncWebsocketConsumer):
     def _get_board(self):
         station = ServiceStation.objects.get(id=self.station_id)
         return ClinicalQueueService.get_queue_board(station)
+
+
+class ClinicalConsumer(AsyncWebsocketConsumer):
+    """
+    WebSocket consumer for Clinical (Doctor) dashboard.
+
+    Each doctor connects with their station_id and joins the group
+    'clinical_station_{station_id}'. When a patient is triaged and
+    assigned to this station, the group receives a broadcast.
+
+    Protocol:
+    - Client connects to: ws://host/ws/clinical/<station_id>/
+    - Server pushes:
+        { "type": "new_patient_assigned", "visit": { ...visit data... } }
+        { "type": "queue_update", "data": { ...queue board... } }
+    - Client can send: { "type": "ping" } for keepalive
+    """
+
+    def get_group_name(self):
+        return f"clinical_station_{self.station_id}"
+
+    async def connect(self):
+        self.station_id = self.scope['url_route']['kwargs']['station_id']
+        self.group_name = self.get_group_name()
+
+        await self.channel_layer.group_add(
+            self.group_name,
+            self.channel_name,
+        )
+        await self.accept()
+
+        # Send initial queue board on connect
+        board_data = await self._get_board()
+        await self.send(text_data=json.dumps({
+            'type': 'queue_update',
+            'data': board_data,
+        }))
+
+        logger.info(f"Clinical connected: station={self.station_id}")
+
+    async def disconnect(self, close_code):
+        await self.channel_layer.group_discard(
+            self.group_name,
+            self.channel_name,
+        )
+        logger.info(f"Clinical disconnected: station={self.station_id}")
+
+    async def receive(self, text_data):
+        """Handle ping/pong keepalive from client."""
+        try:
+            data = json.loads(text_data)
+            if data.get('type') == 'ping':
+                await self.send(text_data=json.dumps({'type': 'pong'}))
+        except (json.JSONDecodeError, Exception):
+            pass
+
+    # ── Group event handlers ────────────────────────────────────────
+
+    async def new_patient_assigned(self, event):
+        """Broadcast new patient assignment to connected clinical clients."""
+        await self.send(text_data=json.dumps({
+            'type': 'new_patient_assigned',
+            'visit': event['visit'],
+        }))
+
+    async def queue_update(self, event):
+        """Broadcast queue board update to connected clinical client."""
+        await self.send(text_data=json.dumps({
+            'type': 'queue_update',
+            'data': event['data'],
+        }))
+
+    # ── Helpers ──────────────────────────────────────────────────────
+
+    @database_sync_to_async
+    def _get_board(self):
+        station = ServiceStation.objects.get(id=self.station_id)
+        return ClinicalQueueService.get_queue_board(station)
