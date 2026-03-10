@@ -1,6 +1,7 @@
 /**
  * Role Configuration
  * Cấu hình phân quyền theo vai trò
+ * Các tên role phải khớp với StaffRole trong backend (authentication/models.py)
  */
 
 export type StaffRole =
@@ -8,10 +9,10 @@ export type StaffRole =
     | 'DOCTOR'
     | 'NURSE'
     | 'RECEPTIONIST'
-    | 'LAB_TECHNICIAN'
+    | 'LIS_TECHNICIAN'
+    | 'RIS_TECHNICIAN'
     | 'PHARMACIST'
-    | 'RADIOLOGIST'
-    | 'CASHIER';
+    | 'BILLING';
 
 export interface RoleConfig {
     label: string;
@@ -39,8 +40,6 @@ export const roleConfig: Record<StaffRole, RoleConfig> = {
             '/dashboard/clinical',
             '/dashboard/clinical/*',
             '/dashboard/patients',
-            '/dashboard/lis',
-            '/dashboard/ris',
         ],
     },
     NURSE: {
@@ -66,14 +65,25 @@ export const roleConfig: Record<StaffRole, RoleConfig> = {
             '/dashboard/qms',
         ],
     },
-    LAB_TECHNICIAN: {
+    LIS_TECHNICIAN: {
         label: 'Kỹ thuật viên XN',
         color: 'purple',
         defaultRoute: '/dashboard/lis',
         allowedRoutes: [
             '/dashboard',
             '/dashboard/lis',
+            '/dashboard/lis/verified',
             '/dashboard/qms',
+        ],
+    },
+    RIS_TECHNICIAN: {
+        label: 'Kỹ thuật viên CĐHA',
+        color: 'geekblue',
+        defaultRoute: '/dashboard/ris',
+        allowedRoutes: [
+            '/dashboard',
+            '/dashboard/ris',
+            '/dashboard/clinical',
         ],
     },
     PHARMACIST: {
@@ -86,17 +96,7 @@ export const roleConfig: Record<StaffRole, RoleConfig> = {
             '/dashboard/qms',
         ],
     },
-    RADIOLOGIST: {
-        label: 'Bác sĩ CĐHA',
-        color: 'geekblue',
-        defaultRoute: '/dashboard/ris',
-        allowedRoutes: [
-            '/dashboard',
-            '/dashboard/ris',
-            '/dashboard/clinical',
-        ],
-    },
-    CASHIER: {
+    BILLING: {
         label: 'Thu ngân',
         color: 'gold',
         defaultRoute: '/dashboard/billing',
@@ -134,8 +134,6 @@ export const menuItemsByRole: Record<StaffRole, MenuItem[]> = {
         { key: 'dashboard', label: 'Tổng quan', icon: 'DashboardOutlined', path: '/dashboard' },
         { key: 'clinical', label: 'Khám bệnh', icon: 'MedicineBoxOutlined', path: '/dashboard/clinical' },
         { key: 'patients', label: 'Bệnh nhân', icon: 'UserOutlined', path: '/dashboard/patients' },
-        { key: 'lis', label: 'Kết quả XN', icon: 'ExperimentOutlined', path: '/dashboard/lis' },
-        { key: 'ris', label: 'Kết quả CĐHA', icon: 'FileImageOutlined', path: '/dashboard/ris' },
     ],
     NURSE: [
         { key: 'dashboard', label: 'Tổng quan', icon: 'DashboardOutlined', path: '/dashboard' },
@@ -149,22 +147,23 @@ export const menuItemsByRole: Record<StaffRole, MenuItem[]> = {
         { key: 'patients', label: 'Bệnh nhân', icon: 'UserOutlined', path: '/dashboard/patients' },
         { key: 'qms', label: 'Gọi số', icon: 'NotificationOutlined', path: '/dashboard/qms' },
     ],
-    LAB_TECHNICIAN: [
+    LIS_TECHNICIAN: [
         { key: 'dashboard', label: 'Tổng quan', icon: 'DashboardOutlined', path: '/dashboard' },
         { key: 'lis', label: 'Xét nghiệm', icon: 'ExperimentOutlined', path: '/dashboard/lis' },
+        { key: 'lis-verified', label: 'Đã duyệt', icon: 'CheckCircleOutlined', path: '/dashboard/lis/verified' },
         { key: 'qms', label: 'Gọi số', icon: 'NotificationOutlined', path: '/dashboard/qms' },
+    ],
+    RIS_TECHNICIAN: [
+        { key: 'dashboard', label: 'Tổng quan', icon: 'DashboardOutlined', path: '/dashboard' },
+        { key: 'ris', label: 'CĐHA', icon: 'FileImageOutlined', path: '/dashboard/ris' },
+        { key: 'clinical', label: 'Ca khám', icon: 'MedicineBoxOutlined', path: '/dashboard/clinical' },
     ],
     PHARMACIST: [
         { key: 'dashboard', label: 'Tổng quan', icon: 'DashboardOutlined', path: '/dashboard' },
         { key: 'pharmacy', label: 'Phát thuốc', icon: 'MedicineBoxOutlined', path: '/dashboard/pharmacy' },
         { key: 'qms', label: 'Gọi số', icon: 'NotificationOutlined', path: '/dashboard/qms' },
     ],
-    RADIOLOGIST: [
-        { key: 'dashboard', label: 'Tổng quan', icon: 'DashboardOutlined', path: '/dashboard' },
-        { key: 'ris', label: 'CĐHA', icon: 'FileImageOutlined', path: '/dashboard/ris' },
-        { key: 'clinical', label: 'Ca khám', icon: 'MedicineBoxOutlined', path: '/dashboard/clinical' },
-    ],
-    CASHIER: [
+    BILLING: [
         { key: 'dashboard', label: 'Tổng quan', icon: 'DashboardOutlined', path: '/dashboard' },
         { key: 'billing', label: 'Thanh toán', icon: 'DollarOutlined', path: '/dashboard/billing' },
         { key: 'patients', label: 'Bệnh nhân', icon: 'UserOutlined', path: '/dashboard/patients' },

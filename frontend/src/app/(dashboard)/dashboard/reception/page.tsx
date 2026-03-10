@@ -142,6 +142,10 @@ const statusConfig: Record<string, { color: string; label: string }> = {
 const priorityConfig: Record<string, { color: string; label: string }> = {
     NORMAL: { color: 'default', label: 'Bình thường' },
     PRIORITY: { color: 'orange', label: 'Ưu tiên' },
+    ELDERLY: { color: 'orange', label: 'Cao tuổi' },
+    CHILD: { color: 'orange', label: 'Trẻ em' },
+    SERVICE: { color: 'purple', label: 'Dịch vụ' },
+    ONLINE_BOOKING: { color: 'blue', label: 'Đặt lịch' },
     EMERGENCY: { color: 'red', label: 'Cấp cứu' },
 };
 
@@ -193,7 +197,11 @@ export default function ReceptionPage() {
     const fetchVisits = useCallback(async () => {
         setLoading(true);
         try {
-            const response = await visitApi.getAll();
+            // Chỉ lấy visit hôm nay, và chỉ tại station đang chọn (nếu có)
+            const response = await visitApi.getAll({
+                today: true,
+                ...(selectedStation ? { station_id: selectedStation } : {}),
+            });
             const list = Array.isArray(response) ? response : (response.results || []);
             setVisits(list);
         } catch (error) {
@@ -202,7 +210,7 @@ export default function ReceptionPage() {
         } finally {
             setLoading(false);
         }
-    }, [message]);
+    }, [message, selectedStation]);
 
     const fetchDepartments = useCallback(async () => {
         try {
@@ -215,8 +223,8 @@ export default function ReceptionPage() {
 
     const fetchStations = useCallback(async () => {
         try {
-            // Chỉ lấy stations loại RECEPTION — khớp với station mà kiosk tạo entry
-            const data = await qmsApi.getStations('RECEPTION');
+            // Chỉ lấy stations loại TRIAGE — "Phân luồng"
+            const data = await qmsApi.getStations('TRIAGE');
             setStations(data);
             if (data.length > 0 && !selectedStation) {
                 setSelectedStation(data[0].id);
@@ -474,9 +482,8 @@ export default function ReceptionPage() {
 
     // ── Computed Data ────────────────────────────────────────
 
-    const todayVisits = useMemo(() => {
-        return visits.filter((v) => ['CHECK_IN', 'TRIAGE', 'WAITING', 'IN_PROGRESS'].includes(v.status));
-    }, [visits]);
+    // Backend đã filter hôm nay + station, dùng thẳng visits
+    const todayVisits = visits;
 
     const stats = useMemo(() => ({
         total: visits.length,
@@ -703,8 +710,8 @@ export default function ReceptionPage() {
                                 className="border-2 border-blue-300 bg-blue-50"
                             >
                                 <div className="text-center">
-                                    <Tag color={sourceConfig[patient.source_type]?.color || 'default'} className="mb-2">
-                                        {sourceConfig[patient.source_type]?.label || patient.source_type}
+                                    <Tag color={patient.priority_label && patient.priority_label !== 'Bình thường' ? 'orange' : (sourceConfig[patient.source_type]?.color || 'default')} className="mb-2">
+                                        {patient.priority_label && patient.priority_label !== 'Bình thường' ? `Ưu tiên: ${patient.priority_label}` : (sourceConfig[patient.source_type]?.label || patient.source_type)}
                                     </Tag>
                                     <div
                                         className="text-5xl font-bold mb-1"

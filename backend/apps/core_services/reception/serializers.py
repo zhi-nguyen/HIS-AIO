@@ -19,4 +19,7 @@ class VisitSerializer(serializers.ModelSerializer):
             'assigned_staff', 'queue_number',
             'triage_code', 'triage_ai_response', 'triage_confidence',
             'recommended_department', 'confirmed_department', 'triage_confirmed_at',
+            # Pre-triage AI fields (set by Summarize Agent via kiosk pipeline)
+            'pre_triage_summary', 'vital_sign_recommendations', 'triage_hints',
         )
+

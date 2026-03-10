@@ -112,6 +112,25 @@ interface JWTPayload {
     token_type?: string;
 }
 
+/**
+ * Kiểu dữ liệu trả về từ /auth/me/
+ * Bao gồm thông tin user + staff_profile (role)
+ */
+export interface StaffProfile {
+    id: string;
+    role: string;
+    department: string;
+    staff_code: string;
+}
+
+export interface UserMe {
+    user_id: string;
+    email: string;
+    exp: number;
+    iat: number;
+    staff_profile: StaffProfile | null;
+}
+
 function decodeJWT(token: string): JWTPayload | null {
     try {
         const base64Url = token.split('.')[1];
@@ -148,25 +167,43 @@ export const authApi = {
     },
 
     /**
-     * Lấy thông tin user từ JWT token
-     * Không cần gọi API vì đã có trong token
+     * Lấy thông tin user hiện tại (bao gồm staff_profile.role)
+     * - Decode JWT để kiểm tra hạn token
+     * - Gọi API /auth/me/ để lấy đầy đủ thông tin (role, department...)
      */
-    getMe: async (): Promise<JWTPayload | null> => {
+    getMe: async (): Promise<UserMe | null> => {
         const token = tokenUtils.getAccessToken();
         if (!token) return null;
 
+        // Kiểm tra token hết hạn
         const payload = decodeJWT(token);
         if (!payload) return null;
-
-        // Kiểm tra token hết hạn
         const now = Date.now() / 1000;
         if (payload.exp && payload.exp < now) {
             tokenUtils.clearTokens();
             return null;
         }
 
-        return payload;
+        // Gọi API backend để lấy staff_profile.role
+        try {
+            const response = await api.get<UserMe>('/auth/me/');
+            return {
+                ...response.data,
+                exp: payload.exp,
+                iat: payload.iat,
+            };
+        } catch {
+            // Nếu API lỗi, trả về dữ liệu từ token (không có staff_profile)
+            return {
+                user_id: payload.user_id,
+                email: payload.email || '',
+                exp: payload.exp,
+                iat: payload.iat,
+                staff_profile: null,
+            };
+        }
     },
 };
 
 export default api;
+

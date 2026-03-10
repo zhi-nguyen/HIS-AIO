@@ -19,7 +19,36 @@ class VisitViewSet(viewsets.ModelViewSet):
     serializer_class = VisitSerializer
     filter_backends = [filters.SearchFilter, DjangoFilterBackend]
     search_fields = ['visit_code', 'patient__patient_code', 'patient__first_name']
-    filterset_fields = ['status', 'priority', 'patient']
+    filterset_fields = ['priority', 'patient']
+
+    def get_queryset(self):
+        qs = Visit.objects.select_related(
+            'patient', 'recommended_department', 'confirmed_department'
+        ).all().order_by('-check_in_time')
+
+        # Filter: chỉ lấy hôm nay
+        today_param = self.request.query_params.get('today')
+        if today_param and today_param.lower() in ('true', '1', 'yes'):
+            today = timezone.now().date()
+            qs = qs.filter(check_in_time__date=today)
+
+        # Filter: hỗ trợ comma-separated status (VD: WAITING,IN_PROGRESS,PENDING_RESULTS)
+        status_param = self.request.query_params.get('status')
+        if status_param:
+            statuses = [s.strip() for s in status_param.split(',') if s.strip()]
+            qs = qs.filter(status__in=statuses)
+
+        # Filter: chỉ lấy visits được đưa vào hàng đợi tại station này hôm nay
+        station_id = self.request.query_params.get('station_id')
+        if station_id:
+            if not today_param:
+                today = timezone.now().date()
+                qs = qs.filter(check_in_time__date=today)
+            qs = qs.filter(
+                queue_numbers__entries__station_id=station_id
+            ).distinct()
+
+        return qs
 
     def perform_create(self, serializer):
         # Auto-generate visit_code and queue_number
@@ -192,13 +221,31 @@ BỆNH ÁN CŨ:
 {medical_history_text}
 """
         
+        # === MỚI: Inject context từ Summarize Agent (chạy lúc bệnh nhân đăng ký kiosk) ===
+        if visit.triage_hints:
+            structured_message += f"""
+══ PHÂN TÍCH TIỀN PHÂN LUỒNG (Agent Tóm Tắt bệnh án) ══
+LỜI NHẮC QUAN TRỌNG từ AI đã phân tích bệnh án + lý do khám:
+{visit.triage_hints}
+"""
+
+        if visit.pre_triage_summary:
+            # Giới hạn độ dài để không làm hỏng context window
+            summary_preview = visit.pre_triage_summary[:2000]
+            structured_message += f"""
+TÓM TẮT BỆNH ÁN ĐẦY ĐỦ:
+{summary_preview}
+"""
+        # =========================================================
+
         structured_message += """
-YÊU CẦU: 
+YÊU CẦU:
 1. Đánh giá mức độ ưu tiên (triage code: CODE_RED/CODE_YELLOW/CODE_GREEN)
 2. Đề xuất khoa phù hợp nhất (chọn 1 trong các khoa có sẵn trong bệnh viện)
 3. Ước tính mức độ tin cậy (confidence) từ 0-100%
-4. Giải thích ngắn gọn lý do
+4. Giải thích ngắn gọn lý do, có tham chiếu tới bệnh nền và lời nhắc tiền phân luồng (nếu có)
 5. Nếu có chỉ số sinh hiệu bất thường, hãy cảnh báo rõ ràng"""
+
 
         import time
         session_id = f"triage-{visit.visit_code}-{int(time.time())}"
@@ -376,6 +423,104 @@ YÊU CẦU:
         visit.triage_confirmed_at = timezone.now()
         visit.status = Visit.Status.WAITING
         visit.save()
+        
+        # --- Chuyển bệnh nhân sang phòng khám của khoa ---
+        try:
+            from apps.core_services.qms.models import StationType, QueueStatus, QueueSourceType
+            from apps.core_services.qms.services import ClinicalQueueService, QueueService
+            
+            # 1. Tìm QueueEntry hiện tại ở RECEPTION/TRIAGE và hoàn thành nó
+            first_qn = visit.queue_numbers.first()
+            current_entry = None
+            if first_qn:
+                current_entry = first_qn.entries.filter(
+                    station__station_type__in=[StationType.RECEPTION, StationType.TRIAGE],
+                    status__in=[QueueStatus.WAITING, QueueStatus.CALLED, QueueStatus.IN_PROGRESS]
+                ).first()
+            
+            base_priority = 0
+            source_type = QueueSourceType.WALK_IN
+            
+            if current_entry:
+                QueueService.complete_service(current_entry)
+                base_priority = current_entry.priority
+                source_type = current_entry.source_type
+                
+            # 2. Tính điểm ưu tiên cộng thêm từ Triage Code
+            triage_bonus = 0
+            if visit.triage_code == 'CODE_BLUE':
+                triage_bonus = 100
+            elif visit.triage_code == 'CODE_RED':
+                triage_bonus = 50
+            elif visit.triage_code == 'CODE_YELLOW':
+                triage_bonus = 10
+                
+            new_priority = base_priority + triage_bonus
+            
+            # 3. Tìm phòng khám optimal của khoa vừa chọn
+            optimal_station = ClinicalQueueService.get_optimal_station_for_department(
+                station_type=StationType.DOCTOR,
+                department=department
+            )
+            
+            # 4. Chuyển bệnh nhân vào phòng khám
+            new_entry = QueueService.transfer_to_station(
+                visit=visit,
+                new_station=optimal_station,
+                priority=new_priority
+            )
+            
+            # Giữ nguyên source type
+            if new_entry.source_type != source_type:
+                new_entry.source_type = source_type
+                new_entry.save(update_fields=['source_type'])
+                
+            logger.info(
+                f"Triage transfer: visit={visit.visit_code} -> station={optimal_station.code}, "
+                f"priority={new_priority} (base: {base_priority}, bonus: {triage_bonus})"
+            )
+
+            # --- Broadcast WebSocket notifications to Clinical dashboard ---
+            try:
+                from channels.layers import get_channel_layer
+                from asgiref.sync import async_to_sync
+                channel_layer = get_channel_layer()
+                if channel_layer:
+                    patient = visit.patient
+                    patient_name = getattr(patient, 'full_name', None) or str(patient)
+                    visit_payload = {
+                        'id': str(visit.id),
+                        'visit_code': visit.visit_code,
+                        'queue_number': new_entry.queue_number.number_code if hasattr(new_entry, 'queue_number') else '',
+                        'patient_name': patient_name,
+                        'chief_complaint': visit.chief_complaint or '',
+                        'priority': visit.priority,
+                        'triage_code': visit.triage_code or '',
+                        'department': department.name,
+                    }
+                    # 1. Broadcast new_patient_assigned to clinical group
+                    async_to_sync(channel_layer.group_send)(
+                        f'clinical_station_{optimal_station.id}',
+                        {
+                            'type': 'new_patient_assigned',
+                            'visit': visit_payload,
+                        },
+                    )
+                    # 2. Broadcast queue board update
+                    from apps.core_services.qms.services import ClinicalQueueService as _CQS
+                    board = _CQS.get_queue_board(optimal_station)
+                    async_to_sync(channel_layer.group_send)(
+                        f'clinical_station_{optimal_station.id}',
+                        {
+                            'type': 'queue_update',
+                            'data': board,
+                        },
+                    )
+            except Exception as ws_err:
+                logger.warning(f"Failed to broadcast clinical WS: {ws_err}")
+            
+        except Exception as e:
+            logger.error(f"Failed to transfer patient after triage: {e}", exc_info=True)
         
         logger.info(
             f"Triage confirmed: visit={visit.visit_code}, "

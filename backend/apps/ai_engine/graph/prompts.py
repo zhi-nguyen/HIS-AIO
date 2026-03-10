@@ -71,13 +71,27 @@ class PromptFactory:
             raise ValueError(f"Unknown agent type: {agent_type}. "
                            f"Available: {list(cls.PROMPT_MAP.keys())}")
         
-        # Add additional context if provided
         if additional_context:
             context_str = "\n\n## Ngữ Cảnh Bổ Sung\n"
             for key, value in additional_context.items():
                 context_str += f"- {key}: {value}\n"
             base_prompt += context_str
         
+        from datetime import datetime
+        now = datetime.now()
+        current_time_str = now.strftime("%H:%M:%S")
+        current_date_str = now.strftime("%d/%m/%Y")
+        day_of_week_map = {0: 'Thứ Hai', 1: 'Thứ Ba', 2: 'Thứ Tư', 3: 'Thứ Năm', 4: 'Thứ Sáu', 5: 'Thứ Bảy', 6: 'Chủ Nhật'}
+        day_of_week = day_of_week_map[now.weekday()]
+        
+        system_time_context = (
+            f"\n\n## THÔNG TIN THỜI GIAN HIỆN TẠI:\n"
+            f"- Giờ hệ thống đang là: {current_time_str}\n"
+            f"- Hôm nay là: {day_of_week}, ngày {current_date_str}\n"
+            f"(Sử dụng thông tin này để hiểu các yêu cầu như 'hôm nay', 'ngày mai' của người dùng một cách chính xác).\n"
+        )
+        base_prompt += system_time_context
+
         return base_prompt
     
     @classmethod

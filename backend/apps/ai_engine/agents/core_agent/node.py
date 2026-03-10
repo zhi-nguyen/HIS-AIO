@@ -7,14 +7,14 @@ REFACTORED cho Real Token Streaming:
 - Parse text để extract agent decision
 """
 
-from typing import Dict, Any, Literal, Optional
+from typing import Dict, Any, Literal, Optional, TypedDict
 import re
 from langchain_core.messages import SystemMessage, AIMessage
 from pydantic import BaseModel, Field
 
 from apps.ai_engine.graph.state import AgentState
 from apps.ai_engine.graph.llm_config import llm_pro, logging_node_execution
-from .prompts import SUPERVISOR_SYSTEM_PROMPT
+from apps.ai_engine.graph.prompts import get_system_prompt
 from apps.ai_engine.agents.security import (
     InputSanitizer, 
     is_agent_allowed, 
@@ -198,7 +198,7 @@ def supervisor_node(state: AgentState) -> Dict[str, Any]:
         }
     
     # Call LLM với text thinking prompt
-    prompt_messages = [SystemMessage(content=SUPERVISOR_SYSTEM_PROMPT)] + messages
+    prompt_messages = [SystemMessage(content=get_system_prompt("supervisor"))] + messages
     
     try:
         # LLM sẽ stream text thinking - streaming service sẽ capture

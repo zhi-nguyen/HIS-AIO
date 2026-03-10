@@ -14,7 +14,7 @@ from langchain_core.messages import SystemMessage, AIMessage, HumanMessage
 from apps.ai_engine.graph.state import AgentState
 from apps.ai_engine.graph.llm_config import llm_paraclinical_with_tools, logging_node_execution
 from apps.ai_engine.agents.message_utils import convert_and_filter_messages, log_llm_response, extract_final_response
-from .prompts import PARACLINICAL_THINKING_PROMPT
+from apps.ai_engine.graph.prompts import get_system_prompt
 
 
 def extract_thinking_steps(text: str) -> List[str]:
@@ -86,7 +86,7 @@ def paraclinical_node(state: AgentState) -> Dict[str, Any]:
     # Convert và filter messages
     converted_messages, last_user_message = convert_and_filter_messages(messages, "PARACLINICAL")
     
-    prompt = [SystemMessage(content=PARACLINICAL_THINKING_PROMPT)] + converted_messages
+    prompt = [SystemMessage(content=get_system_prompt("paraclinical"))] + converted_messages
     
     # Phase 1: Gọi LLM với tools binding
     response = llm_paraclinical_with_tools.invoke(prompt)

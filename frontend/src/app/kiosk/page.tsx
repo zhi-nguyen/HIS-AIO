@@ -189,8 +189,20 @@ export default function KioskPage() {
             if (parsed && parsed.cccd) {
                 extractedData = parsed.cccd;
             } else {
-                setError('Mã QR không hợp lệ hoặc không phải CCCD');
-                return;
+                // If parseCccdQrData fails (maybe format changed slightly or missing fields)
+                // but we know the first part is often the CCCD, or we can fallback to regex.
+                const firstPart = extractedData.split('|')[0].trim();
+                if (isCCCD(firstPart)) {
+                    extractedData = firstPart;
+                } else {
+                    const cccdMatch = extractedData.match(/\d{12}/);
+                    if (cccdMatch) {
+                        extractedData = cccdMatch[0];
+                    } else {
+                        setError('Mã QR không hợp lệ hoặc không phải CCCD');
+                        return;
+                    }
+                }
             }
         } else {
             // Maybe it's a raw string that just has the CCCD embedded without pipes.
@@ -682,7 +694,28 @@ export default function KioskPage() {
                                 borderRadius: 20,
                                 background: '#f0f9ff',
                                 border: '2px solid #7dd3fc',
+                                position: 'relative',
                             }}>
+                                {/* Badge ưu tiên (nếu có) */}
+                                {registerResult.priority_label && registerResult.priority_label !== 'Bình thường' && (
+                                    <div style={{
+                                        position: 'absolute',
+                                        top: -16,
+                                        left: '50%',
+                                        transform: 'translateX(-50%)',
+                                        background: '#fbbf24',
+                                        color: '#78350f',
+                                        padding: '4px 16px',
+                                        borderRadius: 20,
+                                        fontWeight: 700,
+                                        fontSize: 14,
+                                        boxShadow: '0 4px 12px rgba(251,191,36,0.3)',
+                                        border: '2px solid #fff',
+                                    }}>
+                                        Ưu tiên: {registerResult.priority_label}
+                                    </div>
+                                )}
+
                                 <Text style={{ color: '#0369a1', fontSize: 14, display: 'block', marginBottom: 6, fontWeight: 500, letterSpacing: 2 }}>
                                     SỐ THỨ TỰ CỦA BẠN
                                 </Text>

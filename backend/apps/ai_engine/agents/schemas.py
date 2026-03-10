@@ -45,6 +45,22 @@ class BaseAgentResponse(BaseModel):
 # CLINICAL AGENT RESPONSE
 # =============================================================================
 
+class ICDCode(BaseModel):
+    """Mã ICD-10 đề xuất từ AI."""
+    code: str = Field(..., description="Mã ICD-10, ví dụ: I21.9")
+    name: str = Field(..., description="Tên bệnh tiếng Việt")
+    confidence: float = Field(
+        default=0.5,
+        ge=0.0,
+        le=1.0,
+        description="Độ chính xác của mã ICD, từ 0.0 đến 1.0"
+    )
+    type: Literal["main", "sub"] = Field(
+        default="main",
+        description="Loại mã: main (chẩn đoán chính) hoặc sub (chẩn đoán phụ)"
+    )
+
+
 class ClinicalResponse(BaseAgentResponse):
     """Response schema cho Clinical Agent (Bác sĩ chẩn đoán)."""
     
@@ -63,6 +79,10 @@ class ClinicalResponse(BaseAgentResponse):
     requires_urgent_care: bool = Field(
         default=False,
         description="Có cần cấp cứu không"
+    )
+    icd_codes: Optional[List[ICDCode]] = Field(
+        default=None,
+        description="Danh sách mã ICD-10 đề xuất kèm độ chính xác"
     )
 
 
