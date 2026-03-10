@@ -19,7 +19,7 @@ class VisitViewSet(viewsets.ModelViewSet):
     serializer_class = VisitSerializer
     filter_backends = [filters.SearchFilter, DjangoFilterBackend]
     search_fields = ['visit_code', 'patient__patient_code', 'patient__first_name']
-    filterset_fields = ['status', 'priority', 'patient']
+    filterset_fields = ['priority', 'patient']
 
     def get_queryset(self):
         qs = Visit.objects.select_related(
@@ -31,6 +31,12 @@ class VisitViewSet(viewsets.ModelViewSet):
         if today_param and today_param.lower() in ('true', '1', 'yes'):
             today = timezone.now().date()
             qs = qs.filter(check_in_time__date=today)
+
+        # Filter: hỗ trợ comma-separated status (VD: WAITING,IN_PROGRESS,PENDING_RESULTS)
+        status_param = self.request.query_params.get('status')
+        if status_param:
+            statuses = [s.strip() for s in status_param.split(',') if s.strip()]
+            qs = qs.filter(status__in=statuses)
 
         # Filter: chỉ lấy visits được đưa vào hàng đợi tại station này hôm nay
         station_id = self.request.query_params.get('station_id')
@@ -423,11 +429,14 @@ YÊU CẦU:
             from apps.core_services.qms.models import StationType, QueueStatus, QueueSourceType
             from apps.core_services.qms.services import ClinicalQueueService, QueueService
             
-            # 1. Tìm QueueEntry hiện tại ở RECEPTION và hoàn thành nó
-            current_entry = visit.queue_numbers.first().entries.filter(
-                station__station_type__in=[StationType.RECEPTION, StationType.TRIAGE],
-                status__in=[QueueStatus.WAITING, QueueStatus.CALLED, QueueStatus.IN_PROGRESS]
-            ).first()
+            # 1. Tìm QueueEntry hiện tại ở RECEPTION/TRIAGE và hoàn thành nó
+            first_qn = visit.queue_numbers.first()
+            current_entry = None
+            if first_qn:
+                current_entry = first_qn.entries.filter(
+                    station__station_type__in=[StationType.RECEPTION, StationType.TRIAGE],
+                    status__in=[QueueStatus.WAITING, QueueStatus.CALLED, QueueStatus.IN_PROGRESS]
+                ).first()
             
             base_priority = 0
             source_type = QueueSourceType.WALK_IN
@@ -470,6 +479,45 @@ YÊU CẦU:
                 f"Triage transfer: visit={visit.visit_code} -> station={optimal_station.code}, "
                 f"priority={new_priority} (base: {base_priority}, bonus: {triage_bonus})"
             )
+
+            # --- Broadcast WebSocket notifications to Clinical dashboard ---
+            try:
+                from channels.layers import get_channel_layer
+                from asgiref.sync import async_to_sync
+                channel_layer = get_channel_layer()
+                if channel_layer:
+                    patient = visit.patient
+                    patient_name = getattr(patient, 'full_name', None) or str(patient)
+                    visit_payload = {
+                        'id': str(visit.id),
+                        'visit_code': visit.visit_code,
+                        'queue_number': new_entry.queue_number.number_code if hasattr(new_entry, 'queue_number') else '',
+                        'patient_name': patient_name,
+                        'chief_complaint': visit.chief_complaint or '',
+                        'priority': visit.priority,
+                        'triage_code': visit.triage_code or '',
+                        'department': department.name,
+                    }
+                    # 1. Broadcast new_patient_assigned to clinical group
+                    async_to_sync(channel_layer.group_send)(
+                        f'clinical_station_{optimal_station.id}',
+                        {
+                            'type': 'new_patient_assigned',
+                            'visit': visit_payload,
+                        },
+                    )
+                    # 2. Broadcast queue board update
+                    from apps.core_services.qms.services import ClinicalQueueService as _CQS
+                    board = _CQS.get_queue_board(optimal_station)
+                    async_to_sync(channel_layer.group_send)(
+                        f'clinical_station_{optimal_station.id}',
+                        {
+                            'type': 'queue_update',
+                            'data': board,
+                        },
+                    )
+            except Exception as ws_err:
+                logger.warning(f"Failed to broadcast clinical WS: {ws_err}")
             
         except Exception as e:
             logger.error(f"Failed to transfer patient after triage: {e}", exc_info=True)

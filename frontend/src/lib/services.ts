@@ -519,10 +519,11 @@ export const aiApi = {
     },
 
     // Chat với AI (sync mode)
-    chat: async (visitId: string, message: string) => {
+    chat: async (visitId: string, message: string, sessionId?: string) => {
         const response = await api.post('/chat/sync/', {
             visit_id: visitId,
             message,
+            session_id: sessionId || `visit-${visitId}`,
         });
         return response.data;
     },
@@ -578,11 +579,16 @@ export const lisApi = {
 
     // === Lab Results ===
     enterResults: async (orderId: string, results: Array<{
-        test_id: string;
+        detail_id: string;
         value_string: string;
         value_numeric?: number;
     }>) => {
         const response = await api.post(`/lis/orders/${orderId}/results/`, { results });
+        return response.data;
+    },
+
+    verifyOrder: async (orderId: string) => {
+        const response = await api.post(`/lis/orders/${orderId}/verify/`);
         return response.data;
     },
 };
@@ -640,6 +646,54 @@ export const risApi = {
         is_critical?: boolean;
     }) => {
         const response = await api.post(`/ris/orders/${orderId}/result/`, data);
+        return response.data;
+    },
+};
+
+/**
+ * CLS (Cận Lâm Sàng) Paraclinical API Services
+ * Quản lý chỉ định dịch vụ cận lâm sàng (xét nghiệm, CĐHA, thăm dò chức năng)
+ */
+export const clsApi = {
+    // Lấy danh mục dịch vụ CLS
+    getServices: async (params?: { category?: string; search?: string }) => {
+        const response = await api.get('/cls/services/', { params });
+        return response.data;
+    },
+
+    // Lấy danh sách chỉ định theo lượt khám
+    getOrders: async (params?: { visit?: string; status?: string }) => {
+        const response = await api.get('/cls/orders/', { params });
+        return response.data;
+    },
+
+    // Tạo nhiều chỉ định cùng lúc
+    batchOrder: async (data: {
+        visit_id: string;
+        service_ids: string[];
+    }): Promise<{ success: boolean; orders: Array<{ id: string; service_name: string; service_code: string; price: string; status: string }>; count: number; duplicates?: string[] }> => {
+        const response = await api.post('/cls/batch-order/', data);
+        return response.data;
+    },
+    // Lấy phiếu xét nghiệm cho trang LIS (Huyết học/Sinh hóa/Miễn dịch/Vi sinh)
+    getLabOrders: async (params?: { visit?: string; status?: string; page?: number }) => {
+        const response = await api.get('/cls/orders/', {
+            params: { ...params, service_group: 'xet_nghiem' },
+        });
+        return response.data;
+    },
+
+    // Lấy phiếu CĐHA/Thăm dò cho trang RIS-CLS
+    getImagingOrders: async (params?: { visit?: string; status?: string; page?: number }) => {
+        const response = await api.get('/cls/orders/', {
+            params: { ...params, service_group: 'chan_doan_hinh_anh' },
+        });
+        return response.data;
+    },
+
+    // Cập nhật trạng thái phiếu CLS (ORDERED → PROCESSING → COMPLETED)
+    updateLabOrder: async (id: string, status: string) => {
+        const response = await api.patch(`/cls/orders/${id}/`, { status });
         return response.data;
     },
 };

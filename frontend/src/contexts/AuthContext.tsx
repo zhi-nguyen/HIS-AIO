@@ -1,7 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
-import { authApi, tokenUtils } from '@/lib/api';
+import { authApi, tokenUtils, UserMe } from '@/lib/api';
 import { App } from 'antd';
 
 /**
@@ -10,22 +10,8 @@ import { App } from 'antd';
  * Backend sử dụng email làm USERNAME_FIELD
  */
 
-interface StaffProfile {
-    id: string;
-    role: string;
-    department?: string;
-}
-
-interface User {
-    user_id: string;
-    email?: string;
-    exp: number;
-    iat: number;
-    staff_profile?: StaffProfile;
-}
-
 interface AuthContextType {
-    user: User | null;
+    user: UserMe | null;
     isLoading: boolean;
     loading: boolean; // alias for isLoading
     isAuthenticated: boolean;
@@ -36,7 +22,7 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-    const [user, setUser] = useState<User | null>(null);
+    const [user, setUser] = useState<UserMe | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const { message } = App.useApp();
 
@@ -46,7 +32,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             try {
                 const userData = await authApi.getMe();
                 if (userData) {
-                    setUser(userData as User);
+                    setUser(userData);
                 }
             } catch (error) {
                 console.error('Auth init error:', error);
@@ -67,7 +53,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             setIsLoading(true);
             await authApi.login(email, password);
             const userData = await authApi.getMe();
-            setUser(userData as User);
+            setUser(userData);
             message.success('Đăng nhập thành công!');
             return true;
         } catch (error: unknown) {

@@ -14,12 +14,61 @@ from typing import AsyncGenerator, Dict, Any, Optional
 from django.http import StreamingHttpResponse, JsonResponse, HttpRequest
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
+from rest_framework_simplejwt.authentication import JWTAuthentication
+from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
 
 from apps.ai_engine.streaming.service import StreamingService
 from apps.ai_engine.streaming.events import StreamEvent, EventType
 from apps.ai_engine.agents.security import extract_user_context
 
 logger = logging.getLogger(__name__)
+
+
+@require_http_methods(["GET"])
+def me_view(request: HttpRequest) -> JsonResponse:
+    """
+    Trả về thông tin user hiện tại bao gồm staff_profile.
+    Yêu cầu JWT Bearer token trong header Authorization.
+
+    Response:
+        {
+            "user_id": "...",
+            "email": "...",
+            "staff_profile": {
+                "id": "...",
+                "role": "DOCTOR",          // StaffRole value từ backend
+                "department": "...",
+                "staff_code": "..."
+            } | null
+        }
+    """
+    auth = JWTAuthentication()
+    try:
+        validated = auth.authenticate(request)
+        if validated is None:
+            return JsonResponse({"detail": "Authentication credentials were not provided."}, status=401)
+        user, token = validated
+    except (InvalidToken, TokenError) as e:
+        return JsonResponse({"detail": str(e)}, status=401)
+
+    staff_profile = None
+    try:
+        sp = user.staff_profile
+        staff_profile = {
+            "id": str(sp.id),
+            "role": sp.role,
+            "department": sp.department or "",
+            "staff_code": sp.staff_code or "",
+        }
+    except Exception:
+        # User có thể không có staff_profile (e.g. AI_AGENT hoặc superuser)
+        pass
+
+    return JsonResponse({
+        "user_id": str(user.id),
+        "email": user.email,
+        "staff_profile": staff_profile,
+    })
 
 
 def async_view(view_func):

@@ -33,6 +33,11 @@ router.register(r'ris/procedures', ImagingProcedureViewSet)
 router.register(r'pharmacy/prescriptions', PrescriptionViewSet)
 router.register(r'pharmacy/medications', MedicationViewSet)
 
+# Paraclinical (CLS - Cận lâm sàng)
+from apps.medical_services.paraclinical.views import ServiceListViewSet, ServiceOrderViewSet
+router.register(r'cls/services', ServiceListViewSet)
+router.register(r'cls/orders', ServiceOrderViewSet)
+
 
 
 
