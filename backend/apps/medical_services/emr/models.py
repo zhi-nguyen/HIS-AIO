@@ -29,6 +29,23 @@ class ClinicalRecord(UUIDModel):
     clinical_agent_summary = models.JSONField(null=True, blank=True)
     core_agent_summary = models.JSONField(null=True, blank=True)
 
+    # --- Tóm tắt từ Summarize Agent (được tạo ở Kiosk/Lễ tân) ---
+    pre_triage_summary = models.TextField(
+        null=True, blank=True,
+        verbose_name='Tóm tắt tiền phân luồng',
+        help_text='Toàn bộ tóm tắt bệnh án từ Summarize Agent sau khi bệnh nhân đăng ký kiosk'
+    )
+    vital_sign_recommendations = models.JSONField(
+        null=True, blank=True,
+        verbose_name='Chỉ số SH được AI đề xuất thu thập',
+        help_text='Danh sách key chỉ số SH Summarize Agent khuyến nghị (VD: ["spo2", "bp_systolic"])'
+    )
+    triage_hints = models.TextField(
+        null=True, blank=True,
+        verbose_name='Lời nhắc cho Agent Phân Luồng',
+        help_text='Tóm tắt ngắn từ Summarize Agent để Agent Triage chú ý (VD: BN THA mạn - chú BP_SYS)'
+    )
+
     # Thêm field theo Phase 1 - AI Outpatient
     ai_suggestion_json = models.JSONField(verbose_name="Gợi ý thô từ AI", null=True, blank=True)
     is_finalized = models.BooleanField(default=False, verbose_name="Đã hoàn tất khám")

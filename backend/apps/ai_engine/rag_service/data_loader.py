@@ -81,10 +81,10 @@ async def load_clinical_records_to_vector_db(
             for record in batch:
                 # Create document text
                 document_text = f"""
-Lý do khám: {record.chief_complaint}
-Bệnh sử: {record.history_of_present_illness}
-Khám lâm sàng: {record.physical_exam}
-Chẩn đoán: {record.final_diagnosis}
+Lý do khám: {record.chief_complaint or ''}
+Bệnh sử: {record.history_of_present_illness or ''}
+Khám lâm sàng: {record.physical_exam or ''}
+Chẩn đoán: {record.final_diagnosis or ''}
                 """.strip()
                 
                 # Generate embedding
@@ -99,8 +99,8 @@ Chẩn đoán: {record.final_diagnosis}
                 metadata = {
                     'patient_id': str(record.visit.patient_id),
                     'visit_code': record.visit.visit_code,
-                    'chief_complaint': record.chief_complaint[:200],  # Truncate for storage
-                    'diagnosis': record.final_diagnosis[:200],
+                    'chief_complaint': record.chief_complaint[:200] if record.chief_complaint else None,  # Truncate for storage
+                    'diagnosis': record.final_diagnosis[:200] if record.final_diagnosis else None,
                     'main_icd_code': record.main_icd.code if record.main_icd else None,
                     'created_at': record.created_at.isoformat(),
                     'doctor': record.doctor.user.get_full_name() if record.doctor else None
@@ -277,10 +277,10 @@ async def update_clinical_record_in_vector_db(
     try:
         # Create document text
         document_text = f"""
-Lý do khám: {record.chief_complaint}
-Bệnh sử: {record.history_of_present_illness}
-Khám lâm sàng: {record.physical_exam}
-Chẩn đoán: {record.final_diagnosis}
+Lý do khám: {record.chief_complaint or ''}
+Bệnh sử: {record.history_of_present_illness or ''}
+Khám lâm sàng: {record.physical_exam or ''}
+Chẩn đoán: {record.final_diagnosis or ''}
         """.strip()
         
         # Generate embedding
@@ -295,8 +295,8 @@ Chẩn đoán: {record.final_diagnosis}
         metadata = {
             'patient_id': str(record.visit.patient_id),
             'visit_code': record.visit.visit_code,
-            'chief_complaint': record.chief_complaint[:200],
-            'diagnosis': record.final_diagnosis[:200],
+            'chief_complaint': record.chief_complaint[:200] if record.chief_complaint else None,
+            'diagnosis': record.final_diagnosis[:200] if record.final_diagnosis else None,
             'main_icd_code': record.main_icd.code if record.main_icd else None,
             'created_at': record.created_at.isoformat(),
             'doctor': record.doctor.user.get_full_name() if record.doctor else None

@@ -237,17 +237,25 @@ class Invoice(UUIDModel):
         ]
 
     def __str__(self):
-        return f"[{self.invoice_number}] {self.patient.fullname}"
+        return f"[{self.invoice_number}] {self.patient.full_name}"
     
     def calculate_totals(self):
         """Tính toán lại tổng tiền từ các line items"""
-        total = self.items.aggregate(total=Sum('total_price'))['total'] or 0
+        totals = self.items.aggregate(
+            total=Sum('total_price'),
+            insurance=Sum('insurance_covered')
+        )
+        total = totals['total'] or 0
+        insurance = totals['insurance'] or 0
+        
         self.total_amount = total
+        self.insurance_coverage = insurance
         self.patient_payable = total - self.discount_amount - self.insurance_coverage
+        
         if self.patient_payable < 0:
             self.patient_payable = 0
-        self.save(update_fields=['total_amount', 'patient_payable'])
-
+            
+        self.save(update_fields=['total_amount', 'insurance_coverage', 'patient_payable'])
 
 class InvoiceLineItem(UUIDModel):
     """
