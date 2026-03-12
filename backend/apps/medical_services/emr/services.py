@@ -44,7 +44,17 @@ class ClinicalService:
         record.is_finalized = True
         record.save(update_fields=['is_finalized'])
         
-        # 2. Update visit status
+        # 2. Map AI summary fields from Visit to ClinicalRecord
+        if hasattr(visit, 'pre_triage_summary') and visit.pre_triage_summary:
+            record.pre_triage_summary = visit.pre_triage_summary
+        if hasattr(visit, 'vital_sign_recommendations') and visit.vital_sign_recommendations:
+            record.vital_sign_recommendations = visit.vital_sign_recommendations
+        if hasattr(visit, 'triage_hints') and visit.triage_hints:
+            record.triage_hints = visit.triage_hints
+            
+        record.save(update_fields=['is_finalized', 'pre_triage_summary', 'vital_sign_recommendations', 'triage_hints'])
+        
+        # 3. Update visit status
         visit.status = Visit.Status.COMPLETED
         visit.check_out_time = timezone.now()
         visit.save(update_fields=['status', 'check_out_time'])

@@ -1,5 +1,12 @@
-from django.db import models
+from django.db import models, transaction
+from django.db.models.signals import post_save
+from django.dispatch import receiver
+from channels.layers import get_channel_layer
+from asgiref.sync import async_to_sync
 from apps.core_services.core.models import UUIDModel
+
+import logging
+logger = logging.getLogger(__name__)
 
 
 class Modality(UUIDModel):
@@ -144,6 +151,15 @@ class ImagingOrder(UUIDModel):
         help_text="Mô tả triệu chứng hoặc chẩn đoán để bác sĩ CĐHA tham khảo"
     )
     
+    accession_number = models.CharField(
+        max_length=64,
+        unique=True,
+        null=True,
+        blank=True,
+        verbose_name="Mã chỉ định CLS",
+        help_text="Accession Number dùng để match với DICOM study từ Orthanc"
+    )
+    
     order_time = models.DateTimeField(auto_now_add=True, verbose_name="Thời gian chỉ định")
     scheduled_time = models.DateTimeField(
         null=True, 
@@ -231,6 +247,15 @@ class ImagingExecution(UUIDModel):
         blank=True,
         verbose_name="DICOM Study UID",
         help_text="UID để link với PACS server"
+    )
+    
+    # Orthanc Instance ID for preview
+    orthanc_instance_id = models.CharField(
+        max_length=100,
+        null=True,
+        blank=True,
+        verbose_name="Orthanc Instance ID",
+        help_text="ID của instance đầu tiên/chính để lấy preview"
     )
     
     # Thumbnail/Preview URL
@@ -328,3 +353,74 @@ class ImagingResult(UUIDModel):
 
     def __str__(self):
         return f"Result for {self.order}"
+
+
+# ==========================================================================
+# WebSocket Signal — Thông báo realtime khi ImagingOrder thay đổi
+# ==========================================================================
+@receiver(post_save, sender=ImagingOrder)
+def imaging_order_post_save(sender, instance, created, **kwargs):
+    """Bắn WebSocket event khi ImagingOrder được CẬP NHẬT status. 
+    
+    QUAN TRỌNG: Không bắn khi created=True (tạo mới) vì BillingService đã xử lý
+    việc thông báo đến RIS sau khi thanh toán thành công.
+    """
+    logger.info(f"ImagingOrder post_save triggered for {instance.id}, created={created}")
+
+    # Chỉ bắn WS khi ORDER được cập nhật (không phải khi vừa tạo mới).
+    # Khi vừa tạo mới (created=True), BillingService sẽ tự gửi thông báo đến ris_updates
+    # thông qua transaction.on_commit sau khi thanh toán hoàn tất.
+    if created:
+        logger.info(f"ImagingOrder {instance.id} newly created — WS notification handled by BillingService.")
+        return
+
+    def send_ws_update():
+        channel_layer = get_channel_layer()
+        if channel_layer is not None:
+            async_to_sync(channel_layer.group_send)(
+                "ris_updates",
+                {
+                    "type": "ris.order_updated",
+                    "action": "updated",
+                    "order_id": str(instance.id),
+                    "status": instance.status,
+                }
+            )
+
+            # Gửi đến Clinical / EMR để tự động refresh kết quả khi có báo cáo
+            if instance.status in [ImagingOrder.Status.REPORTED, ImagingOrder.Status.VERIFIED]:
+                visit_id_str = str(instance.visit_id)
+
+                # Đính kèm mô tả và kết luận hình ảnh để AI re-analyse
+                findings = ''
+                conclusion = ''
+                procedure_name = ''
+                is_abnormal = False
+                try:
+                    result = getattr(instance, 'result', None)
+                    if result:
+                        findings = result.findings or ''
+                        conclusion = result.conclusion or ''
+                        is_abnormal = result.is_abnormal or False
+                    procedure_name = getattr(instance.procedure, 'name', '') if instance.procedure else ''
+                except Exception:
+                    pass
+
+                async_to_sync(channel_layer.group_send)(
+                    f"clinical_visit_{visit_id_str}",
+                    {
+                        "type": "clinical.cls_updated",
+                        "service_type": "ris",
+                        "order_id": str(instance.id),
+                        "status": instance.status,
+                        "procedure_name": procedure_name,
+                        "findings": findings,
+                        "conclusion": conclusion,
+                        "is_abnormal": is_abnormal,
+                    }
+                )
+                logger.info(f"Pushed clinical.cls_updated (ris) for visit {visit_id_str}, status={instance.status}")
+        else:
+            logger.error("CHANNEL_LAYER is NONE, no RIS ws message sent.")
+
+    transaction.on_commit(send_ws_update)

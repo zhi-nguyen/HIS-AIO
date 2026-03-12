@@ -8,6 +8,7 @@ class Visit(UUIDModel):
         WAITING = 'WAITING', 'Đang chờ bác sĩ'
         IN_PROGRESS = 'IN_PROGRESS', 'Đang khám'
         PENDING_RESULTS = 'PENDING_RESULTS', 'Chờ kết quả CLS'
+        PENDING_PAYMENT = 'PENDING_PAYMENT', 'Chờ thanh toán'
         COMPLETED = 'COMPLETED', 'Đã hoàn thành'
         CANCELLED = 'CANCELLED', 'Đã hủy'
 
@@ -56,21 +57,10 @@ class Visit(UUIDModel):
     triage_matched_departments = models.JSONField(null=True, blank=True, verbose_name='Khoa phù hợp (AI)')
 
     # --- Summarize Agent Output (Pre-triage) ---
-    pre_triage_summary = models.TextField(
-        null=True, blank=True,
-        verbose_name='Tóm tắt tiền phân luồng',
-        help_text='Toàn bộ tóm tắt bệnh án từ Summarize Agent sau khi bệnh nhân đăng ký kiosk'
-    )
-    vital_sign_recommendations = models.JSONField(
-        null=True, blank=True,
-        verbose_name='Chỉ số SH được AI đề xuất thu thập',
-        help_text='Danh sách key chỉ số SH Summarize Agent khuyến nghị (VD: ["spo2", "bp_systolic"])'
-    )
-    triage_hints = models.TextField(
-        null=True, blank=True,
-        verbose_name='Lời nhắc cho Agent Phân Luồng',
-        help_text='Tóm tắt ngắn từ Summarize Agent để Agent Triage chú ý (VD: BN THA mạn - chú ý BP_SYS)'
-    )
+    pre_triage_summary = models.TextField(null=True, blank=True, verbose_name='Tóm tắt trước khám (AI)')
+    vital_sign_recommendations = models.JSONField(null=True, blank=True, verbose_name='Chỉ định sinh hiệu cần đo (AI)')
+    triage_hints = models.TextField(null=True, blank=True, verbose_name='Gợi ý phân luồng (AI)')
+
     recommended_department = models.ForeignKey(
         'departments.Department',
         on_delete=models.SET_NULL,
@@ -97,6 +87,25 @@ class Visit(UUIDModel):
         default=False,
         verbose_name='Chờ gộp hồ sơ',
         help_text='BN cấp cứu chưa xác định danh tính, cần gộp sau'
+    )
+
+    # --- Thông tin BHYT tại thời điểm đăng ký ---
+    # Lưu lại để billing không cần tra cứu lại cổng bảo hiểm
+    insurance_number = models.CharField(
+        max_length=20,
+        null=True, blank=True,
+        verbose_name='Mã thẻ BHYT',
+        help_text='Mã thẻ BHYT tại thời điểm đăng ký lượt khám'
+    )
+    insurance_benefit_rate = models.IntegerField(
+        null=True, blank=True,
+        verbose_name='Mức hưởng BHYT (%)',
+        help_text='Phần trăm BHYT chi trả (VD: 80 → BHYT trả 80%, BN trả 20%). null = không có BHYT'
+    )
+    insurance_card_expire = models.DateField(
+        null=True, blank=True,
+        verbose_name='HSD thẻ BHYT',
+        help_text='Ngày hết hạn thẻ BHYT'
     )
 
     queue_number = models.IntegerField()

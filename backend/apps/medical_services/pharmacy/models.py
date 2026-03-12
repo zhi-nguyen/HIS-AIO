@@ -250,6 +250,15 @@ class Prescription(UUIDModel):
     def __str__(self):
         return f"Prescription for {self.visit.visit_code}"
 
+    def save(self, *args, **kwargs):
+        if self._state.adding and not self.prescription_code:
+            import uuid
+            self.prescription_code = f"RX-{uuid.uuid4().hex[:6].upper()}"
+            # Ensure it's unique
+            while Prescription.objects.filter(prescription_code=self.prescription_code).exists():
+                self.prescription_code = f"RX-{uuid.uuid4().hex[:6].upper()}"
+        super().save(*args, **kwargs)
+
 
 class PrescriptionDetail(UUIDModel):
     """Chi tiết đơn thuốc"""

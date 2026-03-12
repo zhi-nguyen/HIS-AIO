@@ -184,7 +184,113 @@ export const departmentApi = {
     },
 };
 
+/**
+ * Pharmacy API Services
+ * Quản lý đơn thuốc và danh mục thuốc
+ */
+export interface Medication {
+    id: string;
+    code: string;
+    name: string;
+    active_ingredient: string | null;
+    strength: string | null;
+    dosage_form: string | null;
+    usage_route: string | null;
+    unit: string;
+    selling_price: number;
+    inventory_count: number;
+    category_name: string | null;
+}
 
+export interface PrescriptionDetail {
+    id: string;
+    medication: string;
+    medication_name: string;
+    medication_strength: string | null;
+    medication_dosage_form: string | null;
+    medication_unit: string;
+    quantity: number;
+    usage_instruction: string;
+    duration_days: number | null;
+    unit_price: number;
+    dispensed_quantity: number;
+}
+
+export interface PrescriptionDetailInput {
+    medication: string;
+    quantity: number;
+    usage_instruction: string;
+    duration_days?: number | null;
+}
+
+export interface Prescription {
+    id: string;
+    visit: string;
+    doctor: string;
+    prescription_code: string;
+    prescription_date: string;
+    diagnosis: string | null;
+    note: string | null;
+    status: 'PENDING' | 'PARTIAL' | 'DISPENSED' | 'CANCELLED';
+    total_price: number;
+    patient_name: string | null;
+    details: PrescriptionDetail[];
+}
+
+export const pharmacyApi = {
+    searchMedications: async (query: string): Promise<Medication[]> => {
+        const response = await api.get('/pharmacy/medications/', { params: { search: query } });
+        return response.data.results || response.data || [];
+    },
+
+    getPrescriptionByVisit: async (visitId: string): Promise<Prescription | null> => {
+        const response = await api.get('/pharmacy/prescriptions/', { params: { visit: visitId } });
+        const results = response.data.results || response.data;
+        return Array.isArray(results) && results.length > 0 ? results[0] : null;
+    },
+
+    createPrescription: async (data: {
+        visit: string;
+        doctor: string;
+        diagnosis?: string;
+        note?: string;
+        details_input: PrescriptionDetailInput[];
+    }): Promise<Prescription> => {
+        const response = await api.post('/pharmacy/prescriptions/', data);
+        return response.data;
+    },
+
+    updatePrescription: async (id: string, data: {
+        diagnosis?: string;
+        note?: string;
+        details_input?: PrescriptionDetailInput[];
+    }): Promise<Prescription> => {
+        const response = await api.patch(`/pharmacy/prescriptions/${id}/`, data);
+        return response.data;
+    },
+
+    getPrescriptions: async (params?: {
+        status?: string;
+    }): Promise<PaginatedResponse<Prescription>> => {
+        const response = await api.get('/pharmacy/prescriptions/', { params });
+        return response.data;
+    },
+
+    getPrescriptionById: async (id: string): Promise<Prescription> => {
+        const response = await api.get(`/pharmacy/prescriptions/${id}/`);
+        return response.data;
+    },
+
+    dispense: async (id: string, details?: any) => {
+        const response = await api.post(`/pharmacy/prescriptions/${id}/dispense/`, details || {});
+        return response.data;
+    },
+
+    refuse: async (id: string, reason?: string) => {
+        const response = await api.post(`/pharmacy/prescriptions/${id}/refuse/`, { reason });
+        return response.data;
+    },
+};
 /**
  * Queue Management API Services
  * Hệ thống hàng chờ lâm sàng 3 luồng (Emergency / Booking / Walk-in)
@@ -463,6 +569,12 @@ export const emrApi = {
         const response = await api.get(`/emr/${visitId}/ai-suggestions/`);
         return response.data;
     },
+
+    // Khóa hồ sơ & chuyển trạng thái đóng phí
+    finalize: async (id: string) => {
+        const response = await api.post(`/emr/records/${id}/finalize/`);
+        return response.data;
+    },
 };
 
 /**
@@ -648,6 +760,26 @@ export const risApi = {
         const response = await api.post(`/ris/orders/${orderId}/result/`, data);
         return response.data;
     },
+
+    // === Workflow Actions ===
+    startExecution: async (orderId: string) => {
+        const response = await api.post(`/ris/orders/${orderId}/start_execution/`);
+        return response.data;
+    },
+
+    saveResult: async (orderId: string, data: {
+        findings: string;
+        conclusion: string;
+        recommendation?: string;
+    }) => {
+        const response = await api.post(`/ris/orders/${orderId}/save_result/`, data);
+        return response.data;
+    },
+
+    verifyResult: async (orderId: string) => {
+        const response = await api.post(`/ris/orders/${orderId}/verify/`);
+        return response.data;
+    },
 };
 
 /**
@@ -698,61 +830,7 @@ export const clsApi = {
     },
 };
 
-/**
- * Pharmacy API Services
- * Quản lý đơn thuốc và phát thuốc
- */
-export const pharmacyApi = {
-    // === Prescriptions ===
-    getPrescriptions: async (params?: {
-        page?: number;
-        status?: string;
-        visit?: string;
-    }) => {
-        const response = await api.get('/pharmacy/prescriptions/', { params });
-        return response.data;
-    },
 
-    getPrescriptionById: async (id: string) => {
-        const response = await api.get(`/pharmacy/prescriptions/${id}/`);
-        return response.data;
-    },
-
-    createPrescription: async (data: {
-        visit: string;
-        diagnosis?: string;
-        note?: string;
-        details: Array<{
-            medication: string;
-            quantity: number;
-            usage_instruction: string;
-            duration_days?: number;
-        }>;
-    }) => {
-        const response = await api.post('/pharmacy/prescriptions/', data);
-        return response.data;
-    },
-
-    updateStatus: async (id: string, status: string) => {
-        const response = await api.patch(`/pharmacy/prescriptions/${id}/`, { status });
-        return response.data;
-    },
-
-    // === Medications (Catalog) ===
-    getMedications: async (params?: { category?: string; search?: string }) => {
-        const response = await api.get('/pharmacy/medications/', { params });
-        return response.data;
-    },
-
-    // === Dispense ===
-    dispense: async (prescriptionId: string, details: Array<{
-        detail_id: string;
-        quantity: number;
-    }>) => {
-        const response = await api.post(`/pharmacy/prescriptions/${prescriptionId}/dispense/`, { details });
-        return response.data;
-    },
-};
 
 /**
  * Billing API Services
@@ -781,13 +859,13 @@ export const billingApi = {
     },
 
     // === Payments ===
-    createPayment: async (data: {
-        invoice: string;
+    createPayment: async (invoiceId: string, data: {
         amount: number;
         payment_method: string;
+        insurance_coverage?: number;  // phần BHYT chi trả — backend dùng để cập nhật patient_payable
         note?: string;
     }) => {
-        const response = await api.post('/billing/payments/', data);
+        const response = await api.post(`/billing/invoices/${invoiceId}/pay/`, data);
         return response.data;
     },
 

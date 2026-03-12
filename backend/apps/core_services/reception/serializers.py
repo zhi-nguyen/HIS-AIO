@@ -11,6 +11,11 @@ class VisitSerializer(serializers.ModelSerializer):
     recommended_department_detail = DepartmentSerializer(source='recommended_department', read_only=True)
     confirmed_department_detail = DepartmentSerializer(source='confirmed_department', read_only=True)
 
+    # Pre-triage AI fields
+    pre_triage_summary = serializers.CharField(read_only=True)
+    vital_sign_recommendations = serializers.JSONField(read_only=True)
+    triage_hints = serializers.CharField(read_only=True)
+
     class Meta:
         model = Visit
         fields = '__all__'
@@ -19,7 +24,5 @@ class VisitSerializer(serializers.ModelSerializer):
             'assigned_staff', 'queue_number',
             'triage_code', 'triage_ai_response', 'triage_confidence',
             'recommended_department', 'confirmed_department', 'triage_confirmed_at',
-            # Pre-triage AI fields (set by Summarize Agent via kiosk pipeline)
-            'pre_triage_summary', 'vital_sign_recommendations', 'triage_hints',
         )
 

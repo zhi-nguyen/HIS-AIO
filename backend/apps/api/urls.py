@@ -19,6 +19,8 @@ from apps.core_services.qms import views as qms_views
 from apps.core_services.kiosk import views as kiosk_views
 from apps.medical_services.pharmacy.views import CDSSCheckView
 from apps.medical_services.paraclinical.views import batch_create_orders
+from apps.medical_services.ris.views import orthanc_webhook as ris_orthanc_webhook
+from apps.core_services.core.views import icd10_search
 from .routers import router
 
 app_name = 'api'
@@ -99,6 +101,8 @@ urlpatterns = [
     # UTILITY ENDPOINTS
     # ==========================================================================
     path('health/', views.health_check, name='health_check'),
+    path('core/icd10/search/', icd10_search, name='icd10_search'),
+    path('core/icd10/search', icd10_search, name='icd10_search_noslash'),
     
     # ==========================================================================
     # EMR DATA ENDPOINTS
@@ -114,5 +118,10 @@ urlpatterns = [
     # CLS (Paraclinical) BATCH ORDER
     # ==========================================================================
     path('cls/batch-order/', batch_create_orders, name='cls_batch_order'),
+
+    # ==========================================================================
+    # RIS WEBHOOK — Nhận tín hiệu từ Orthanc PACS khi có ảnh DICOM mới
+    # ==========================================================================
+    path('ris/orthanc-webhook/', ris_orthanc_webhook, name='ris_orthanc_webhook'),
 ]
 

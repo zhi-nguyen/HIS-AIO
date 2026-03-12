@@ -49,80 +49,28 @@ class OrderingService:
                 )
                 created_orders.append(order)
                 
-                # --- SYNCHRONIZE WITH LIS MODULE --- 
-                # If the service is a Lab Test, create a corresponding LabOrder in the LIS module for the technicians.
-                # (In this prototype, we map by category. In production, there would be a mapping table.)
-                lis_categories = ['Huyết học', 'Sinh hóa', 'Miễn dịch', 'Vi sinh', 'Miễn dịch - Huyết thanh', 'XN', 'LAB']
-                if service.category in lis_categories:
-                    from apps.medical_services.lis.models import LabOrder, LabTest, LabOrderDetail
-                    from apps.core_services.authentication.models import Staff
+                
+                # We do not create LIS/RIS orders here anymore. They are on hold until payment.
+                # Just notify Billing via WebSocket that new orders need payment.
+                def send_billing_ws_update():
+                    from channels.layers import get_channel_layer
+                    from asgiref.sync import async_to_sync
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.info(f"Paraclinical service pushing billing.invoice_updated for Invoice {invoice.id}")
                     
-                    doctor = Staff.objects.filter(id=requester_id).first() if requester_id else None
-                    
-                    # Find an active LabOrder for this visit, or create a new one
-                    lab_order = LabOrder.objects.filter(
-                        visit=visit
-                    ).exclude(
-                        status__in=[LabOrder.Status.COMPLETED, LabOrder.Status.VERIFIED, LabOrder.Status.CANCELLED]
-                    ).order_by('-created_at').first()
-                    
-                    is_new_lab_order = False
-                    if not lab_order:
-                        lab_order = LabOrder.objects.create(
-                            visit=visit,
-                            patient=visit.patient,
-                            doctor=doctor,
-                            status=LabOrder.Status.PENDING,
+                    channel_layer = get_channel_layer()
+                    if channel_layer is not None:
+                        async_to_sync(channel_layer.group_send)(
+                            "billing_updates",
+                            {
+                                "type": "billing.invoice_updated",
+                                "action": "updated", 
+                                "invoice_id": str(invoice.id),
+                            }
                         )
-                        is_new_lab_order = True
-                    
-                    # Map the requested service category to LIS LabTests
-                    if service.category in ['XN', 'LAB']:
-                        svc_name_lower = service.name.lower()
-                        if 'máu' in svc_name_lower or 'cbc' in svc_name_lower or 'huyết' in svc_name_lower:
-                            tests = LabTest.objects.filter(category__name__icontains='Huyết học')
-                        elif 'sinh hóa' in svc_name_lower or 'đường' in svc_name_lower or 'hba1c' in svc_name_lower or 'tiểu' in svc_name_lower:
-                            tests = LabTest.objects.filter(category__name__icontains='Sinh hóa')
-                        else:
-                            tests = LabTest.objects.all()[:3]
-                    else:
-                        tests = LabTest.objects.filter(category__name__icontains=service.category)
-                        
-                    tests_added = False
-                    for test in tests:
-                        LabOrderDetail.objects.create(
-                            order=lab_order,
-                            test=test,
-                            price_at_time=test.price,
-                            service_name=service.name
-                        )
-                        tests_added = True
-                            
-                    # If this is an existing LabOrder but we added new tests, we must notify LIS
-                    # Ensure we notify LIS that new tests are added to the worklist
-                    if tests_added and not lis_notified_for_update:
-                        lis_notified_for_update = True
-                        def send_ws_update():
-                            from channels.layers import get_channel_layer
-                            from asgiref.sync import async_to_sync
-                            import logging
-                            logger = logging.getLogger(__name__)
-                            logger.info(f"Paraclinical service pushing lis.order_updated for {lab_order.id}")
-                            
-                            channel_layer = get_channel_layer()
-                            if channel_layer is not None:
-                                async_to_sync(channel_layer.group_send)(
-                                    "lis_updates",
-                                    {
-                                        "type": "lis.order_updated",
-                                        "action": "created" if is_new_lab_order else "updated", 
-                                        "order_id": str(lab_order.id),
-                                        "status": lab_order.status,
-                                    }
-                                )
-                        transaction.on_commit(send_ws_update)
-                # -----------------------------------
-
+                transaction.on_commit(send_billing_ws_update)
+                
             # Update visit status if not already consistent
             if visit.status != Visit.Status.PENDING_RESULTS:
                 visit.status = Visit.Status.PENDING_RESULTS

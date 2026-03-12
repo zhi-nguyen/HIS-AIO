@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
     Card, Form, Input, Button, Space, Tag, Typography, Divider, Alert,
-    Spin, InputNumber, Row, Col, Tabs, App, Progress, Drawer, Tooltip, Descriptions, Badge
+    Spin, InputNumber, Row, Col, Tabs, App, Progress, Drawer, Tooltip, Descriptions, Badge, Modal
 } from 'antd';
 import {
     HeartOutlined, FileTextOutlined, MedicineBoxOutlined, InfoCircleOutlined,
@@ -11,12 +11,16 @@ import {
     RobotOutlined, SaveOutlined, CheckCircleOutlined, ArrowLeftOutlined,
     FundViewOutlined, BarcodeOutlined, EyeOutlined, PrinterOutlined, FileImageOutlined,
 } from '@ant-design/icons';
-import { visitApi, emrApi, aiApi, patientApi, lisApi, risApi } from '@/lib/services';
+import { visitApi, emrApi, patientApi, lisApi, risApi } from '@/lib/services';
 import type { Visit, Patient } from '@/types';
 import { useRouter, useParams } from 'next/navigation';
+import { useAuth } from '@/contexts/AuthContext';
+
 import dayjs from 'dayjs';
-import ReactMarkdown from 'react-markdown';
+
 import CLSOrderTab from '@/components/clinical/CLSOrderTab';
+import DiagnosisAndPrescriptionTab from '@/components/clinical/DiagnosisAndPrescriptionTab';
+import AIChat from '@/components/clinical/AIChat';
 
 const { Title, Text } = Typography;
 const { TextArea } = Input;
@@ -34,6 +38,7 @@ interface VitalSigns {
 
 interface ClinicalRecord {
     id: string;
+    doctor?: string;       // staff ID of the assigned doctor
     chief_complaint: string;
     history_of_present_illness?: string;
     physical_exam?: string;
@@ -79,17 +84,46 @@ interface ImagingResult {
     conclusion: string;
     is_abnormal: boolean;
     image_url?: string;
+    dicom_study_uid?: string;
+    orthanc_instance_id?: string;
     status: string;
+    // Approval / verification fields
+    patient_name?: string;
+    patient_code?: string;
+    radiologist_name?: string;
+    verified_by_name?: string;
+    verified_time?: string;
+    modality_name?: string;
+    clinical_indication?: string;
+    body_part?: string;
 }
 
-function KetQuaTab({ visitId, onGoToDiagnosis }: { visitId: string; onGoToDiagnosis: () => void }) {
+function KetQuaTab({
+    visitId,
+    onGoToDiagnosis,
+    onNewResult,
+}: {
+    visitId: string;
+    onGoToDiagnosis: () => void;
+    /** Callback khi có kết quả mới từ LIS/RIS — gửi prompt tới AI agent */
+    onNewResult?: (prompt: string) => void;
+}) {
     const [labRows, setLabRows] = React.useState<LabResultRow[]>([]);
     const [imaging, setImaging] = React.useState<ImagingResult[]>([]);
     const [loadingLis, setLoadingLis] = React.useState(true);
     const [loadingRis, setLoadingRis] = React.useState(true);
     const [aiSummary, setAiSummary] = React.useState<string>('');
+    const [viewerStudyUid, setViewerStudyUid] = React.useState<string | null>(null);
 
-    useEffect(() => {
+    // Giữ ref cho callback để không cần thêm vào deps của WS effect
+    const onNewResultRef = React.useRef(onNewResult);
+    React.useEffect(() => { onNewResultRef.current = onNewResult; }, [onNewResult]);
+
+    // Track order_id đã trigger AI để tránh gửi lặp (REPORTED + VERIFIED = 2 events)
+    const lastTriggeredRisOrderRef = React.useRef<string | null>(null);
+    const [detailModalImg, setDetailModalImg] = React.useState<ImagingResult | null>(null);
+
+    const fetchLis = useCallback(() => {
         // Fetch LIS orders for this visit
         lisApi.getOrders({ visit: visitId }).then((res) => {
             const orders = res.results || res || [];
@@ -124,29 +158,155 @@ function KetQuaTab({ visitId, onGoToDiagnosis }: { visitId: string; onGoToDiagno
                 setAiSummary(`Bệnh nhân có ${parts.join(', ')}. Cần xem xét chẩn đoán và điều chỉnh phác đồ phù hợp.`);
             }
         }).catch(() => { }).finally(() => setLoadingLis(false));
+    }, [visitId]);
 
+    useEffect(() => {
+        fetchLis();
+    }, [fetchLis]);
+
+    const fetchRis = useCallback(() => {
         // Fetch RIS orders for this visit
         risApi.getOrders({ visit: visitId }).then((res) => {
             const orders = res.results || res || [];
             const imgs: ImagingResult[] = orders
-                .filter((o: Record<string, unknown>) => o.result || o.findings)
+                .filter((o: Record<string, unknown>) => o.status === 'VERIFIED')
                 .map((o: Record<string, unknown>) => {
                     const result = (o.result || {}) as Record<string, unknown>;
+                    const execution = (o.execution || {}) as Record<string, unknown>;
                     return {
                         id: String(o.id),
                         procedure_name: String((o.procedure_detail as Record<string, unknown>)?.name || o.procedure_name || 'Chẩn đoán hình ảnh'),
                         order_time: String(o.order_time || ''),
-                        doctor_name: String((o.doctor_detail as Record<string, unknown>)?.full_name || ''),
+                        doctor_name: String((o.doctor_detail as Record<string, unknown>)?.full_name || o.doctor_name || ''),
                         findings: String(result.findings || ''),
                         conclusion: String(result.conclusion || ''),
                         is_abnormal: Boolean(result.is_abnormal),
                         image_url: result.image_url as string | undefined,
+                        dicom_study_uid: execution.dicom_study_uid as string | undefined,
+                        orthanc_instance_id: execution.orthanc_instance_id as string | undefined,
                         status: String(o.status || ''),
+                        // Approval fields
+                        patient_name: String(o.patient_name || ''),
+                        patient_code: String(o.patient_code || ''),
+                        radiologist_name: String(result.radiologist_name || ''),
+                        verified_by_name: String(result.verified_by_name || ''),
+                        verified_time: String(result.verified_time || ''),
+                        modality_name: String(o.modality_name || ''),
+                        clinical_indication: String(o.clinical_indication || ''),
+                        body_part: String((o.procedure_detail as Record<string, unknown>)?.body_part || ''),
                     };
                 });
             setImaging(imgs);
         }).catch(() => { }).finally(() => setLoadingRis(false));
     }, [visitId]);
+
+    useEffect(() => {
+        fetchRis();
+    }, [fetchRis]);
+
+    // WebSocket for realtime updates
+    useEffect(() => {
+        if (!visitId) return;
+        let ws: WebSocket;
+        let reconnectTimeout: NodeJS.Timeout;
+        let isMounted = true;
+
+        const connectWs = () => {
+            if (!isMounted) return;
+            const host = window.location.hostname;
+            ws = new WebSocket(`ws://${host}:8000/ws/clinical/${visitId}/updates/`);
+
+            ws.onopen = () => console.log('WebSocket Clinical connected for visit', visitId);
+
+            ws.onmessage = (event) => {
+                if (!isMounted) return;
+                try {
+                    const data = JSON.parse(event.data) as Record<string, unknown>;
+                    if (data.type === 'cls_result_updated' || data.type === 'clinical.cls_updated') {
+                        if (data.service_type === 'ris') {
+                            // Refresh imaging table
+                            fetchRis();
+
+                            // Trigger AI re-analysis with RIS findings/conclusion
+                            const procedureName = String(data.procedure_name || 'Chẩn đoán hình ảnh');
+                            const findings = String(data.findings || '');
+                            const conclusion = String(data.conclusion || '');
+                            const isAbnormal = Boolean(data.is_abnormal);
+
+                            if (onNewResultRef.current && (findings || conclusion)) {
+                                // Chỉ trigger AI một lần cho mỗi order (tránh REPORTED + VERIFIED gửi 2 lần)
+                                const orderId = String(data.order_id || '');
+                                if (orderId && orderId === lastTriggeredRisOrderRef.current) return;
+                                lastTriggeredRisOrderRef.current = orderId;
+
+                                const aiPrompt = [
+                                    `[KẾT QUẢ CĐHA MỚI - ${procedureName}]`,
+                                    findings ? `Mô tả: ${findings}` : '',
+                                    conclusion ? `Kết luận: ${conclusion}` : '',
+                                    '',
+                                    'Dựa trên kết quả CĐHA vừa nhận, hãy:',
+                                    '1. Cập nhật các chẩn đoán phân biệt.',
+                                    '2. Nhận xét ý nghĩa của hình ảnh trong bệnh cảnh hiện tại.',
+                                    '3. Đề xuất hướng xử trí tiếp theo.',
+                                ].filter(Boolean).join('\n');
+                                onNewResultRef.current(aiPrompt);
+                            }
+
+                        } else if (data.service_type === 'lis') {
+                            // Refresh LIS table
+                            fetchLis();
+
+                            // Trigger AI re-analysis with LIS abnormal summary
+                            const abnormalItems = (data.abnormal_items as Array<Record<string, unknown>>) || [];
+
+                            if (onNewResultRef.current) {
+                                let aiPrompt: string;
+                                if (abnormalItems.length > 0) {
+                                    const lines = abnormalItems.map(item => {
+                                        const flag = String(item.flag || '');
+                                        const dir = (flag === 'H' || flag === 'HH') ? '↑ cao' : '↓ thấp';
+                                        const critical = item.is_critical ? ' ⚠️ CẤP CỨU' : '';
+                                        return `  - ${item.name}: ${item.value} ${item.unit} (${dir}${critical})`;
+                                    }).join('\n');
+                                    aiPrompt = [
+                                        '[KẾT QUẢ XÉT NGHIỆM MỚI]',
+                                        `Có ${abnormalItems.length} chỉ số bất thường:`,
+                                        lines,
+                                        '',
+                                        'Dựa trên kết quả xét nghiệm vừa nhận, hãy:',
+                                        '1. Giải thích ý nghĩa lâm sàng của các giá trị bất thường.',
+                                        '2. Cập nhật các chẩn đoán phân biệt có trọng số theo kết quả này.',
+                                        '3. Gợi ý phác đồ điều trị phù hợp.',
+                                    ].filter(Boolean).join('\n');
+                                } else {
+                                    aiPrompt = [
+                                        '[KẾT QUẢ XÉT NGHIỆM MỚI]',
+                                        'Tất cả các chỉ số trong giới hạn bình thường.',
+                                        '',
+                                        'Dựa trên kết quả xét nghiệm bình thường, có cần điều chỉnh hướng chẩn đoán không?',
+                                    ].join('\n');
+                                }
+                                onNewResultRef.current(aiPrompt);
+                            }
+                        }
+                    }
+                } catch { /* parse error */ }
+            };
+
+            ws.onclose = () => {
+                if (!isMounted) return;
+                reconnectTimeout = setTimeout(connectWs, 3000);
+            };
+            ws.onerror = () => console.error('WebSocket Clinical error');
+        };
+
+        connectWs();
+        return () => {
+            isMounted = false;
+            clearTimeout(reconnectTimeout);
+            ws?.close();
+        };
+    }, [visitId, fetchRis, fetchLis]);
 
     const flagColor = (row: LabResultRow) => {
         if (row.is_critical) return '#cf1322';
@@ -160,198 +320,297 @@ function KetQuaTab({ visitId, onGoToDiagnosis }: { visitId: string; onGoToDiagno
         return <span style={{ fontSize: 12 }}>{isHigh ? '↑' : '↓'}</span>;
     };
 
-    const hasSummary = aiSummary.length > 0;
-
     return (
         <div className="h-full overflow-y-auto p-4 pt-3 space-y-3" style={{ scrollbarWidth: 'thin' }}>
-            {/* AI Summary Banner */}
-            {hasSummary && (
-                <div style={{
-                    background: 'linear-gradient(135deg, #f0f5ff 0%, #e8f4ff 100%)',
-                    border: '1px solid #91caff',
-                    borderRadius: 12,
-                    padding: '12px 16px',
-                    display: 'flex',
-                    alignItems: 'flex-start',
-                    gap: 12,
-                }}>
-                    <div style={{
-                        width: 40, height: 40, borderRadius: 10, background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-                    }}>
-                        <RobotOutlined style={{ color: '#fff', fontSize: 18 }} />
-                    </div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontWeight: 700, fontSize: 13, color: '#3730a3', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
-                            ✨ AI Đọc kết quả tự động
-                        </div>
-                        <div style={{ fontSize: 13, color: '#374151', lineHeight: 1.6 }}>
-                            {aiSummary.split('**').map((part, i) =>
-                                i % 2 === 1
-                                    ? <strong key={i} style={{ color: '#ef4444' }}>{part}</strong>
-                                    : <span key={i}>{part}</span>
-                            )}
-                        </div>
-                    </div>
-                    <Button
-                        type="primary"
-                        size="small"
-                        icon={<MedicineBoxOutlined />}
-                        onClick={onGoToDiagnosis}
-                        style={{
-                            background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
-                            border: 'none',
-                            borderRadius: 8,
-                            fontWeight: 600,
-                            fontSize: 12,
-                            height: 34,
-                            whiteSpace: 'nowrap',
-                            flexShrink: 0,
-                        }}
-                    >
-                        Kê đơn ngay
-                    </Button>
-                </div>
-            )}
 
-            {/* Two-column layout */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, alignItems: 'start' }}>
 
-                {/* ── LEFT: LIS Table ─────────────────────────────────────── */}
-                <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #e5e7eb', overflow: 'hidden' }}>
-                    <div style={{ padding: '10px 16px', borderBottom: '1px solid #f0f0f0', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                        <div style={{ fontWeight: 700, fontSize: 13, color: '#374151', display: 'flex', alignItems: 'center', gap: 6 }}>
-                            <ExperimentOutlined style={{ color: '#6366f1' }} />
-                            Xét nghiệm (LIS)
-                        </div>
-                        <Tooltip title="In kết quả">
-                            <Button type="text" size="small" icon={<PrinterOutlined />} style={{ color: '#9ca3af' }} />
-                        </Tooltip>
-                    </div>
-
-                    {loadingLis ? (
-                        <div style={{ padding: 24, textAlign: 'center' }}><Spin size="small" /></div>
-                    ) : labRows.length === 0 ? (
-                        <div style={{ padding: 24, textAlign: 'center', color: '#9ca3af', fontSize: 13 }}>
-                            Chưa có kết quả xét nghiệm.
-                        </div>
-                    ) : (
-                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-                            <thead>
-                                <tr style={{ background: '#f9fafb' }}>
-                                    {['TÊN XÉT NGHIỆM', 'KẾT QUẢ', 'ĐƠN VỊ', 'CSBT'].map(h => (
-                                        <th key={h} style={{ padding: '7px 12px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: '#6b7280', letterSpacing: '0.04em', borderBottom: '1px solid #f0f0f0' }}>
-                                            {h}
-                                        </th>
-                                    ))}
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {labRows.map((row, idx) => {
-                                    const color = flagColor(row);
-                                    return (
-                                        <tr key={idx} style={{ borderBottom: '1px solid #f9fafb' }}>
-                                            <td style={{ padding: '8px 12px', color: row.is_abnormal ? color : '#374151', fontWeight: row.is_abnormal ? 600 : 400 }}>
-                                                {row.name}
-                                            </td>
-                                            <td style={{ padding: '8px 12px' }}>
-                                                <span style={{ color: color || '#374151', fontWeight: row.is_abnormal ? 700 : 400 }}>
-                                                    {row.value} {flagArrow(row)}
-                                                </span>
-                                            </td>
-                                            <td style={{ padding: '8px 12px', color: '#6b7280' }}>{row.unit}</td>
-                                            <td style={{ padding: '8px 12px', color: '#9ca3af', fontSize: 12 }}>{row.ref_range}</td>
-                                        </tr>
-                                    );
-                                })}
-                            </tbody>
-                        </table>
-                    )}
-                </div>
-
-                {/* ── RIGHT: RIS / PACS Cards ─────────────────────────────── */}
-                <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #e5e7eb', overflow: 'hidden' }}>
-                    <div style={{ padding: '10px 16px', borderBottom: '1px solid #f0f0f0', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                        <div style={{ fontWeight: 700, fontSize: 13, color: '#374151', display: 'flex', alignItems: 'center', gap: 6 }}>
-                            <FileImageOutlined style={{ color: '#f59e0b' }} />
-                            Chẩn đoán hình ảnh (PACS)
-                        </div>
-                        {imaging.length > 0 && (
-                            <Tag color="blue" style={{ margin: 0, fontSize: 12 }}>{imaging.length} phiếu</Tag>
-                        )}
-                    </div>
-
-                    {loadingRis ? (
-                        <div style={{ padding: 24, textAlign: 'center' }}><Spin size="small" /></div>
-                    ) : imaging.length === 0 ? (
-                        <div style={{ padding: 24, textAlign: 'center', color: '#9ca3af', fontSize: 13 }}>
-                            Chưa có kết quả chẩn đoán hình ảnh.
-                        </div>
-                    ) : (
-                        <div style={{ maxHeight: 480, overflowY: 'auto', padding: '8px 12px', display: 'flex', flexDirection: 'column', gap: 10 }} className="scrollbar-thin">
-                            {imaging.map((img) => (
-                                <div key={img.id} style={{
-                                    border: `1px solid ${img.is_abnormal ? '#fde68a' : '#e5e7eb'}`,
-                                    borderRadius: 10,
-                                    background: img.is_abnormal ? '#fffbeb' : '#fafafa',
-                                    padding: '12px 14px',
-                                }}>
-                                    {/* Header row */}
-                                    <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 6 }}>
-                                        <div>
-                                            <div style={{ fontWeight: 700, fontSize: 13, color: '#111827' }}>{img.procedure_name}</div>
-                                            {(img.order_time || img.doctor_name) && (
-                                                <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 2 }}>
-                                                    {img.order_time && <span>{dayjs(img.order_time).format('HH:mm')}</span>}
-                                                    {img.doctor_name && <span> • Thực hiện: {img.doctor_name}</span>}
-                                                </div>
-                                            )}
+            {/* Unified Clinical Results Panel (Now Tabs) */}
+            <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #e5e7eb', overflow: 'hidden', display: 'flex', flexDirection: 'column', height: '100%' }}>
+                <Tabs
+                    defaultActiveKey="lis"
+                    items={[
+                        {
+                            key: 'lis',
+                            label: (
+                                <span style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6, padding: '0 16px' }}>
+                                    <FundViewOutlined style={{ color: '#10b981' }} /> Xét nghiệm (LIS)
+                                    {labRows.length > 0 && <Tag color="green" style={{ margin: 0, fontSize: 11 }}>{labRows.length}</Tag>}
+                                </span>
+                            ),
+                            children: (
+                                <div style={{ padding: '16px', overflowY: 'auto', maxHeight: 'calc(100vh - 350px)' }} className="scrollbar-thin">
+                                    {loadingLis ? (
+                                        <div style={{ padding: 24, textAlign: 'center' }}><Spin size="small" /></div>
+                                    ) : labRows.length === 0 ? (
+                                        <div style={{ padding: 24, textAlign: 'center', color: '#9ca3af', fontSize: 13 }}>
+                                            Chưa có kết quả xét nghiệm.
                                         </div>
-                                        <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-                                            {img.is_abnormal && (
-                                                <Tooltip title="Kết quả bất thường">
-                                                    <WarningOutlined style={{ color: '#f59e0b', fontSize: 16 }} />
-                                                </Tooltip>
-                                            )}
-                                            {img.image_url && (
-                                                <Tooltip title="Xem ảnh DICOM">
-                                                    <Button size="small" icon={<EyeOutlined />}
-                                                        href={img.image_url} target="_blank"
-                                                        style={{ fontSize: 11, height: 26, color: '#6366f1', borderColor: '#c7d2fe' }}>
-                                                        Xem ảnh
-                                                    </Button>
-                                                </Tooltip>
-                                            )}
-                                            {!img.image_url && (
-                                                <Button size="small" icon={<EyeOutlined />} disabled
-                                                    style={{ fontSize: 11, height: 26 }}>
-                                                    Xem ảnh
-                                                </Button>
-                                            )}
-                                        </div>
-                                    </div>
-
-                                    {/* Findings */}
-                                    {img.findings && (
-                                        <div style={{ marginBottom: 6 }}>
-                                            <div style={{ fontSize: 11, fontWeight: 700, color: '#6b7280', letterSpacing: '0.05em', marginBottom: 2 }}>MÔ TẢ:</div>
-                                            <div style={{ fontSize: 12, color: '#374151', lineHeight: 1.6 }}>{img.findings}</div>
-                                        </div>
+                                    ) : (
+                                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                                            <thead>
+                                                <tr style={{ background: '#f9fafb' }}>
+                                                    {['TÊN XÉT NGHIỆM', 'KẾT QUẢ', 'ĐƠN VỊ', 'CSBT'].map(h => (
+                                                        <th key={h} style={{ padding: '7px 12px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: '#6b7280', letterSpacing: '0.04em', borderBottom: '1px solid #f0f0f0' }}>
+                                                            {h}
+                                                        </th>
+                                                    ))}
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {labRows.map((row, idx) => {
+                                                    const color = flagColor(row);
+                                                    return (
+                                                        <tr key={idx} style={{ borderBottom: '1px solid #f9fafb' }}>
+                                                            <td style={{ padding: '8px 12px', color: row.is_abnormal ? color : '#374151', fontWeight: row.is_abnormal ? 600 : 400 }}>
+                                                                {row.name}
+                                                            </td>
+                                                            <td style={{ padding: '8px 12px' }}>
+                                                                <span style={{ color: color || '#374151', fontWeight: row.is_abnormal ? 700 : 400 }}>
+                                                                    {row.value} {flagArrow(row)}
+                                                                </span>
+                                                            </td>
+                                                            <td style={{ padding: '8px 12px', color: '#6b7280' }}>{row.unit}</td>
+                                                            <td style={{ padding: '8px 12px', color: '#9ca3af', fontSize: 12 }}>{row.ref_range}</td>
+                                                        </tr>
+                                                    );
+                                                })}
+                                            </tbody>
+                                        </table>
                                     )}
+                                </div>
+                            ),
+                        },
+                        {
+                            key: 'ris',
+                            label: (
+                                <span style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6, padding: '0 16px' }}>
+                                    <FileImageOutlined style={{ color: '#f59e0b' }} /> Chẩn đoán hình ảnh (RIS/PACS)
+                                    {imaging.length > 0 && <Tag color="blue" style={{ margin: 0, fontSize: 11 }}>{imaging.length}</Tag>}
+                                </span>
+                            ),
+                            children: (
+                                <div style={{ padding: '16px', overflowY: 'auto', maxHeight: 'calc(100vh - 350px)' }} className="scrollbar-thin">
+                                    {loadingRis ? (
+                                        <div style={{ padding: 24, textAlign: 'center' }}><Spin size="small" /></div>
+                                    ) : imaging.length === 0 ? (
+                                        <div style={{ padding: 24, textAlign: 'center', color: '#9ca3af', fontSize: 13 }}>
+                                            Chưa có kết quả chẩn đoán hình ảnh.
+                                        </div>
+                                    ) : (
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                                            {imaging.map((img) => (
+                                                <div key={img.id} style={{
+                                                    border: `1px solid ${img.is_abnormal ? '#fde68a' : '#e5e7eb'}`,
+                                                    borderRadius: 10,
+                                                    background: img.is_abnormal ? '#fffbeb' : '#fafafa',
+                                                    padding: '12px 14px',
+                                                }}>
+                                                    {/* Header row */}
+                                                    <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 6 }}>
+                                                        <div>
+                                                            <div style={{ fontWeight: 700, fontSize: 13, color: '#111827' }}>{img.procedure_name}</div>
+                                                            {(img.order_time || img.doctor_name) && (
+                                                                <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 2 }}>
+                                                                    {img.order_time && <span>{dayjs(img.order_time).format('HH:mm')}</span>}
+                                                                    {img.doctor_name && <span> • Thực hiện: {img.doctor_name}</span>}
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                        <div style={{ display: 'flex', gap: 6, flexShrink: 0, alignItems: 'center' }}>
+                                                            {img.is_abnormal && (
+                                                                <Tooltip title="Kết quả bất thường">
+                                                                    <WarningOutlined style={{ color: '#f59e0b', fontSize: 16 }} />
+                                                                </Tooltip>
+                                                            )}
+                                                            <Tooltip title="Xem chi tiết kết quả">
+                                                                <Button size="small" icon={<EyeOutlined />}
+                                                                    onClick={() => setDetailModalImg(img)}
+                                                                    style={{ fontSize: 11, height: 26, color: '#6366f1', borderColor: '#c7d2fe' }}>
+                                                                    Xem chi tiết
+                                                                </Button>
+                                                            </Tooltip>
+                                                        </div>
+                                                    </div>
 
-                                    {/* Conclusion */}
-                                    {img.conclusion && (
-                                        <div>
-                                            <div style={{ fontSize: 11, fontWeight: 700, color: '#6b7280', letterSpacing: '0.05em', marginBottom: 2 }}>KẾT LUẬN:</div>
-                                            <div style={{ fontSize: 13, fontWeight: 700, color: img.is_abnormal ? '#b45309' : '#166534' }}>{img.conclusion}</div>
+                                                    {/* Brief conclusion preview */}
+                                                    {img.conclusion && (
+                                                        <div style={{ marginTop: 4 }}>
+                                                            <div style={{ fontSize: 11, fontWeight: 700, color: '#6b7280', letterSpacing: '0.05em', marginBottom: 2 }}>KẾT LUẬN:</div>
+                                                            <div
+                                                                style={{ fontSize: 12, fontWeight: 600, color: img.is_abnormal ? '#b45309' : '#166534', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                                                                dangerouslySetInnerHTML={{ __html: img.conclusion }}
+                                                            />
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            ))}
                                         </div>
                                     )}
                                 </div>
-                            ))}
-                        </div>
-                    )}
-                </div>
+                            ),
+                        },
+                    ]}
+                    tabBarStyle={{
+                        marginBottom: 0,
+                        padding: '8px 16px 0 16px',
+                        background: '#f8fafc',
+                        borderBottom: '1px solid #e2e8f0',
+                    }}
+                />
             </div>
+
+            {/* ── RIS Detail Modal ───────────────────────────────────────── */}
+            <Modal
+                open={!!detailModalImg}
+                onCancel={() => setDetailModalImg(null)}
+                footer={null}
+                width={960}
+                title={
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <FileImageOutlined style={{ color: '#6366f1', fontSize: 18 }} />
+                        <span style={{ fontWeight: 700, fontSize: 15 }}>Chi tiết kết quả chẩn đoán hình ảnh</span>
+                    </div>
+                }
+                styles={{ body: { padding: '16px 24px 12px' } }}
+                destroyOnClose
+            >
+                {detailModalImg && (
+                    <div>
+                        {/* Two-column layout */}
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, overflow: 'hidden' }}>
+                            {/* LEFT: Patient Info + Findings */}
+                            <div style={{ minWidth: 0 }}>
+                                <div style={{ marginBottom: 16 }}>
+                                    <div style={{ fontSize: 12, fontWeight: 700, color: '#6b7280', letterSpacing: '0.04em', marginBottom: 8, textTransform: 'uppercase' }}>
+                                        Thông tin bệnh nhân
+                                    </div>
+                                    <div style={{ background: '#f9fafb', borderRadius: 8, padding: '10px 14px', border: '1px solid #f0f0f0' }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                                            <Text style={{ fontSize: 12, color: '#6b7280' }}>Họ tên:</Text>
+                                            <Text style={{ fontSize: 13, fontWeight: 600, color: '#111827' }}>{detailModalImg.patient_name || '--'}</Text>
+                                        </div>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                                            <Text style={{ fontSize: 12, color: '#6b7280' }}>Mã BN:</Text>
+                                            <Text style={{ fontSize: 13, color: '#374151' }}>{detailModalImg.patient_code || '--'}</Text>
+                                        </div>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                                            <Text style={{ fontSize: 12, color: '#6b7280' }}>Kỹ thuật:</Text>
+                                            <Text style={{ fontSize: 13, color: '#374151' }}>{detailModalImg.procedure_name}</Text>
+                                        </div>
+                                        {detailModalImg.modality_name && (
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                                                <Text style={{ fontSize: 12, color: '#6b7280' }}>Loại máy:</Text>
+                                                <Text style={{ fontSize: 13, color: '#374151' }}>{detailModalImg.modality_name}</Text>
+                                            </div>
+                                        )}
+                                        {detailModalImg.clinical_indication && (
+                                            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                                <Text style={{ fontSize: 12, color: '#6b7280' }}>Chỉ định:</Text>
+                                                <Text style={{ fontSize: 13, color: '#374151', maxWidth: 200, textAlign: 'right' }}>{detailModalImg.clinical_indication}</Text>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+
+                                {/* Findings / Mô tả */}
+                                <div>
+                                    <div style={{ fontSize: 12, fontWeight: 700, color: '#6b7280', letterSpacing: '0.04em', marginBottom: 8, textTransform: 'uppercase' }}>
+                                        Mô tả hình ảnh (Findings)
+                                    </div>
+                                    {detailModalImg.findings ? (
+                                        <div
+                                            style={{ background: '#f9fafb', borderRadius: 8, padding: '10px 14px', border: '1px solid #f0f0f0', fontSize: 13, color: '#374151', lineHeight: 1.7 }}
+                                            dangerouslySetInnerHTML={{ __html: detailModalImg.findings }}
+                                        />
+                                    ) : (
+                                        <div style={{ padding: 12, textAlign: 'center', color: '#9ca3af', fontSize: 13, background: '#f9fafb', borderRadius: 8 }}>
+                                            Chưa có mô tả.
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* RIGHT: Image + Conclusion */}
+                            <div style={{ minWidth: 0 }}>
+                                {/* Image Preview */}
+                                <div style={{ marginBottom: 16 }}>
+                                    <div style={{ fontSize: 12, fontWeight: 700, color: '#6b7280', letterSpacing: '0.04em', marginBottom: 8, textTransform: 'uppercase' }}>
+                                        Hình ảnh
+                                    </div>
+                                    <div style={{ borderRadius: 8, overflow: 'hidden', border: '1px solid #e5e7eb', background: '#1a1a2e', minHeight: 200, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                        {detailModalImg.orthanc_instance_id ? (
+                                            <img
+                                                src={`http://${window.location.hostname}:8042/instances/${detailModalImg.orthanc_instance_id}/preview`}
+                                                alt="DICOM Preview"
+                                                style={{ width: '100%', maxHeight: 400, objectFit: 'contain' }}
+                                            />
+                                        ) : detailModalImg.dicom_study_uid ? (
+                                            <iframe
+                                                src={`http://localhost:3001/viewer?StudyInstanceUIDs=${detailModalImg.dicom_study_uid}`}
+                                                style={{ width: '100%', height: 350, border: 'none' }}
+                                                title="OHIF Viewer"
+                                                allow="clipboard-read; clipboard-write; fullscreen"
+                                            />
+                                        ) : (
+                                            <div style={{ padding: 40, textAlign: 'center', color: '#6b7280', fontSize: 13 }}>
+                                                <FileImageOutlined style={{ fontSize: 32, marginBottom: 8, display: 'block', color: '#9ca3af' }} />
+                                                Chưa có ảnh DICOM
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+
+                                {/* Conclusion */}
+                                <div>
+                                    <div style={{ fontSize: 12, fontWeight: 700, color: '#6b7280', letterSpacing: '0.04em', marginBottom: 8, textTransform: 'uppercase' }}>
+                                        Kết luận
+                                    </div>
+                                    {detailModalImg.conclusion ? (
+                                        <div
+                                            style={{
+                                                background: detailModalImg.is_abnormal ? '#fffbeb' : '#f0fdf4',
+                                                borderRadius: 8,
+                                                padding: '10px 14px',
+                                                border: `1px solid ${detailModalImg.is_abnormal ? '#fde68a' : '#bbf7d0'}`,
+                                                fontSize: 13,
+                                                fontWeight: 600,
+                                                color: detailModalImg.is_abnormal ? '#b45309' : '#166534',
+                                                lineHeight: 1.7,
+                                            }}
+                                            dangerouslySetInnerHTML={{ __html: detailModalImg.conclusion }}
+                                        />
+                                    ) : (
+                                        <div style={{ padding: 12, textAlign: 'center', color: '#9ca3af', fontSize: 13, background: '#f9fafb', borderRadius: 8 }}>
+                                            Chưa có kết luận.
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Footer: Approval info */}
+                        <Divider style={{ margin: '16px 0 10px' }} />
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12, color: '#6b7280' }}>
+                            <div style={{ display: 'flex', gap: 24 }}>
+                                <div>
+                                    <span style={{ fontWeight: 600, marginRight: 4 }}>Ngày duyệt:</span>
+                                    <span style={{ color: '#374151' }}>
+                                        {detailModalImg.verified_time ? dayjs(detailModalImg.verified_time).format('DD/MM/YYYY HH:mm') : '--'}
+                                    </span>
+                                </div>
+                                <div>
+                                    <span style={{ fontWeight: 600, marginRight: 4 }}>Người duyệt:</span>
+                                    <span style={{ color: '#374151' }}>{detailModalImg.verified_by_name || '--'}</span>
+                                </div>
+                            </div>
+                            <div>
+                                <span style={{ fontWeight: 600, marginRight: 4 }}>BS đọc KQ:</span>
+                                <span style={{ color: '#374151' }}>{detailModalImg.radiologist_name || '--'}</span>
+                            </div>
+                        </div>
+                    </div>
+                )}
+            </Modal>
         </div>
     );
 }
@@ -367,16 +626,35 @@ export default function ClinicalExamPage() {
 function ClinicalExamContent({ visitId }: { visitId: string }) {
     const { message } = App.useApp();
     const router = useRouter();
+    const { user } = useAuth();   // Lấy staff profile của bác sĩ đang đăng nhập
+    // ── AI Drawer State ───────────────────────────
+    const [aiDrawerOpen, setAiDrawerOpen] = useState(false);
+    const [aiContext, setAiContext] = useState<string>('');
+    const [aiUnreadCount, setAiUnreadCount] = useState(0);
 
     const [visit, setVisit] = useState<Visit | null>(null);
     const [record, setRecord] = useState<ClinicalRecord | null>(null);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
-    const [aiLoading, setAiLoading] = useState(false);
     const [triageDrawerOpen, setTriageDrawerOpen] = useState(false);
     const [icdDrawerOpen, setIcdDrawerOpen] = useState(false);
     const [icdCodes, setIcdCodes] = useState<ICDCodeItem[]>([]);
+    const [aiLabTests, setAiLabTests] = useState<string>('');
     const [icdSourceWarning, setIcdSourceWarning] = useState<string | null>(null);
+
+    // Lắng nghe sự kiện cập nhật lab tests và ICD từ AIChat
+    useEffect(() => {
+        const handleUpdate = (e: any) => {
+            if (e.detail?.tests) {
+                setAiLabTests(e.detail.tests);
+            }
+            if (e.detail?.icds && e.detail.icds.length > 0) {
+                setIcdCodes(e.detail.icds);
+            }
+        };
+        window.addEventListener('ai_suggestions_update', handleUpdate);
+        return () => window.removeEventListener('ai_suggestions_update', handleUpdate);
+    }, []);
 
     // ── Tab State (controlled) ─────────────────────────────
     const DRAFT_KEY = `clinical-draft-${visitId}`;
@@ -384,37 +662,7 @@ function ClinicalExamContent({ visitId }: { visitId: string }) {
         try { return localStorage.getItem(`${DRAFT_KEY}-tab`) || '1'; } catch { return '1'; }
     });
 
-    // ── AI Chat State ───────────────────────────────────────
-    interface ChatMessage { role: 'user' | 'assistant' | 'system'; content: string; timestamp: Date }
-    const [chatMessages, setChatMessages] = useState<ChatMessage[]>(() => {
-        try {
-            const saved = localStorage.getItem(`${DRAFT_KEY}-chat`);
-            if (saved) {
-                const parsed = JSON.parse(saved) as Array<{ role: string; content: string; timestamp: string }>;
-                return parsed.map(m => ({ ...m, timestamp: new Date(m.timestamp) })) as ChatMessage[];
-            }
-        } catch { /* ignore */ }
-        return [];
-    });
-    const [chatInput, setChatInput] = useState('');
-    const [chatInitialized, setChatInitialized] = useState<boolean>(() => {
-        try { return !!localStorage.getItem(`${DRAFT_KEY}-chat`); } catch { return false; }
-    });
-    const chatEndRef = useRef<HTMLDivElement>(null);
-    const chatSessionRef = useRef(`clinical-${visitId}-${Date.now()}`);
-
     const [form] = Form.useForm();
-
-    // Listen to form changes to calculate BMI
-    const weight = Form.useWatch('weight', form);
-    const height = Form.useWatch('height', form);
-    const bmi = useMemo(() => {
-        if (weight && height) {
-            const heightInMeters = height / 100;
-            return (weight / (heightInMeters * heightInMeters)).toFixed(1);
-        }
-        return '--';
-    }, [weight, height]);
 
     const fetchData = useCallback(async () => {
         setLoading(true);
@@ -478,11 +726,10 @@ function ClinicalExamContent({ visitId }: { visitId: string }) {
     const persistDraft = useCallback(() => {
         try {
             localStorage.setItem(`${DRAFT_KEY}-tab`, activeTab);
-            localStorage.setItem(`${DRAFT_KEY}-chat`, JSON.stringify(chatMessages));
             const vals = form.getFieldsValue();
             localStorage.setItem(`${DRAFT_KEY}-form`, JSON.stringify(vals));
         } catch { /* ignore */ }
-    }, [DRAFT_KEY, activeTab, chatMessages, form]);
+    }, [DRAFT_KEY, activeTab, form]);
 
     // Restore form draft after data load (only if record hasn't already populated it)
     useEffect(() => {
@@ -502,7 +749,7 @@ function ClinicalExamContent({ visitId }: { visitId: string }) {
         } catch { /* ignore */ }
     }, [loading, DRAFT_KEY, form]);
 
-    const handleSave = async (values: any) => {
+    const saveData = async (values: any, silent = false): Promise<string | null> => {
         setSaving(true);
         try {
             const vitalSigns: VitalSigns = {
@@ -525,8 +772,9 @@ function ClinicalExamContent({ visitId }: { visitId: string }) {
                 vital_signs: vitalSigns,
             };
 
-            if (record) {
-                await emrApi.update(record.id, data);
+            let currentRecordId = record?.id;
+            if (currentRecordId) {
+                await emrApi.update(currentRecordId, data);
             } else {
                 const newRecord = await emrApi.create({
                     visit: visitId,
@@ -534,34 +782,39 @@ function ClinicalExamContent({ visitId }: { visitId: string }) {
                     vital_signs: vitalSigns,
                 });
                 setRecord(newRecord);
+                currentRecordId = newRecord.id;
             }
             // Lưu state vào localStorage sau khi lưu server thành công
             persistDraft();
-            message.success('Đã lưu nháp hồ sơ');
+            if (!silent) message.success('Đã lưu nháp hồ sơ');
+            return currentRecordId || null;
         } catch (error) {
             console.error('Error saving:', error);
-            message.error('Không thể lưu hồ sơ');
+            if (!silent) message.error('Không thể lưu hồ sơ');
+            return null;
         } finally {
             setSaving(false);
         }
     };
 
-    // ── AI Chat Functions ─────────────────────────────────────
-    const buildInitialPrompt = useCallback(() => {
+    const handleSave = async (values: any) => {
+        await saveData(values);
+    };
+
+    // ── Build AI context tổng hợp ──────────────────────
+    const buildAIContext = useCallback((extraPrompt?: string) => {
         const p = typeof visit?.patient === 'object' ? visit.patient as Patient : null;
         const name = p?.full_name || `${p?.last_name || ''} ${p?.first_name || ''}`.trim() || 'BN';
         const age = p?.date_of_birth ? dayjs().diff(dayjs(p.date_of_birth), 'year') : 'N/A';
         const tv = visit?.vital_signs as Record<string, number | undefined> | undefined;
         const vals = form.getFieldsValue();
-
         const deptName = visit?.confirmed_department_detail?.name || 'Không rõ';
 
-        return `[CLINICAL_ANALYSIS] Tôi là bác sĩ đang trực tiếp khám bệnh nhân tại ${deptName}. Bệnh nhân HIỆN ĐANG NẰM TẠI ${deptName}.
-QUY TẮC TRẢ LỜI:
-- Bệnh nhân ĐÃ Ở ${deptName} rồi, KHÔNG nói "cần theo dõi tại ${deptName}" hay "cần chuyển đến ${deptName}" vì đó là thừa.
-- Chỉ tập trung vào chẩn đoán, xử trí cụ thể tại khoa này. Đưa ra y lệnh, thuốc, và theo dõi cụ thể.
-- KHÔNG đề xuất chuyển khoa trừ khi phát hiện bệnh lý ngoài chuyên khoa và nêu rõ lý do.
-- KHÔNG dùng mã code dạng [URGENT_MODERATE], [CODE_RED] trong câu trả lời.
+        const context = `[CLINICAL_ANALYSIS] Tôi là bác sĩ đang trực tiếp khám bệnh nhân tại ${deptName}.
+QUY TẬ TRẢ LỚI:
+- Bệnh nhân ĐÃ Ở ${deptName} rồi, KHÔNG nói "cần theo dõi tại ${deptName}" hay "cần chuyển đến ${deptName}".
+- Chỉ tập trung vào chẩn đoán, xử trí cụ thể tại khoa này.
+- KHÔNG dùng mã code dạng [URGENT_MODERATE] trong câu trả lời.
 
 ══ THÔNG TIN BỆNH NHÂN ══
 Họ tên: ${name} | Tuổi: ${age} | Giới: ${p?.gender === 'M' ? 'Nam' : 'Nữ'}
@@ -569,123 +822,47 @@ BHYT: ${p?.insurance_number || 'Không'}
 
 ══ SINH HIỆU (TẠI PHÂN LUỒNG) ══
 Mạch: ${tv?.heart_rate ?? '--'} l/p | HA: ${tv?.bp_systolic ?? '--'}/${tv?.bp_diastolic ?? '--'} mmHg
-SpO2: ${tv?.spo2 ?? '--'}% | Nhịp thở: ${tv?.respiratory_rate ?? '--'} l/p
+SpO2: ${tv?.spo2 ?? '--'}% | Nhiệt độ: ${tv?.temperature ?? '--'}°C
 
 ══ LÝ DO KHÁM ══
 ${vals.chief_complaint || visit?.chief_complaint || 'Chưa rõ'}
 
-══ TÓM TẮT BỆNH ÁN ══
-${visit?.pre_triage_summary?.substring(0, 600) || 'Không có'}
-
-══ QUYẾT ĐỊNH PHÂN LUỒNG ══
-Mã: ${visit?.triage_code || 'N/A'} → Khoa: ${visit?.confirmed_department_detail?.name || 'N/A'}
-Độ tin cậy: ${visit?.triage_confidence ?? 'N/A'}%
-Ý kiến AI: ${visit?.triage_ai_response?.substring(0, 400) || 'Không có'}
-
-══ CƠ SỞ PHÂN LUỒNG ══
-${visit?.triage_key_factors?.join('\n') || 'Không có'}
-
-══ LƯU Ý TỪ AI ══
-${visit?.triage_hints || 'Không có'}
-
-══ BỆNH SỬ ══
+══ BỆNH Sừ ══
 ${vals.history_of_present_illness || 'Chưa khai thác'}
 
 ══ KHÁM LÂM SÀNG ══
 ${vals.physical_exam || 'Chưa khám'}
 
+══ TÓM TẮT BỆNH ÁN (PHÂN LUỒNG) ══
+${visit?.pre_triage_summary?.substring(0, 600) || 'Không có'}
+
+══ TÓM TẮT AI PHÂN LUỒNG ══
+Mã: ${visit?.triage_code || 'N/A'} → Khoa: ${deptName}
+Độ tin cậy: ${visit?.triage_confidence ?? 'N/A'}%
+Ý kiến AI: ${visit?.triage_ai_response?.substring(0, 300) || 'Không có'}
+${extraPrompt ? `
+══ CẬP NHẬT MỚI ══
+${extraPrompt}` : ''}
+
 ══ YÊU CẦU ══
 1. Đưa ra 3-5 chẩn đoán phân biệt xếp theo khả năng (%).
-2. Với MỖI chẩn đoán, đưa ra mã ICD-10 gồm:
-   - Main ICD (mã chính) kèm tỷ lệ chính xác (%)
-   - Sub ICD (mã phụ nếu có) kèm tỷ lệ chính xác (%)
+2. Với MỔI chẩn đoán, đưa ra mã ICD-10 chính + phụ kèm tỷ lệ chính xác (%).
 3. Chỉ định cận lâm sàng cần thiết.
 4. Hướng xử trí ban đầu.
-5. Điểm cần khai thác thêm từ bệnh nhân.
-6. Cảnh báo nếu có dấu hiệu nguy hiểm.`;
+5. Cảnh báo nếu có dấu hiệu nguy hiểm.`;
+        return context;
     }, [visit, form]);
 
-    const sendChatMessage = useCallback(async (text: string, isSystem = false) => {
-        if (!visitId || !text.trim()) return;
+    // Mở AI Drawer (và build context mới nếu cần)
+    const openAIDrawer = useCallback((extraPrompt?: string) => {
+        const ctx = buildAIContext(extraPrompt);
+        setAiContext(ctx);
+        setAiDrawerOpen(true);
+        setAiUnreadCount(0);
+    }, [buildAIContext]);
 
-        const userMsg: ChatMessage = { role: isSystem ? 'system' : 'user', content: text.trim(), timestamp: new Date() };
-        setChatMessages(prev => [...prev, userMsg]);
-        setAiLoading(true);
-        try {
-            const result = await aiApi.chat(visitId, text.trim(), chatSessionRef.current);
-            const rawText = result?.message || result?.response || JSON.stringify(result);
-            // Strip [CODE_*] and [ICD_CODE] bracket tags from display text
-            const aiText = rawText.replace(/\[(?:URGENT_\w+|CODE_\w+|ICD_CODE)\]\s*/g, '');
-            const aiMsg: ChatMessage = { role: 'assistant', content: aiText, timestamp: new Date() };
-            setChatMessages(prev => [...prev, aiMsg]);
-
-            // Extract ICD codes from structured response or parse from text
-            const extractedCodes: ICDCodeItem[] = [];
-            console.log('[ICD-DEBUG] result keys:', Object.keys(result || {}));
-            console.log('[ICD-DEBUG] result.icd_codes:', result?.icd_codes);
-            if (result?.icd_codes && Array.isArray(result.icd_codes)) {
-                extractedCodes.push(...result.icd_codes.map((c: Record<string, unknown>) => ({
-                    code: String(c.code || ''),
-                    name: String(c.name || ''),
-                    confidence: Number(c.confidence || 0.5),
-                    type: (c.type === 'main' || c.type === 'sub') ? c.type : 'sub' as const,
-                    in_system: c.in_system as boolean | null ?? null,
-                    system_name: c.system_name as string | null ?? null,
-                })));
-                console.log('[ICD-DEBUG] Extracted from structured:', extractedCodes.length);
-            } else {
-                // Fallback: parse ICD codes from text (format: code - name, code (name), or code | name)
-                const icdRegex = /([A-Z]\d{2}(?:\.\d{1,2}?))\s*[\(\-–:|]\s*([^)\n|,]{3,60})/g;
-                let m;
-                while ((m = icdRegex.exec(rawText)) !== null) {
-                    const letter = m[1][0];
-                    if (letter >= 'A' && letter <= 'Z') {
-                        extractedCodes.push({
-                            code: m[1],
-                            name: m[2].trim().replace(/[)\|]$/, '').trim(),
-                            type: extractedCodes.length === 0 ? 'main' : 'sub',
-                            confidence: 0.6,
-                            in_system: null,
-                            system_name: null,
-                        });
-                    }
-                }
-                console.log('[ICD-DEBUG] Extracted from regex fallback:', extractedCodes.length);
-            }
-            if (extractedCodes.length > 0) {
-                setIcdCodes(prev => {
-                    // Merge, keeping latest confidence for duplicate codes
-                    const codeMap = new Map(prev.map(c => [c.code, c]));
-                    extractedCodes.forEach(c => codeMap.set(c.code, c));
-                    return Array.from(codeMap.values());
-                });
-            }
-            // Capture ICD source warning from backend
-            if (result?.icd_source_warning) {
-                setIcdSourceWarning(String(result.icd_source_warning));
-            }
-        } catch {
-            const errMsg: ChatMessage = { role: 'assistant', content: '❌ Lỗi kết nối AI. Vui lòng thử lại.', timestamp: new Date() };
-            setChatMessages(prev => [...prev, errMsg]);
-        } finally {
-            setAiLoading(false);
-        }
-    }, [visitId]);
-
-    // Auto-initialize chat khi visit data đã load
-    const initializeChat = useCallback(async () => {
-        if (chatInitialized || !visit || loading) return;
-        setChatInitialized(true);
-        // New session each time
-        chatSessionRef.current = `clinical-${visitId}-${Date.now()}`;
-        const prompt = buildInitialPrompt();
-        await sendChatMessage(prompt, true);
-    }, [chatInitialized, visit, loading, buildInitialPrompt, sendChatMessage]);
-
-    // Scroll to bottom khi có tin nhắn mới
-    useEffect(() => {
-        chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }, [chatMessages]);
+    // Scroll to bottom kư có tin nhắn mới (phòng khi drawer chưa mở)
+    // (maintained by AIChat.tsx internally)
 
     const patient = typeof visit?.patient === 'object' ? visit.patient as Patient : null;
 
@@ -742,15 +919,16 @@ ${vals.physical_exam || 'Chưa khám'}
                         </div>
                     )}
 
-                    {icdCodes.length > 0 && (
-                        <Tooltip title="Xem mã ICD-10 đề xuất">
-                            <Badge count={icdCodes.length} size="small" offset={[-2, 2]}>
+                    {/* Button Các Đề Xuất thay cho ICD đề xuất cũ */}
+                    {(icdCodes.length > 0 || aiLabTests) && (
+                        <Tooltip title="Xem các đề xuất từ AI (ICD, Xét nghiệm)">
+                            <Badge count={icdCodes.length} size="small" offset={[-2, 2]} dot={icdCodes.length === 0 && !!aiLabTests}>
                                 <Button
-                                    icon={<BarcodeOutlined />}
+                                    icon={<RobotOutlined />}
                                     onClick={() => setIcdDrawerOpen(true)}
-                                    className="h-10 border-purple-200 text-purple-600 hover:bg-purple-50 font-medium"
+                                    className="h-10 border-indigo-200 text-indigo-600 hover:bg-indigo-50 font-medium"
                                 >
-                                    ICD Đề xuất
+                                    Các Đề Xuất
                                 </Button>
                             </Badge>
                         </Tooltip>
@@ -877,11 +1055,12 @@ ${vals.physical_exam || 'Chưa khám'}
         </Drawer>
     );
 
-    /* ── ICD Code Drawer ──────────────────────────────────── */
-    const ICDDrawer = () => {
+    /* ── Suggestions (ICD & Lab Tests) Drawer ──────────────────────────────────── */
+    const SuggestionsDrawer = () => {
         const hasExternal = icdCodes.some(c => c.in_system === false);
         const mainCodes = icdCodes.filter(c => c.type === 'main').sort((a, b) => b.confidence - a.confidence);
         const subCodes = icdCodes.filter(c => c.type === 'sub').sort((a, b) => b.confidence - a.confidence);
+        const labTests = aiLabTests;
 
         const ICDCard = ({ icd, idx }: { icd: ICDCodeItem; idx: number }) => {
             const pct = Math.round(icd.confidence * 100);
@@ -894,14 +1073,14 @@ ${vals.physical_exam || 'Chưa khám'}
                     className={`rounded-lg p-3 border ${isExternal
                         ? 'border-orange-200 bg-orange-50/30'
                         : isMain
-                            ? 'border-purple-200 bg-purple-50/50'
+                            ? 'border-indigo-200 bg-indigo-50/50'
                             : 'border-gray-200 bg-gray-50/50'
                         }`}
                 >
                     <div className="flex items-center justify-between mb-1.5">
                         <div className="flex items-center gap-1.5 flex-wrap">
                             <Tag
-                                color={isMain ? 'purple' : 'default'}
+                                color={isMain ? 'indigo' : 'default'}
                                 className="m-0 font-mono font-bold text-xs"
                             >
                                 {icd.code}
@@ -943,66 +1122,92 @@ ${vals.physical_exam || 'Chưa khám'}
 
         return (
             <Drawer
-                title={<div className="flex items-center gap-2 font-bold text-sm"><BarcodeOutlined className="text-purple-500" /> Mã ICD-10 Đề Xuất</div>}
+                title={<div className="flex items-center gap-2 font-bold text-sm"><RobotOutlined className="text-indigo-500" /> Các Đề Xuất (AI)</div>}
                 placement="right"
-                width={420}
+                width={500}
                 open={icdDrawerOpen}
                 onClose={() => setIcdDrawerOpen(false)}
+                styles={{ body: { padding: '0 16px', display: 'flex', flexDirection: 'column' } }}
             >
-                {icdCodes.length === 0 ? (
-                    <div className="text-center py-10 text-gray-400 text-sm">
-                        Chưa có mã ICD-10 đề xuất. Hãy nhấn &quot;Bắt đầu&quot; để AI phân tích.
-                    </div>
-                ) : (
-                    <div className="space-y-3">
-                        {/* Compact info bar */}
-                        <div className="flex items-center gap-2 text-xs text-gray-500 bg-blue-50 rounded px-2.5 py-1.5 border border-blue-100">
-                            <InfoCircleOutlined className="text-blue-400" />
-                            <span>AI đề xuất — bác sĩ cần xác nhận trước khi lưu hồ sơ.</span>
-                        </div>
-
-                        {/* Compact warning for external codes */}
-                        {(hasExternal || icdSourceWarning) && (
-                            <div className="flex items-start gap-2 text-xs text-orange-700 bg-orange-50 rounded px-2.5 py-1.5 border border-orange-100">
-                                <WarningOutlined className="text-orange-400 mt-0.5" />
-                                <span>{icdSourceWarning || 'Một số mã không có trong danh mục bệnh viện — AI dùng nguồn bên ngoài.'}</span>
-                            </div>
-                        )}
-
-                        {/* Main ICD Section */}
-                        {mainCodes.length > 0 && (
-                            <div>
-                                <div className="text-[11px] font-bold text-purple-600 tracking-wider mb-2 uppercase">
-                                    Chẩn đoán chính ({mainCodes.length})
+                <Tabs
+                    defaultActiveKey="icd"
+                    className="h-full [&>.ant-tabs-content-holder]:overflow-y-auto [&>.ant-tabs-content-holder]:pb-6"
+                    items={[
+                        {
+                            key: 'icd',
+                            label: <span><BarcodeOutlined /> ICD Đề Xuất</span>,
+                            children: icdCodes.length === 0 ? (
+                                <div className="text-center py-10 text-gray-400 text-sm">
+                                    Chưa có mã ICD-10 đề xuất.
                                 </div>
-                                <div className="space-y-2">
-                                    {mainCodes.map((icd, idx) => (
-                                        <ICDCard key={`main-${icd.code}-${idx}`} icd={icd} idx={idx} />
-                                    ))}
-                                </div>
-                            </div>
-                        )}
+                            ) : (
+                                <div className="space-y-3 pt-3">
+                                    {/* Compact info bar */}
+                                    <div className="flex items-center gap-2 text-xs text-gray-500 bg-blue-50 rounded px-2.5 py-1.5 border border-blue-100">
+                                        <InfoCircleOutlined className="text-blue-400" />
+                                        <span>AI đề xuất — bác sĩ cần xác nhận trước khi lưu hồ sơ.</span>
+                                    </div>
 
-                        {/* Divider */}
-                        {mainCodes.length > 0 && subCodes.length > 0 && (
-                            <Divider className="my-2" />
-                        )}
+                                    {/* Compact warning for external codes */}
+                                    {(hasExternal || icdSourceWarning) && (
+                                        <div className="flex items-start gap-2 text-xs text-orange-700 bg-orange-50 rounded px-2.5 py-1.5 border border-orange-100">
+                                            <WarningOutlined className="text-orange-400 mt-0.5" />
+                                            <span>{icdSourceWarning || 'Một số mã không có trong danh mục bệnh viện — AI dùng nguồn bên ngoài.'}</span>
+                                        </div>
+                                    )}
 
-                        {/* Sub ICD Section */}
-                        {subCodes.length > 0 && (
-                            <div>
-                                <div className="text-[11px] font-bold text-gray-400 tracking-wider mb-2 uppercase">
-                                    Chẩn đoán phụ / kèm theo ({subCodes.length})
+                                    {/* Main ICD Section */}
+                                    {mainCodes.length > 0 && (
+                                        <div>
+                                            <div className="text-[11px] font-bold text-indigo-600 tracking-wider mb-2 uppercase">
+                                                Chẩn đoán chính ({mainCodes.length})
+                                            </div>
+                                            <div className="space-y-2">
+                                                {mainCodes.map((icd, idx) => (
+                                                    <ICDCard key={`main-${icd.code}-${idx}`} icd={icd} idx={idx} />
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Divider */}
+                                    {mainCodes.length > 0 && subCodes.length > 0 && (
+                                        <Divider className="my-2" />
+                                    )}
+
+                                    {/* Sub ICD Section */}
+                                    {subCodes.length > 0 && (
+                                        <div>
+                                            <div className="text-[11px] font-bold text-gray-400 tracking-wider mb-2 uppercase">
+                                                Chẩn đoán phụ / kèm theo ({subCodes.length})
+                                            </div>
+                                            <div className="space-y-2">
+                                                {subCodes.map((icd, idx) => (
+                                                    <ICDCard key={`sub-${icd.code}-${idx}`} icd={icd} idx={idx} />
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
-                                <div className="space-y-2">
-                                    {subCodes.map((icd, idx) => (
-                                        <ICDCard key={`sub-${icd.code}-${idx}`} icd={icd} idx={idx} />
-                                    ))}
+                            )
+                        },
+                        {
+                            key: 'lab',
+                            label: <span><ExperimentOutlined /> Đề Xuất Xét Nghiệm</span>,
+                            children: !labTests ? (
+                                <div className="text-center py-10 text-gray-400 text-sm">
+                                    Chưa có đề xuất xét nghiệm.
                                 </div>
-                            </div>
-                        )}
-                    </div>
-                )}
+                            ) : (
+                                <div className="pt-3">
+                                    <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 text-sm text-gray-800 whitespace-pre-wrap leading-relaxed shadow-sm">
+                                        {labTests}
+                                    </div>
+                                </div>
+                            )
+                        }
+                    ]}
+                />
             </Drawer>
         );
     };
@@ -1011,7 +1216,68 @@ ${vals.physical_exam || 'Chưa khám'}
         <Form form={form} layout="vertical" onFinish={handleSave} className="h-full flex flex-col overflow-hidden min-h-0">
             <PatientHeader />
             <TriageDrawer />
-            <ICDDrawer />
+            <SuggestionsDrawer />
+
+            {/* ── AI Drawer ──────────────────────────────────── */}
+            <Drawer
+                title={
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <RobotOutlined style={{ color: '#6366f1', fontSize: 18 }} />
+                        <span style={{ fontWeight: 700, fontSize: 15 }}>Trợ Lý Lâm Sàng AI</span>
+                    </div>
+                }
+                placement="right"
+                width={500}
+                open={aiDrawerOpen}
+                onClose={() => setAiDrawerOpen(false)}
+                styles={{ body: { padding: '12px 16px', display: 'flex', flexDirection: 'column', height: '100%' } }}
+                destroyOnClose={false}
+            >
+                <AIChat
+                    visitId={visitId}
+                    initialContext={aiContext}
+                    autoAnalyze={true}
+                />
+            </Drawer>
+
+            {/* ── Floating AI toggle button ───────────────────────── */}
+            <Tooltip title="Mở Trợ Lý AI" placement="left">
+                <button
+                    onClick={() => openAIDrawer()}
+                    style={{
+                        position: 'fixed',
+                        bottom: 100,
+                        right: 16,
+                        zIndex: 1000,
+                        width: 52,
+                        height: 52,
+                        borderRadius: '50%',
+                        background: aiDrawerOpen
+                            ? 'linear-gradient(135deg, #818cf8 0%, #6366f1 100%)'
+                            : 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)',
+                        border: 'none',
+                        boxShadow: '0 4px 20px rgba(99,102,241,0.5)',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        color: '#fff',
+                        fontSize: 22,
+                        transition: 'all 0.2s ease',
+                        transform: aiDrawerOpen ? 'scale(1.1)' : 'scale(1)',
+                    }}
+                >
+                    {aiUnreadCount > 0 && !aiDrawerOpen && (
+                        <span style={{
+                            position: 'absolute', top: -4, right: -4,
+                            background: '#ef4444', color: '#fff', fontSize: 11,
+                            fontWeight: 700, borderRadius: '50%', width: 20, height: 20,
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        }}>{aiUnreadCount}</span>
+                    )}
+                    <RobotOutlined />
+                </button>
+            </Tooltip>
 
             <div className="flex-1 min-h-0 flex gap-4">
                 {/* Left: Tabs with form content */}
@@ -1040,7 +1306,24 @@ ${vals.physical_exam || 'Chưa khám'}
                                                     <Col span={6}><Form.Item name="respiratory_rate" label="Nhịp thở (l/p)" className="mb-0"><InputNumber min={8} max={40} className="w-full bg-gray-50" controls={false} /></Form.Item></Col>
                                                     <Col span={6}><Form.Item name="weight" label="Cân nặng (kg)" className="mb-0"><InputNumber min={1} max={300} step={0.1} className="w-full bg-gray-50" controls={false} /></Form.Item></Col>
                                                     <Col span={6}><Form.Item name="height" label="Chiều cao (cm)" className="mb-0"><InputNumber min={30} max={250} className="w-full bg-gray-50" controls={false} /></Form.Item></Col>
-                                                    <Col span={6}><Form.Item label="BMI" className="mb-0"><Input value={bmi} readOnly className="w-full bg-gray-100 font-medium" /></Form.Item></Col>
+                                                    <Col span={6}>
+                                                        <Form.Item shouldUpdate={(prev, cur) => prev.weight !== cur.weight || prev.height !== cur.height} className="mb-0">
+                                                            {() => {
+                                                                const w = form.getFieldValue('weight');
+                                                                const h = form.getFieldValue('height');
+                                                                let calculatedBmi = '--';
+                                                                if (w && h) {
+                                                                    const hm = h / 100;
+                                                                    calculatedBmi = (w / (hm * hm)).toFixed(1);
+                                                                }
+                                                                return (
+                                                                    <Form.Item label="BMI" className="mb-0">
+                                                                        <Input value={calculatedBmi} readOnly className="w-full bg-gray-100 font-medium" />
+                                                                    </Form.Item>
+                                                                );
+                                                            }}
+                                                        </Form.Item>
+                                                    </Col>
                                                 </Row>
                                             </Card>
                                             <Card
@@ -1071,99 +1354,24 @@ ${vals.physical_exam || 'Chưa khám'}
                             {
                                 key: '3',
                                 label: <div className="px-4 py-1 text-gray-500 flex items-center gap-2"><FileTextOutlined /> 3. Kết quả</div>,
-                                children: <KetQuaTab visitId={visitId} onGoToDiagnosis={() => { setActiveTab('4'); try { localStorage.setItem(`${DRAFT_KEY}-tab`, '4'); } catch { /* ignore */ } }} />,
+                                children: <KetQuaTab visitId={visitId} onGoToDiagnosis={() => { setActiveTab('4'); try { localStorage.setItem(`${DRAFT_KEY}-tab`, '4'); } catch { /* ignore */ } }} onNewResult={(prompt) => openAIDrawer(prompt)} />,
                             },
                             {
                                 key: '4',
                                 label: <div className="px-4 py-1 text-gray-500 flex items-center gap-2"><MedicineBoxOutlined /> 4. Chẩn đoán & Kê đơn</div>,
-                                children: <div className="text-center py-10 text-gray-400 h-full overflow-y-auto">Chưa nhập chẩn đoán.</div>
+                                children: <DiagnosisAndPrescriptionTab
+                                    visitId={visitId}
+                                    doctorId={user?.staff_profile?.id ?? ''}
+
+                                    initialDiagnosis={record?.final_diagnosis ?? ''}
+                                    initialTreatmentPlan={record?.treatment_plan ?? ''}
+                                />
                             }
                         ]}
                     />
                 </div>
-
-                {/* Right: AI Chat — always visible regardless of active tab */}
-                <div className="w-[340px] shrink-0 flex flex-col min-h-0">
-                    <div className="bg-[#f8faff] border border-blue-100 rounded-xl shadow-sm flex flex-col h-full min-h-0">
-                        <div className="flex items-center justify-between px-4 py-3 border-b border-blue-100 shrink-0">
-                            <div className="flex items-center gap-2 text-blue-700 font-bold tracking-wide text-sm">
-                                <RobotOutlined className="text-base" />
-                                AI TRỢ LÝ LÂM SÀNG
-                            </div>
-                            {!chatInitialized && (
-                                <Button size="small" type="primary" icon={<RobotOutlined />} onClick={initializeChat}
-                                    className="bg-indigo-600 border-0 text-xs font-medium">
-                                    Bắt đầu
-                                </Button>
-                            )}
-                        </div>
-                        <div className="flex-1 overflow-y-auto px-3 py-2 space-y-3 min-h-0" style={{ scrollbarWidth: 'thin' }}>
-                            {chatMessages.length === 0 && (
-                                <div className="flex flex-col items-center justify-center h-full text-gray-400 text-sm gap-2 py-10">
-                                    <RobotOutlined className="text-3xl text-blue-300" />
-                                    <span>Nhấn <strong>Bắt đầu</strong> để AI phân tích bệnh án</span>
-                                    <span className="text-xs text-gray-300">AI sẽ nạp tóm tắt phân luồng và đưa ra ICD-10</span>
-                                </div>
-                            )}
-                            {chatMessages.filter(m => m.role !== 'system').map((msg, idx) => (
-                                <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                                    <div className={`max-w-[92%] rounded-xl px-3 py-2.5 text-sm leading-relaxed ${msg.role === 'user'
-                                        ? 'bg-blue-600 text-white rounded-br-sm'
-                                        : 'bg-white border border-gray-200 text-gray-700 rounded-bl-sm shadow-sm prose prose-sm max-w-none'
-                                        }`}>
-                                        {msg.role === 'assistant' ? (
-                                            <ReactMarkdown>{msg.content}</ReactMarkdown>
-                                        ) : (
-                                            <div className="whitespace-pre-wrap break-words">{msg.content}</div>
-                                        )}
-                                        <div className={`text-[10px] mt-1 ${msg.role === 'user' ? 'text-blue-200' : 'text-gray-300'}`}>
-                                            {dayjs(msg.timestamp).format('HH:mm')}
-                                        </div>
-                                    </div>
-                                </div>
-                            ))}
-                            {aiLoading && (
-                                <div className="flex justify-start">
-                                    <div className="bg-white border border-gray-200 rounded-xl rounded-bl-sm px-4 py-3 shadow-sm">
-                                        <div className="flex items-center gap-2 text-blue-500 text-sm">
-                                            <Spin size="small" />
-                                            <span>Đang suy nghĩ...</span>
-                                        </div>
-                                    </div>
-                                </div>
-                            )}
-                            <div ref={chatEndRef} />
-                        </div>
-                        <div className="border-t border-blue-100 px-3 py-2.5 shrink-0">
-                            <div className="flex gap-2">
-                                <Input.TextArea
-                                    value={chatInput}
-                                    onChange={e => setChatInput(e.target.value)}
-                                    placeholder="Hỏi về chẩn đoán, mã ICD..."
-                                    autoSize={{ minRows: 1, maxRows: 3 }}
-                                    className="text-sm bg-white"
-                                    onPressEnter={e => {
-                                        if (!e.shiftKey) {
-                                            e.preventDefault();
-                                            if (chatInput.trim() && !aiLoading) {
-                                                sendChatMessage(chatInput);
-                                                setChatInput('');
-                                            }
-                                        }
-                                    }}
-                                />
-                                <Button
-                                    type="primary"
-                                    icon={<ArrowRightOutlined />}
-                                    disabled={!chatInput.trim() || aiLoading}
-                                    onClick={() => { sendChatMessage(chatInput); setChatInput(''); }}
-                                    className="bg-indigo-600 border-0 shrink-0 self-end"
-                                />
-                            </div>
-                        </div>
-                    </div>
-                </div>
             </div>
+
 
             {/* Bottom Actions — Dynamic based on active tab */}
             <div className="bg-white border-t border-gray-200 p-4 mt-4 flex justify-center gap-4 shrink-0">
@@ -1185,9 +1393,28 @@ ${vals.physical_exam || 'Chưa khám'}
                         className="w-[200px] font-medium bg-green-600 border-green-600 hover:bg-green-500"
                         icon={<CheckCircleOutlined />}
                         onClick={async () => {
-                            await form.validateFields().catch(() => null);
-                            form.submit();
-                            message.success('Hoàn tất khám bệnh!');
+                            try {
+                                const values = await form.validateFields();
+                                const recordId = await saveData(values, true);
+                                if (recordId) {
+                                    await emrApi.finalize(recordId);
+                                    // Đóng AI Drawer và xóa lịch sử chat của visit này
+                                    setAiDrawerOpen(false);
+                                    try { localStorage.removeItem(`ai_chat_history_${visitId}`); } catch { /* ignore */ }
+                                    // Báo ngay cho QueueSidebar xóa bệnh nhân khỏi danh sách
+                                    try {
+                                        const ch = new BroadcastChannel('his_clinical_events');
+                                        ch.postMessage({ type: 'VISIT_COMPLETED', visitId });
+                                        ch.close();
+                                    } catch { /* BroadcastChannel không khả dụng trên một số env */ }
+                                    message.success('Hoàn tất khám bệnh thành công!');
+                                    router.push('/dashboard/clinical');
+                                } else {
+                                    message.error('Không thể lưu hồ sơ trước khi hoàn tất');
+                                }
+                            } catch (e) {
+                                console.log('Validation error:', e);
+                            }
                         }}
                     >
                         Hoàn Tất Khám
