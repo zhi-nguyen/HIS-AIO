@@ -353,6 +353,52 @@ class KioskService:
     # ------------------------------------------------------------------
     # REGISTER VISIT (Kết hợp Layer 1 + 2)
     # ------------------------------------------------------------------
+    @staticmethod
+    def _apply_insurance_snapshot(visit: 'Visit', patient: 'Patient') -> None:
+        """
+        Snapshot thông tin BHYT vào Visit tại thời điểm đăng ký.
+        
+        Tra cứu từ mock data (hoặc cổng thật) theo insurance_number của bệnh nhân.
+        Lưu vào visit: insurance_number, insurance_benefit_rate, insurance_card_expire.
+        Nếu BN không có thẻ hoặc thẻ không hợp lệ → để null (billing sẽ tính 100%).
+        """
+        ins_num = patient.insurance_number
+        if not ins_num:
+            logger.info(f"[KIOSK] Patient {patient.patient_code} — no insurance card, skipping snapshot")
+            return
+
+        # Tra cứu mock data (cùng infrastructure với identify_patient)
+        record = LOOKUP_BY_FULL_CODE.get(ins_num.upper())
+        if not record:
+            # Thử short code (10 chữ số)
+            record = LOOKUP_BY_SHORT_CODE.get(ins_num)
+
+        if not record:
+            logger.warning(f"[KIOSK] Insurance {ins_num} not found in mock data for {patient.patient_code}")
+            return
+
+        data = record.get('data', {}) if isinstance(record, dict) and 'data' in record else record
+
+        # Lấy mức hưởng
+        benefit_rate = data.get('benefit_rate')  # e.g. 80 (= 80%)
+        expire_str   = data.get('card_expire_date')  # e.g. "2027-12-31"
+        ins_code     = data.get('insurance_code', ins_num)
+
+        visit.insurance_number      = ins_code
+        visit.insurance_benefit_rate = int(benefit_rate) if benefit_rate is not None else None
+
+        if expire_str:
+            try:
+                from datetime import date as _date
+                visit.insurance_card_expire = _date.fromisoformat(expire_str)
+            except (ValueError, TypeError):
+                pass
+
+        logger.info(
+            f"[KIOSK] Insurance snapshot: visit={visit.visit_code} | "
+            f"ins={ins_code} | rate={benefit_rate}% | expire={expire_str}"
+        )
+
     @classmethod
     @transaction.atomic
     def register_visit(cls, patient_id, chief_complaint: str) -> dict:
@@ -419,9 +465,13 @@ class KioskService:
         
         # 4. Cập nhật Visit.chief_complaint để reception frontend thấy
         visit.chief_complaint = chief_complaint
-        visit.save(update_fields=['chief_complaint'])
+
+        # 5. Snapshot thông tin BHYT vào Visit (để billing dùng không cần tra lại)
+        cls._apply_insurance_snapshot(visit, patient)
+
+        visit.save(update_fields=['chief_complaint', 'insurance_number', 'insurance_benefit_rate', 'insurance_card_expire'])
         
-        # 5. Ước tính thời gian chờ
+        # 6. Ước tính thời gian chờ
         estimated_wait = QueueService.get_estimated_wait_time(station)
         
         # 6. Trigger AI summarize (background - fire-and-forget)
@@ -471,31 +521,83 @@ class KioskService:
                 # Lấy thông tin bệnh nhân
                 patient = visit.patient
                 
-                # Lấy lịch sử khám cũ
+                from apps.medical_services.lis.models import LabOrder
+                from apps.medical_services.ris.models import ImagingOrder
+
+                # Lấy lịch sử khám cũ (lấy đến 30 lượt để đảm bảo bao quát hầu hết bệnh nhân)
                 past_visits = Visit.objects.filter(
                     patient=patient,
-                    status=Visit.Status.COMPLETED,
+                    status__in=[Visit.Status.COMPLETED, Visit.Status.IN_PROGRESS, Visit.Status.PENDING_RESULTS],
                 ).exclude(
                     id=visit.id
-                ).order_by('-check_in_time')[:5]
+                ).order_by('-check_in_time')[:30]
                 
                 # Build context từ bệnh án cũ
                 history_lines = []
-                for pv in past_visits:
+                for idx, pv in enumerate(past_visits, 1):
                     pv_complaint = pv.chief_complaint or ''
-                    # Thử lấy thêm từ ClinicalRecord
-                    if not pv_complaint:
-                        try:
-                            cr = ClinicalRecord.objects.get(visit=pv)
-                            pv_complaint = cr.chief_complaint or 'Không rõ lý do'
-                        except ClinicalRecord.DoesNotExist:
+                    cr = None
+                    try:
+                        cr = ClinicalRecord.objects.get(visit=pv)
+                        if not pv_complaint:
+                            pv_complaint = getattr(cr, 'final_diagnosis', cr.chief_complaint) or 'Không rõ lý do'
+                    except ClinicalRecord.DoesNotExist:
+                        if not pv_complaint:
                             pv_complaint = 'Không rõ lý do'
                     
                     dept = pv.confirmed_department.name if pv.confirmed_department else 'N/A'
                     date = pv.check_in_time.strftime('%d/%m/%Y') if pv.check_in_time else 'N/A'
-                    history_lines.append(f"- {date}: {pv_complaint} (Khoa: {dept})")
-                
-                history_text = '\n'.join(history_lines) if history_lines else 'Chưa có lịch sử khám.'
+                    
+                    visit_block = [f"--- Lượt khám {idx} ({date}) ---", f"Khoa: {dept}"]
+                    if pv_complaint:
+                        visit_block.append(f"Lý do khám/Chẩn đoán sơ bộ: {pv_complaint}")
+                        
+                    if cr:
+                        if cr.history_of_present_illness:
+                            visit_block.append(f"Bệnh sử: {cr.history_of_present_illness}")
+                        if cr.physical_exam:
+                            visit_block.append(f"Khám lâm sàng: {cr.physical_exam}")
+                        if cr.medical_summary:
+                            visit_block.append(f"Tóm tắt bệnh án (BS ghi nhận): {cr.medical_summary}")
+                        if cr.final_diagnosis:
+                            visit_block.append(f"Chẩn đoán cuối cùng: {cr.final_diagnosis}")
+                        if cr.treatment_plan:
+                            visit_block.append(f"Hướng điều trị: {cr.treatment_plan}")
+                    
+                    # 1. Kết quả Xét nghiệm
+                    lab_orders = LabOrder.objects.filter(visit=pv, status__in=['COMPLETED', 'VERIFIED']).prefetch_related('details__result', 'details__test')
+                    lab_info = []
+                    for order in lab_orders:
+                        for detail in order.details.all():
+                            if hasattr(detail, 'result'):
+                                res = detail.result
+                                val = res.value_numeric if res.value_numeric is not None else res.value_string
+                                unit = detail.test.unit or ''
+                                if res.is_abnormal:
+                                    lab_info.append(f"  - {detail.test.name}: {val} {unit} [BẤT THƯỜNG]")
+                                else:
+                                    lab_info.append(f"  - {detail.test.name}: {val} {unit}")
+                    if lab_info:
+                        visit_block.append("Xét nghiệm:")
+                        visit_block.extend(lab_info)
+                        
+                    # 2. Kết quả CĐHA
+                    imaging_orders = ImagingOrder.objects.filter(visit=pv, status__in=['REPORTED', 'VERIFIED']).select_related('result', 'procedure')
+                    img_info = []
+                    for order in imaging_orders:
+                        if hasattr(order, 'result'):
+                            res = order.result
+                            img_info.append(f"  - {order.procedure.name}:")
+                            img_info.append(f"    + Kết luận: {res.conclusion}")
+                            if res.is_abnormal:
+                                img_info[-1] += " [BẤT THƯỜNG]"
+                    if img_info:
+                        visit_block.append("Chẩn đoán hình ảnh:")
+                        visit_block.extend(img_info)
+
+                    history_lines.append('\n'.join(visit_block))
+
+                history_text = '\n\n'.join(history_lines) if history_lines else 'Chưa có lịch sử khám.'
                 
                 # Build message cho Summarize Agent
                 age = ''
@@ -542,26 +644,27 @@ class KioskService:
                     vital_recommendations = kwargs.get('vital_sign_recommendations', [])
                     triage_hints_text = kwargs.get('triage_hints', None)
                     
-                    # Lưu vào Visit — cả tóm tắt cũ lẫn các trường mới
+                    # Lưu vào Visit
                     visit.refresh_from_db()
-                    visit.triage_ai_response = ai_content  # Legacy field
-                    visit.pre_triage_summary = ai_content  # Trường mới: toàn bộ tóm tắt
+                    visit.triage_ai_response = ai_content
+                    visit.pre_triage_summary = ai_content
+                    
                     if vital_recommendations:
                         visit.vital_sign_recommendations = vital_recommendations
                     if triage_hints_text:
                         visit.triage_hints = triage_hints_text
-                    
-                    update_fields = ['triage_ai_response', 'pre_triage_summary']
+                        
+                    update_fields_vt = ['triage_ai_response', 'pre_triage_summary']
                     if vital_recommendations:
-                        update_fields.append('vital_sign_recommendations')
+                        update_fields_vt.append('vital_sign_recommendations')
                     if triage_hints_text:
-                        update_fields.append('triage_hints')
-                    visit.save(update_fields=update_fields)
+                        update_fields_vt.append('triage_hints')
+                    visit.save(update_fields=update_fields_vt)
                     
                     logger.info(
                         f"[KIOSK] AI Summary completed for visit: {visit.visit_code} | "
                         f"vital_recs={vital_recommendations} | "
-                        f"hints={'YES' if triage_hints_text else 'NO'}"
+                        f"hints={'YES' if triage_hints_text else 'NO'} -> Saved to Visit"
                     )
                 else:
                     logger.warning(f"[KIOSK] AI Summary returned empty for visit: {visit.visit_code}")

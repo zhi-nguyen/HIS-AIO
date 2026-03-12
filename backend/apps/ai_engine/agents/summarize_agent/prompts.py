@@ -61,7 +61,8 @@ VD: "BN THA mạn tính 10 năm, đang dùng Amlodipine — chú ý BP_SYS khi p
 3. TIỀN SỬ QUAN TRỌNG: Bệnh nền, dị ứng
 4. THUỐC ĐANG DÙNG: Danh sách thuốc hiện tại
 5. DIỄN BIẾN GẦN ĐÂY: Cập nhật 24-48h qua
-6. [QUAN TRỌNG] LƯU Ý ĐẶC BIỆT: Cảnh báo quan trọng
+6. KẾT QUẢ KHÁM CÁC LẦN TRƯỚC: Liệt kê chi tiết kết quả Xét nghiệm và Chẩn đoán hình ảnh, Nhóm rõ ràng theo từng Ngày/Lần khám (nhấn mạnh các kết quả [BẤT THƯỜNG]).
+7. [QUAN TRỌNG] LƯU Ý ĐẶC BIỆT: Cảnh báo quan trọng
 
 ## Ví Dụ Response
 
@@ -164,6 +165,7 @@ Bạn là trợ lý format dữ liệu. Nhiệm vụ: chuyển đổi tóm tắt
   "medical_history": "Tiền sử quan trọng",
   "current_medications": ["Thuốc 1", "Thuốc 2"],
   "recent_updates": "Diễn biến gần đây",
+  "past_results": "Kết quả Xét nghiệm và Chẩn đoán hình ảnh các lần trước",
   "special_notes": "[QUAN TRỌNG] Lưu ý đặc biệt",
   "vital_sign_recommendations": ["spo2", "bp_systolic"],
   "triage_hints": "Lời nhắc ngắn cho Agent Phân Luồng"
