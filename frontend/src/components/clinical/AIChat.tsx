@@ -1,37 +1,38 @@
 'use client';
 
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { Card, Input, Button, Space, Typography, Avatar, Spin, Tooltip } from 'antd';
+import { Input, Button, Space, Typography, Avatar, Spin, Tooltip } from 'antd';
 const { TextArea } = Input;
 import {
     SendOutlined,
     MedicineBoxOutlined,
     UserOutlined,
-    CloseOutlined,
+    StopOutlined,
     CopyOutlined,
     CheckOutlined,
     DownOutlined,
     RightOutlined,
     LoadingOutlined,
+    ClearOutlined,
 } from '@ant-design/icons';
 import ReactMarkdown from 'react-markdown';
 
 const { Text } = Typography;
 
 /**
- * AI Chat Component với SSE Streaming
- * Hỗ trợ AI trò chuyện trong quá trình khám
- * 
+ * AI Chat Component với SSE Streaming — dùng bên trong Drawer toggle
+ *
  * Features:
- * - Lưu lịch sử chat vào localStorage theo visitId (TTL 1 giờ)
- * - Hiển thị quá trình "thinking" của AI phía trên câu trả lời
+ * - Lưu lịch sử chat vào localStorage theo visitId (TTL 8 giờ)
+ * - Auto-phân tích khi mở lần đầu (autoAnalyze + initialContext)
+ * - Hiển thị quá trình "thinking" của AI
  */
 
 // ==========================================
 // Chat History Persistence (localStorage)
 // ==========================================
 const CHAT_STORAGE_PREFIX = 'ai_chat_history_';
-const CHAT_TTL_MS = 60 * 60 * 1000; // 1 giờ
+const CHAT_TTL_MS = 8 * 60 * 60 * 1000; // 8 giờ
 
 interface StoredChat {
     messages: StoredMessage[];
@@ -54,7 +55,6 @@ function saveChatToStorage(key: string, messages: Message[]) {
                 id: m.id,
                 role: m.role,
                 content: m.content,
-                thinking: m.thinking,
                 timestamp: m.timestamp.toISOString(),
             })),
             lastMessageAt: Date.now(),
@@ -83,7 +83,6 @@ function loadChatFromStorage(key: string): Message[] | null {
             id: m.id,
             role: m.role,
             content: m.content,
-            thinking: m.thinking,
             timestamp: new Date(m.timestamp),
         }));
     } catch {
@@ -96,92 +95,6 @@ function loadChatFromStorage(key: string): Message[] | null {
 // Thinking Section Component
 // ==========================================
 
-/** Lọc bỏ phần JSON routing, chỉ giữ từ "**Bước 1" trở đi */
-function cleanThinkingContent(raw: string): string {
-    const match = raw.match(/\*\*Bước 1/);
-    if (match && match.index !== undefined) {
-        return raw.slice(match.index).trim();
-    }
-    const cleaned = raw.replace(/```[\s\S]*?```/g, '').trim();
-    return cleaned || raw;
-}
-
-function ThinkingSection({ thinking, isStreaming }: { thinking: string; isStreaming: boolean }) {
-    const [expanded, setExpanded] = useState(false);
-    const displayThinking = thinking ? cleanThinkingContent(thinking) : '';
-
-    if (!displayThinking && !isStreaming) return null;
-
-    if (isStreaming) {
-        return (
-            <div
-                style={{
-                    backgroundColor: '#fffbe6',
-                    border: '1px solid #ffe58f',
-                    borderRadius: '8px',
-                    padding: '8px 12px',
-                    marginBottom: '8px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    fontSize: '13px',
-                    color: '#d48806',
-                }}
-            >
-                <LoadingOutlined spin style={{ fontSize: '14px' }} />
-                <span style={{ fontWeight: 500 }}>Đang tư duy</span>
-                <span className="animate-pulse">● ● ●</span>
-            </div>
-        );
-    }
-
-    if (!displayThinking) return null;
-
-    return (
-        <div style={{ marginBottom: '8px' }}>
-            <button
-                onClick={() => setExpanded(!expanded)}
-                style={{
-                    background: '#fffbe6',
-                    border: '1px solid #ffe58f',
-                    borderRadius: expanded ? '8px 8px 0 0' : '8px',
-                    padding: '8px 12px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    fontSize: '13px',
-                    color: '#d48806',
-                    cursor: 'pointer',
-                    width: '100%',
-                    fontWeight: 500,
-                }}
-            >
-                {expanded ? <DownOutlined style={{ fontSize: '10px' }} /> : <RightOutlined style={{ fontSize: '10px' }} />}
-                <span>Hiện quá trình tư duy</span>
-            </button>
-            {expanded && (
-                <div
-                    style={{
-                        backgroundColor: '#fffef5',
-                        border: '1px solid #ffe58f',
-                        borderTop: 'none',
-                        borderRadius: '0 0 8px 8px',
-                        padding: '8px 12px',
-                        fontSize: '12px',
-                        color: '#8c6d1f',
-                        maxHeight: '200px',
-                        overflowY: 'auto',
-                        whiteSpace: 'pre-wrap',
-                        lineHeight: '1.5',
-                    }}
-                >
-                    {displayThinking}
-                </div>
-            )}
-        </div>
-    );
-}
-
 // ==========================================
 // Interfaces
 // ==========================================
@@ -189,37 +102,32 @@ interface Message {
     id: string;
     role: 'user' | 'assistant';
     content: string;
-    thinking?: string;
     timestamp: Date;
     isStreaming?: boolean;
-    isThinking?: boolean;
 }
 
-interface AIChatProps {
+export interface AIChatProps {
     visitId: string;
+    /** Context tổng hợp từ clinical page (bệnh sử, XN, CĐHA...) */
+    initialContext?: string;
+    /** Nếu true và chưa có lịch sử chat: tự gửi initialContext khi mở */
+    autoAnalyze?: boolean;
     patientContext?: string;
-    onClose?: () => void;
 }
 
-export default function AIChat({ visitId, patientContext, onClose }: AIChatProps) {
+export default function AIChat({ visitId, initialContext, autoAnalyze, patientContext }: AIChatProps) {
     const storageKey = `${CHAT_STORAGE_PREFIX}${visitId}`;
-
-    const WELCOME_MESSAGE: Message = {
-        id: '1',
-        role: 'assistant',
-        content: 'Xin chào! Tôi là trợ lý AI. Tôi có thể giúp bạn:\n- Phân tích triệu chứng\n- Đề xuất chẩn đoán phân biệt\n- Tra cứu thông tin y khoa\n- Kiểm tra tương tác thuốc\n\nHãy hỏi bất cứ điều gì bạn cần!',
-        timestamp: new Date(),
-    };
 
     const [messages, setMessages] = useState<Message[]>(() => {
         const stored = loadChatFromStorage(storageKey);
-        return stored && stored.length > 0 ? stored : [WELCOME_MESSAGE];
+        return stored && stored.length > 0 ? stored : [];
     });
     const [input, setInput] = useState('');
     const [loading, setLoading] = useState(false);
     const [copied, setCopied] = useState<string | null>(null);
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const abortControllerRef = useRef<AbortController | null>(null);
+    const autoAnalyzeSentRef = useRef(false);
 
     // Auto scroll to bottom
     useEffect(() => {
@@ -229,65 +137,45 @@ export default function AIChat({ visitId, patientContext, onClose }: AIChatProps
     // Lưu messages vào localStorage khi thay đổi (bỏ qua khi đang streaming)
     useEffect(() => {
         const hasStreaming = messages.some(m => m.isStreaming);
-        if (!hasStreaming) {
+        if (!hasStreaming && messages.length > 0) {
             saveChatToStorage(storageKey, messages);
         }
     }, [messages, storageKey]);
 
-    // Copy message to clipboard
-    const handleCopy = useCallback((text: string, id: string) => {
-        navigator.clipboard.writeText(text);
-        setCopied(id);
-        setTimeout(() => setCopied(null), 2000);
-    }, []);
-
-    // Send message with SSE streaming
-    const handleSend = async () => {
-        if (!input.trim() || loading) return;
+    // Core send function
+    const sendMessage = useCallback(async (text: string) => {
+        if (!text.trim() || loading) return;
 
         const userMessage: Message = {
             id: Date.now().toString(),
             role: 'user',
-            content: input,
+            content: text,
             timestamp: new Date(),
         };
 
         setMessages(prev => [...prev, userMessage]);
-        setInput('');
         setLoading(true);
 
-        // Create assistant message placeholder
         const assistantId = (Date.now() + 1).toString();
         setMessages(prev => [
             ...prev,
-            {
-                id: assistantId,
-                role: 'assistant',
-                content: '',
-                timestamp: new Date(),
-                isStreaming: true,
-                isThinking: true,
-            },
+            { id: assistantId, role: 'assistant', content: '', timestamp: new Date(), isStreaming: true },
         ]);
 
         try {
-            // Abort previous request if any
             abortControllerRef.current?.abort();
             abortControllerRef.current = new AbortController();
 
             const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
-            const token = localStorage.getItem('access_token');
+            const token = localStorage.getItem('his_access_token');
 
             const response = await fetch(`${baseUrl}/chat/stream/`, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`,
-                },
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                 body: JSON.stringify({
                     visit_id: visitId,
-                    message: input,
-                    context: patientContext,
+                    message: text,
+                    context: patientContext || initialContext,
                 }),
                 signal: abortControllerRef.current.signal,
             });
@@ -312,156 +200,144 @@ export default function AIChat({ visitId, patientContext, onClose }: AIChatProps
                         if (line.startsWith('data: ')) {
                             try {
                                 const data = JSON.parse(line.slice(6));
-
-                                if (data.type === 'thinking' && typeof data.content === 'string') {
-                                    // Phase 1: Tích lũy thinking content
-                                    thinkingContent += data.content;
-                                    setMessages(prev =>
-                                        prev.map(m => m.id === assistantId
-                                            ? { ...m, thinking: thinkingContent, isThinking: true }
-                                            : m
-                                        )
-                                    );
-                                } else if (data.type === 'result_json' && data.content) {
-                                    const text = data.content.message || data.content.final_response || '';
-                                    if (text) {
-                                        fullContent = text;
-                                        setMessages(prev =>
-                                            prev.map(m => m.id === assistantId
-                                                ? { ...m, content: fullContent, isThinking: false }
-                                                : m
-                                            )
-                                        );
+                                if (data.type === 'result_json' && data.content) {
+                                    const t = data.content.message || data.content.final_response || '';
+                                    if (t) {
+                                        fullContent = t;
+                                        setMessages(prev => prev.map(m => m.id === assistantId
+                                            ? { ...m, content: fullContent } : m));
+                                    }
+                                    
+                                    // Phát event cập nhật SuggestionsDrawer
+                                    if (data.content.tests || (data.content.icds && data.content.icds.length > 0)) {
+                                        const event = new CustomEvent('ai_suggestions_update', {
+                                            detail: {
+                                                tests: data.content.tests || '',
+                                                icds: data.content.icds || [],
+                                            }
+                                        });
+                                        window.dispatchEvent(event);
                                     }
                                 } else if (data.text) {
-                                    // Legacy format
                                     fullContent += data.text;
-                                    setMessages(prev =>
-                                        prev.map(m => m.id === assistantId
-                                            ? { ...m, content: fullContent, isThinking: false }
-                                            : m
-                                        )
-                                    );
+                                    setMessages(prev => prev.map(m => m.id === assistantId
+                                        ? { ...m, content: fullContent } : m));
                                 }
                             } catch {
-                                // Non-JSON line, could be raw text
-                                const text = line.slice(6);
-                                if (text && text !== '[DONE]') {
-                                    fullContent += text;
-                                    setMessages(prev =>
-                                        prev.map(m => m.id === assistantId
-                                            ? { ...m, content: fullContent, isThinking: false }
-                                            : m
-                                        )
-                                    );
+                                const t = line.slice(6);
+                                if (t && t !== '[DONE]') {
+                                    fullContent += t;
+                                    setMessages(prev => prev.map(m => m.id === assistantId
+                                        ? { ...m, content: fullContent } : m));
                                 }
                             }
                         }
                     }
                 }
 
-                // Mark streaming as complete
-                setMessages(prev =>
-                    prev.map(m =>
-                        m.id === assistantId
-                            ? { ...m, isStreaming: false, isThinking: false, thinking: thinkingContent || undefined }
-                            : m
-                    )
-                );
+                setMessages(prev => prev.map(m => m.id === assistantId
+                    ? { ...m, isStreaming: false } : m));
             }
         } catch (error) {
             if ((error as Error).name === 'AbortError') return;
-
-            console.error('Chat error:', error);
-            setMessages(prev =>
-                prev.map(m =>
-                    m.id === assistantId
-                        ? { ...m, content: 'Xin lỗi, đã có lỗi xảy ra. Vui lòng thử lại sau.', isStreaming: false, isThinking: false }
-                        : m
-                )
-            );
+            setMessages(prev => prev.map(m => m.id === assistantId
+                ? { ...m, content: 'Xin lỗi, đã có lỗi xảy ra. Vui lòng thử lại sau.', isStreaming: false } : m));
         } finally {
             setLoading(false);
         }
+    }, [visitId, patientContext, initialContext, loading]);
+
+    // Auto-analyze khi mount (mở drawer lần đầu chưa có lịch sử)
+    useEffect(() => {
+        if (!autoAnalyze || autoAnalyzeSentRef.current) return;
+        if (messages.length > 0) return; // Đã có lịch sử — không gửi lại
+        if (!initialContext) return;
+        autoAnalyzeSentRef.current = true;
+        sendMessage(initialContext);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [autoAnalyze, initialContext]);
+
+    const handleSend = () => {
+        sendMessage(input);
+        setInput('');
     };
 
-    // Handle enter key
-    const handleKeyPress = (e: React.KeyboardEvent) => {
-        if (e.key === 'Enter' && !e.shiftKey) {
-            e.preventDefault();
-            handleSend();
-        }
-    };
+    const handleCopy = useCallback((text: string, id: string) => {
+        navigator.clipboard.writeText(text);
+        setCopied(id);
+        setTimeout(() => setCopied(null), 2000);
+    }, []);
 
-    // Stop streaming
     const handleStop = () => {
         abortControllerRef.current?.abort();
         setLoading(false);
     };
 
+    const handleClear = () => {
+        if (loading) handleStop();
+        setMessages([]);
+        localStorage.removeItem(storageKey);
+        autoAnalyzeSentRef.current = false;
+    };
+
     return (
-        <Card
-            title={
-                <Space>
-                    <MedicineBoxOutlined className="text-blue-500" />
-                    <span>Trợ lý AI</span>
-                </Space>
-            }
-            extra={
-                <Space>
-                    {loading && (
-                        <Button size="small" danger onClick={handleStop}>
-                            Dừng
-                        </Button>
-                    )}
-                    {onClose && <Button type="text" icon={<CloseOutlined />} onClick={onClose} />}
-                </Space>
-            }
-            className="h-full flex flex-col"
-            styles={{ body: { flex: 1, display: 'flex', flexDirection: 'column', padding: '12px' } }}
-        >
+        <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+            {/* Toolbar */}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, paddingBottom: 8, borderBottom: '1px solid #f0f0f0', marginBottom: 8 }}>
+                {loading && (
+                    <Button size="small" danger icon={<StopOutlined />} onClick={handleStop}>Dừng</Button>
+                )}
+                <Tooltip title="Xóa lịch sử chat">
+                    <Button size="small" icon={<ClearOutlined />} onClick={handleClear} disabled={messages.length === 0 && !loading}>
+                        Xóa chat
+                    </Button>
+                </Tooltip>
+            </div>
+
             {/* Messages */}
-            <div className="flex-1 overflow-y-auto space-y-3 mb-3 max-h-[400px]">
+            <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 12, paddingRight: 4 }}>
+                {messages.length === 0 && !loading && (
+                    <div style={{ textAlign: 'center', color: '#9ca3af', fontSize: 13, padding: '40px 16px' }}>
+                        <MedicineBoxOutlined style={{ fontSize: 32, color: '#d1d5db', marginBottom: 8, display: 'block' }} />
+                        AI sẽ tự phân tích toàn bộ thông tin lâm sàng khi bạn mở trợ lý lần đầu.
+                    </div>
+                )}
+
                 {messages.map((msg) => (
-                    <div
-                        key={msg.id}
-                        className={`flex gap-2 ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}
-                    >
+                    <div key={msg.id} style={{ display: 'flex', gap: 8, flexDirection: msg.role === 'user' ? 'row-reverse' : 'row' }}>
                         <Avatar
                             icon={msg.role === 'user' ? <UserOutlined /> : <MedicineBoxOutlined />}
-                            className={msg.role === 'user' ? 'bg-blue-500' : 'bg-green-500'}
+                            style={{ backgroundColor: msg.role === 'user' ? '#3b82f6' : '#10b981', flexShrink: 0 }}
                             size="small"
                         />
-                        <div
-                            className={`max-w-[85%] p-3 rounded-lg relative group text-base ${msg.role === 'user'
-                                ? 'bg-blue-600 text-white'
-                                : 'bg-gray-100 text-gray-800 border border-gray-200'
-                                }`}
-                        >
+                        <div style={{
+                            maxWidth: '85%', padding: '10px 12px', borderRadius: 10, position: 'relative',
+                            backgroundColor: msg.role === 'user' ? '#2563eb' : '#f3f4f6',
+                            color: msg.role === 'user' ? '#fff' : '#1f2937',
+                            border: msg.role === 'assistant' ? '1px solid #e5e7eb' : 'none',
+                        }} className="group">
                             {msg.role === 'assistant' ? (
-                                <div className="prose prose-base max-w-none">
-                                    {/* Thinking section phía trên câu trả lời */}
-                                    <ThinkingSection
-                                        thinking={msg.thinking || ''}
-                                        isStreaming={!!msg.isThinking}
-                                    />
-                                    {msg.content && (
-                                        <ReactMarkdown>{msg.content}</ReactMarkdown>
+                                <div className="prose prose-sm max-w-none" style={{ fontSize: 13 }}>
+                                    {msg.isStreaming && !msg.content && (
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#6b7280' }}>
+                                            <LoadingOutlined spin />
+                                            <span>Đang tạo phản hồi...</span>
+                                        </div>
                                     )}
+                                    {msg.content && <ReactMarkdown>{msg.content}</ReactMarkdown>}
                                     {msg.isStreaming && msg.content && <span className="animate-pulse">▊</span>}
                                 </div>
                             ) : (
-                                <Text className="text-white">{msg.content}</Text>
+                                <Text style={{ color: '#fff', fontSize: 13 }}>{msg.content}</Text>
                             )}
 
-                            {/* Copy button */}
                             {msg.role === 'assistant' && msg.content && !msg.isStreaming && (
                                 <Tooltip title={copied === msg.id ? 'Đã sao chép!' : 'Sao chép'}>
                                     <Button
-                                        type="text"
-                                        size="small"
+                                        type="text" size="small"
                                         icon={copied === msg.id ? <CheckOutlined /> : <CopyOutlined />}
-                                        className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                                        style={{ position: 'absolute', top: 4, right: 4, opacity: 0 }}
+                                        className="group-hover:!opacity-100 transition-opacity"
                                         onClick={() => handleCopy(msg.content, msg.id)}
                                     />
                                 </Tooltip>
@@ -469,41 +345,28 @@ export default function AIChat({ visitId, patientContext, onClose }: AIChatProps
                         </div>
                     </div>
                 ))}
-                {loading && messages[messages.length - 1]?.content === '' && !messages[messages.length - 1]?.isThinking && (
-                    <div className="flex gap-2">
-                        <Avatar icon={<MedicineBoxOutlined />} className="bg-green-500" size="small" />
-                        <div className="bg-gray-100 p-2 rounded-lg">
-                            <Spin size="small" />
-                        </div>
-                    </div>
-                )}
                 <div ref={messagesEndRef} />
             </div>
 
             {/* Input */}
-            <div className="w-full flex gap-2 items-end">
+            <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', paddingTop: 8, borderTop: '1px solid #f0f0f0', marginTop: 8 }}>
                 <TextArea
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
                     onKeyDown={(e) => {
-                        if (e.key === 'Enter' && !e.shiftKey) {
-                            e.preventDefault();
-                            handleSend();
-                        }
+                        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); }
                     }}
-                    placeholder="Nhập câu hỏi... (Enter để gửi)"
+                    placeholder="Nhập câu hỏi... (Enter để gửi, Shift+Enter xuống dòng)"
                     disabled={loading}
-                    autoSize={{ minRows: 1, maxRows: 4 }}
-                    className="text-base"
+                    autoSize={{ minRows: 1, maxRows: 5 }}
+                    style={{ fontSize: 13 }}
                 />
                 <Button
-                    type="primary"
-                    icon={<SendOutlined />}
-                    onClick={handleSend}
-                    loading={loading}
-                    className="flex-shrink-0 bg-blue-600 hover:bg-blue-700 h-9"
+                    type="primary" icon={<SendOutlined />}
+                    onClick={handleSend} loading={loading}
+                    style={{ flexShrink: 0, height: 36, backgroundColor: '#2563eb' }}
                 />
             </div>
-        </Card>
+        </div>
     );
 }

@@ -122,7 +122,60 @@ services:
       - backend
     restart: always
 
+  # ==========================================================================
+  # PACS SERVER (Orthanc) — Lưu trữ và phân phối ảnh DICOM
+  # ==========================================================================
+  orthanc_db:
+    image: postgres:16
+    container_name: his_orthanc_db
+    environment:
+      - POSTGRES_USER=orthanc
+      - POSTGRES_PASSWORD=orthanc_password
+      - POSTGRES_DB=orthanc
+    volumes:
+      - orthanc_postgres_data:/var/lib/postgresql/data
+    restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U orthanc"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  orthanc:
+    image: orthancteam/orthanc:latest
+    container_name: his_orthanc
+    ports:
+      - "4242:4242"   # DICOM port — nhận ảnh từ máy chụp
+      - "8042:8042"   # HTTP REST API + DICOMweb
+    volumes:
+      - ./pacs_server/orthanc.json:/etc/orthanc/orthanc.json:ro
+      - ./pacs_server/orthanc-lua:/etc/orthanc/lua:ro
+      - orthanc_storage:/var/lib/orthanc/db
+    depends_on:
+      orthanc_db:
+        condition: service_healthy
+      backend:
+        condition: service_started
+    restart: always
+
+  # ==========================================================================
+  # OHIF Viewer — Xem ảnh DICOM qua DICOMweb (nhúng iframe vào Next.js)
+  # ==========================================================================
+  ohif:
+    image: ohif/app:v3.9.2
+    container_name: his_ohif
+    ports:
+      - "3001:80"
+    volumes:
+      - ./pacs_server/ohif/app-config.js:/usr/share/nginx/html/app-config.js:ro
+      - ./pacs_server/ohif/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - orthanc
+    restart: always
+
 volumes:
   his_postgres_data:
   tts_audio:
+  orthanc_postgres_data:
+  orthanc_storage:
 

@@ -180,6 +180,11 @@ FHIR_SERVER_URL = config('FHIR_SERVER_URL', default='')
 PACS_SERVER_URL = config('PACS_SERVER_URL', default='')
 INTEROP_MOCK_MODE = config('INTEROP_MOCK_MODE', default=True, cast=bool)
 
+# Orthanc PACS Server — dùng bởi Celery task process_dicom_study
+ORTHANC_URL = config('ORTHANC_URL', default='http://orthanc:8042')
+ORTHANC_USER = config('ORTHANC_USER', default='his_backend')
+ORTHANC_PASSWORD = config('ORTHANC_PASSWORD', default='his_backend_secret')
+
 # Channels / WebSocket Configuration
 ASGI_APPLICATION = 'config.asgi.application'
 

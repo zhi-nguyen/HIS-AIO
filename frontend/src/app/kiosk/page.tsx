@@ -501,7 +501,7 @@ export default function KioskPage() {
                                     showIcon
                                     icon={<WarningOutlined />}
                                     message="Bạn đang có lượt khám chưa hoàn thành"
-                                    description={`Mã lượt khám: ${identifyResult.active_visit_code}. Bạn vẫn có thể đăng ký mới nếu cần.`}
+                                    description={`Mã lượt khám: ${identifyResult.active_visit_code}`}
                                     style={{ borderRadius: 12, marginBottom: 20, fontSize: 16 }}
                                 />
                             )}

@@ -67,45 +67,141 @@ class VisitViewSet(viewsets.ModelViewSet):
             queue_number=queue_number
         )
 
-        # Integrate with QMS: đưa vào hàng đợi điểm tiếp đón
+        # ---  Snapshot BHYT vào Visit (để Billing dùng không cần tra lại) ---
+        try:
+            from apps.core_services.insurance_mock.mock_data import (
+                LOOKUP_BY_FULL_CODE, LOOKUP_BY_SHORT_CODE
+            )
+            patient = visit.patient
+            ins_num = getattr(patient, 'insurance_number', None)
+            if ins_num:
+                record = LOOKUP_BY_FULL_CODE.get(ins_num.upper()) or LOOKUP_BY_SHORT_CODE.get(ins_num)
+                if record:
+                    data = record.get('data', {}) if isinstance(record, dict) and 'data' in record else record
+                    benefit_rate = data.get('benefit_rate')
+                    expire_str   = data.get('card_expire_date')
+                    visit.insurance_number = data.get('insurance_code', ins_num)
+                    visit.insurance_benefit_rate = int(benefit_rate) if benefit_rate is not None else None
+                    if expire_str:
+                        from datetime import date as _date
+                        try:
+                            visit.insurance_card_expire = _date.fromisoformat(expire_str)
+                        except (ValueError, TypeError):
+                            pass
+                    visit.save(update_fields=['insurance_number', 'insurance_benefit_rate', 'insurance_card_expire'])
+                    logger.info(
+                        f"[RECEPTION] Insurance snapshot: visit={visit.visit_code} | "
+                        f"rate={benefit_rate}% | expire={expire_str}"
+                    )
+        except Exception as ins_err:
+            logger.warning(f"[RECEPTION] Insurance snapshot failed (non-blocking): {ins_err}")
+
+
         try:
             from apps.core_services.qms.models import ServiceStation, StationType, QueueSourceType
-            from apps.core_services.qms.services import QueueService
+            from apps.core_services.qms.services import QueueService, ClinicalQueueService
+            from apps.core_services.departments.models import Department
 
-            # Tìm station dựa theo station_id hoặc station RECEPTION đầu tiên đang active
-            station_id = self.request.data.get('station_id')
-            if station_id:
-                station = ServiceStation.objects.filter(id=station_id, is_active=True).first()
-            else:
-                station = ServiceStation.objects.filter(
-                    station_type=StationType.RECEPTION,
-                    is_active=True,
-                ).first()
-            
-            if station:
-                # Xác định priority theo loại bệnh nhân
-                priority = 0
-                source_type = QueueSourceType.WALK_IN
-                if visit.priority == 'EMERGENCY':
+            if visit.priority == 'EMERGENCY':
+                # --- PHÂN LƯỒNG THẲNG TỚI KHOA CẤP CỨU ---
+                try:
+                    cc_dept = Department.objects.get(code='CC', is_active=True)
+                    visit.confirmed_department = cc_dept
+                    visit.recommended_department = cc_dept
+                    visit.triage_code = 'CODE_RED'
+                    visit.triage_method = 'MANUAL'
+                    visit.status = Visit.Status.WAITING
+                    visit.triage_confirmed_at = timezone.now()
+                    visit.save()
+                    
                     priority = 100
                     source_type = QueueSourceType.EMERGENCY
-                elif visit.priority == 'PRIORITY':
-                    priority = 5
-
-                # Dùng QueueService để tạo QueueNumber + QueueEntry đúng cách
-                # (đảm bảo QueueNumber.visit được liên kết với visit)
-                queue_entry = QueueService.add_to_queue(
-                    visit=visit,
-                    station=station,
-                    priority=priority,
-                )
-                queue_entry.source_type = source_type
-                queue_entry.save(update_fields=['source_type'])
+                    
+                    optimal_station = ClinicalQueueService.get_optimal_station_for_department(
+                        station_type=StationType.DOCTOR,
+                        department=cc_dept
+                    )
+                    
+                    queue_entry = QueueService.add_to_queue(
+                        visit=visit,
+                        station=optimal_station,
+                        priority=priority,
+                    )
+                    queue_entry.source_type = source_type
+                    queue_entry.save(update_fields=['source_type'])
+                    
+                    logger.info(
+                        f"Emergency visit {visit.visit_code} routed directly to CC at station {optimal_station.code}: "
+                        f"queue_number={queue_entry.queue_number.number_code}"
+                    )
+                    
+                    # Notify clinical dashboard
+                    try:
+                        from channels.layers import get_channel_layer
+                        from asgiref.sync import async_to_sync
+                        channel_layer = get_channel_layer()
+                        if channel_layer:
+                            patient = visit.patient
+                            patient_name = getattr(patient, 'full_name', None) or str(patient)
+                            visit_payload = {
+                                'id': str(visit.id),
+                                'visit_code': visit.visit_code,
+                                'queue_number': queue_entry.queue_number.number_code if hasattr(queue_entry, 'queue_number') else '',
+                                'patient_name': patient_name,
+                                'chief_complaint': visit.chief_complaint or '',
+                                'priority': visit.priority,
+                                'triage_code': visit.triage_code or '',
+                                'department': cc_dept.name,
+                            }
+                            async_to_sync(channel_layer.group_send)(
+                                f'clinical_station_{optimal_station.id}',
+                                {
+                                    'type': 'new_patient_assigned',
+                                    'visit': visit_payload,
+                                }
+                            )
+                            # Queue board update
+                            board = ClinicalQueueService.get_queue_board(optimal_station)
+                            async_to_sync(channel_layer.group_send)(
+                                f'clinical_station_{optimal_station.id}',
+                                {
+                                    'type': 'queue_update',
+                                    'data': board,
+                                }
+                            )
+                    except Exception as ws_err:
+                        logger.warning(f"Failed to broadcast clinical WS for emergency: {ws_err}")
+                except Exception as e:
+                    logger.error(f"Failed to route emergency visit directly to CC: {e}", exc_info=True)
+            else:
+                # --- LƯỒNG BÌNH THƯỜNG (VÀO HÀNG ĐỢI TIẾP NHẬN) ---
+                station_id = self.request.data.get('station_id')
+                if station_id:
+                    station = ServiceStation.objects.filter(id=station_id, is_active=True).first()
+                else:
+                    station = ServiceStation.objects.filter(
+                        station_type=StationType.RECEPTION,
+                        is_active=True,
+                    ).first()
                 
-                logger.info(
-                    f"Visit {visit.visit_code} enqueued at {station.code}: "
-                    f"queue_number={queue_entry.queue_number.number_code}, priority={priority}"
-                )
+                if station:
+                    priority = 0
+                    source_type = QueueSourceType.WALK_IN
+                    if visit.priority == 'PRIORITY':
+                        priority = 5
+
+                    queue_entry = QueueService.add_to_queue(
+                        visit=visit,
+                        station=station,
+                        priority=priority,
+                    )
+                    queue_entry.source_type = source_type
+                    queue_entry.save(update_fields=['source_type'])
+                    
+                    logger.info(
+                        f"Visit {visit.visit_code} enqueued at {station.code}: "
+                        f"queue_number={queue_entry.queue_number.number_code}, priority={priority}"
+                    )
         except Exception as e:
             logger.error(f"Failed to enqueue manually created visit to QMS: {e}", exc_info=True)
 
@@ -141,21 +237,61 @@ class VisitViewSet(viewsets.ModelViewSet):
         medical_history_text = ""
         try:
             from apps.medical_services.emr.models import ClinicalRecord
-            past_records = ClinicalRecord.objects.filter(
-                visit__patient=patient
-            ).exclude(visit=visit).order_by('-created_at')[:5]
+            from apps.medical_services.lis.models import LabOrder
+            from apps.medical_services.ris.models import ImagingOrder
             
-            if past_records.exists():
+            # Fetch up to 30 past visits (Visit model is in the same app)
+            from apps.core_services.reception.models import Visit
+            past_visits = Visit.objects.filter(
+                patient=patient,
+                status__in=[Visit.Status.COMPLETED, Visit.Status.IN_PROGRESS, Visit.Status.PENDING_RESULTS]
+            ).exclude(id=visit.id).order_by('-check_in_time')[:30]
+            
+            if past_visits.exists():
                 history_parts = []
-                for rec in past_records:
+                for idx, pv in enumerate(past_visits, 1):
+                    # Fetch ClinicalRecord for this visit
+                    cr = ClinicalRecord.objects.filter(visit=pv).first()
+                    
                     parts = []
-                    if rec.chief_complaint:
-                        parts.append(f"Lý do khám: {rec.chief_complaint}")
-                    if rec.final_diagnosis:
-                        parts.append(f"Chẩn đoán: {rec.final_diagnosis}")
-                    if rec.treatment_plan:
-                        parts.append(f"Điều trị: {rec.treatment_plan}")
-                    date_str = rec.created_at.strftime('%d/%m/%Y') if rec.created_at else "N/A"
+                    if pv.chief_complaint:
+                        parts.append(f"Lý do khám: {pv.chief_complaint}")
+                    elif cr and cr.chief_complaint:
+                        parts.append(f"Lý do khám: {cr.chief_complaint}")
+                    
+                    if cr:
+                        if cr.history_of_present_illness:
+                            parts.append(f"Bệnh sử: {cr.history_of_present_illness}")
+                        if cr.physical_exam:
+                            parts.append(f"Khám lâm sàng: {cr.physical_exam}")
+                        if cr.medical_summary:
+                            parts.append(f"Tóm tắt bệnh án gốc: {cr.medical_summary}")
+                        if cr.final_diagnosis:
+                            parts.append(f"Chẩn đoán: {cr.final_diagnosis}")
+                        if cr.treatment_plan:
+                            parts.append(f"Điều trị: {cr.treatment_plan}")
+                        
+                    # Fetch Lab results
+                    lab_orders = LabOrder.objects.filter(visit=pv, status__in=['COMPLETED', 'VERIFIED']).prefetch_related('details__result', 'details__test')
+                    for order in lab_orders:
+                        for detail in order.details.all():
+                            if hasattr(detail, 'result'):
+                                res = detail.result
+                                val = res.value_numeric if res.value_numeric is not None else res.value_string
+                                unit = detail.test.unit or ''
+                                if res.is_abnormal:
+                                    parts.append(f"Xét nghiệm {detail.test.name}: {val} {unit} [BẤT THƯỜNG]")
+                                else:
+                                    parts.append(f"Xét nghiệm {detail.test.name}: {val} {unit}")
+                                    
+                    # Fetch Imaging results
+                    imaging_orders = ImagingOrder.objects.filter(visit=pv, status__in=['REPORTED', 'VERIFIED']).select_related('result', 'procedure')
+                    for order in imaging_orders:
+                        if hasattr(order, 'result'):
+                            res = order.result
+                            parts.append(f"CĐHA {order.procedure.name} - Kết luận: {res.conclusion}" + (" [BẤT THƯỜNG]" if res.is_abnormal else ""))
+                            
+                    date_str = pv.check_in_time.strftime('%d/%m/%Y') if pv.check_in_time else "N/A"
                     history_parts.append(f"[{date_str}] " + "; ".join(parts))
                 medical_history_text = "\n".join(history_parts)
         except Exception as e:

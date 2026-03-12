@@ -51,7 +51,7 @@ class InvoiceViewSet(viewsets.ModelViewSet):
             'items', 'items__service',
             'payments', 'payments__cashier'
         ).order_by('-created_time')
-
+        
     def create(self, request, *args, **kwargs):
         """
         Tạo hoặc lấy hóa đơn cho Visit.
@@ -133,20 +133,21 @@ class InvoiceViewSet(viewsets.ModelViewSet):
     def pay(self, request, pk=None):
         """
         Ghi nhận thanh toán cho hóa đơn.
-        
+
         Body: {
             "amount": "500000.00",
-            "payment_method": "CASH" | "CARD" | "TRANSFER" | "MOMO" | "VNPAY" | "INSURANCE"
+            "payment_method": "CASH" | "CARD" | "TRANSFER" | "MOMO" | "VNPAY" | "INSURANCE",
+            "insurance_coverage": "400000.00"   // optional — phần BHYT chi trả
         }
         """
         invoice = self.get_object()
-        
+
         amount = request.data.get('amount')
         payment_method = request.data.get('payment_method', 'CASH')
-        
+
         if not amount:
             return Response({'error': 'amount là bắt buộc'}, status=status.HTTP_400_BAD_REQUEST)
-        
+
         # Validate payment method
         from .models import PaymentMethod
         valid_methods = [m.value for m in PaymentMethod]
@@ -155,14 +156,36 @@ class InvoiceViewSet(viewsets.ModelViewSet):
                 {'error': f'Phương thức thanh toán không hợp lệ. Hợp lệ: {valid_methods}'},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        
+
         cashier = getattr(request.user, 'staff_profile', None)
         if not cashier:
             return Response(
                 {'error': 'Cần đăng nhập với tài khoản nhân viên để thanh toán'},
                 status=status.HTTP_403_FORBIDDEN
             )
-        
+
+        # ── Áp dụng BHYT vào hóa đơn trước khi so sánh ──────────────────────
+        # Nếu frontend gửi insurance_coverage (đã tính từ benefit_rate × total),
+        # cập nhật invoice để patient_payable phản ánh đúng số tiền BN phải trả.
+        insurance_coverage_raw = request.data.get('insurance_coverage')
+        if insurance_coverage_raw is not None:
+            from decimal import Decimal, InvalidOperation
+            try:
+                new_coverage = Decimal(str(insurance_coverage_raw))
+                # Chỉ cập nhật nếu coverage thay đổi (tránh ghi thừa)
+                if new_coverage != invoice.insurance_coverage:
+                    invoice.insurance_coverage = new_coverage
+                    # patient_payable = total - discount - insurance_coverage
+                    recalc = invoice.total_amount - invoice.discount_amount - new_coverage
+                    invoice.patient_payable = max(recalc, Decimal('0'))
+                    invoice.save(update_fields=['insurance_coverage', 'patient_payable'])
+                    logger.info(
+                        f"[BILLING] Invoice {invoice.invoice_number}: "
+                        f"insurance_coverage={new_coverage}, patient_payable={invoice.patient_payable}"
+                    )
+            except (InvalidOperation, TypeError) as e:
+                logger.warning(f"[BILLING] Invalid insurance_coverage value '{insurance_coverage_raw}': {e}")
+
         try:
             payment = BillingService.process_payment(
                 invoice=invoice,
@@ -172,13 +195,41 @@ class InvoiceViewSet(viewsets.ModelViewSet):
             )
         except ValueError as e:
             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
-        
+
         invoice.refresh_from_db()
         serializer = self.get_serializer(invoice)
         logger.info(
             f"Payment {payment.receipt_number}: {amount} VND via {payment_method} "
             f"for invoice {invoice.invoice_number}"
         )
+
+        # --- Broadcast WebSocket: thông báo thanh toán hoàn tất ---
+        try:
+            from channels.layers import get_channel_layer
+            from asgiref.sync import async_to_sync
+            channel_layer = get_channel_layer()
+            if channel_layer:
+                visit_id = str(invoice.visit_id) if invoice.visit_id else None
+                async_to_sync(channel_layer.group_send)(
+                    "billing_updates",
+                    {
+                        "type": "billing.payment_done",
+                        "invoice_id": str(invoice.id),
+                        "visit_id": visit_id,
+                    }
+                )
+                # Cũng gửi invoice_updated để queue tự refresh
+                async_to_sync(channel_layer.group_send)(
+                    "billing_updates",
+                    {
+                        "type": "billing.invoice_updated",
+                        "action": "paid",
+                        "invoice_id": str(invoice.id),
+                    }
+                )
+        except Exception as ws_err:
+            logger.warning(f"[BILLING] WS broadcast failed (non-blocking): {ws_err}")
+
         return Response(serializer.data)
 
     @action(detail=True, methods=['post'], url_path='finalize-prescription')

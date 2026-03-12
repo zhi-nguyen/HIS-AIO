@@ -1,0 +1,83 @@
+{
+  "Name": "HIS-Orthanc-PACS",
+
+  "DicomServerEnabled": true,
+  "DicomAet": "ORTHANC",
+  "DicomPort": 4242,
+  "DicomCheckCalledAet": false,
+
+  "HttpServerEnabled": true,
+  "HttpPort": 8042,
+  "RemoteAccessAllowed": true,
+  "AuthenticationEnabled": false,
+  "RegisteredUsers": {
+    "admin": "orthanc_admin_2024",
+    "his_backend": "his_backend_secret"
+  },
+
+  "HttpCorsEnabled": true,
+  "HttpCorsAllowedOrigins": [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://his_frontend:3000",
+    "http://localhost:3001",
+    "*"
+  ],
+  "HttpCorsAllowCredentials": true,
+  "HttpCorsAllowedHeaders": [
+    "Authorization",
+    "Content-Type",
+    "Accept",
+    "Origin",
+    "X-Requested-With"
+  ],
+
+  "StorageDirectory": "/var/lib/orthanc/db",
+  "IndexDirectory": "/var/lib/orthanc/db",
+  "StorageCompression": false,
+  "MaximumStorageSize": 0,
+  "MaximumPatientCount": 0,
+
+  "Plugins": [
+    "/usr/share/orthanc/plugins",
+    "/usr/local/share/orthanc/plugins"
+  ],
+
+  "DicomWeb": {
+    "Enable": true,
+    "Root": "/dicom-web/",
+    "PublicRoot": "/dicom-web/",
+    "EnableWado": true,
+    "WadoRoot": "/wado",
+    "Ssl": false,
+    "StudiesMetadata": "MainDicomTags",
+    "SeriesMetadata": "Full"
+  },
+
+  "PostgreSQL": {
+    "EnableIndex": true,
+    "EnableStorage": false,
+    "Host": "orthanc_db",
+    "Port": 5432,
+    "Database": "orthanc",
+    "Username": "orthanc",
+    "Password": "orthanc_password",
+    "Lock": false
+  },
+
+  "LuaScripts": [
+    "/etc/orthanc/lua/on-stored-instance.lua"
+  ],
+
+  "DicomModalities": {},
+
+  "StableAge": 5,
+
+  "ConcurrentJobs": 2,
+  "HttpThreadsCount": 10,
+  "DicomThreadsCount": 4,
+  "KeepAlive": true,
+  "TcpNoDelay": true,
+
+  "LogExportedResources": false
+}

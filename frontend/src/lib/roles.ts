@@ -89,10 +89,11 @@ export const roleConfig: Record<StaffRole, RoleConfig> = {
     PHARMACIST: {
         label: 'Dược sĩ',
         color: 'cyan',
-        defaultRoute: '/dashboard/pharmacy',
+        defaultRoute: '/dashboard/pharmacist',
         allowedRoutes: [
             '/dashboard',
             '/dashboard/pharmacy',
+            '/dashboard/pharmacist',
             '/dashboard/qms',
         ],
     },
@@ -128,6 +129,7 @@ export const menuItemsByRole: Record<StaffRole, MenuItem[]> = {
         { key: 'lis', label: 'Xét nghiệm', icon: 'ExperimentOutlined', path: '/dashboard/lis' },
         { key: 'ris', label: 'CĐHA', icon: 'FileImageOutlined', path: '/dashboard/ris' },
         { key: 'pharmacy', label: 'Dược', icon: 'MedicineBoxOutlined', path: '/dashboard/pharmacy' },
+        { key: 'pharmacist', label: 'Cấp thuốc', icon: 'MedicineBoxOutlined', path: '/dashboard/pharmacist' },
         { key: 'billing', label: 'Thanh toán', icon: 'DollarOutlined', path: '/dashboard/billing' },
     ],
     DOCTOR: [
@@ -160,7 +162,8 @@ export const menuItemsByRole: Record<StaffRole, MenuItem[]> = {
     ],
     PHARMACIST: [
         { key: 'dashboard', label: 'Tổng quan', icon: 'DashboardOutlined', path: '/dashboard' },
-        { key: 'pharmacy', label: 'Phát thuốc', icon: 'MedicineBoxOutlined', path: '/dashboard/pharmacy' },
+        { key: 'pharmacist', label: 'Cấp thuốc', icon: 'MedicineBoxOutlined', path: '/dashboard/pharmacist' },
+        { key: 'pharmacy', label: 'Danh mục thuốc', icon: 'ExperimentOutlined', path: '/dashboard/pharmacy' },
         { key: 'qms', label: 'Gọi số', icon: 'NotificationOutlined', path: '/dashboard/qms' },
     ],
     BILLING: [

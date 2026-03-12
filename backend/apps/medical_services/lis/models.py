@@ -305,6 +305,14 @@ from django.db import transaction
 @receiver(post_save, sender=LabOrder)
 def lab_order_post_save(sender, instance, created, **kwargs):
     logger.info(f"LabOrder post_save triggered for {instance.id}, created={created}")
+
+    # Chỉ bắn WS khi ORDER được cập nhật (không phải khi vừa tạo mới).
+    # Khi vừa tạo mới (created=True), BillingService sẽ tự gửi thông báo đến lis_updates
+    # thông qua transaction.on_commit sau khi thanh toán hoàn tất.
+    if created:
+        logger.info(f"LabOrder {instance.id} newly created — WS notification handled by BillingService.")
+        return
+
     def send_ws_update():
         logger.info(f"Inside send_ws_update logic for LabOrder {instance.id}")
         channel_layer = get_channel_layer()
@@ -313,14 +321,50 @@ def lab_order_post_save(sender, instance, created, **kwargs):
                 "lis_updates",
                 {
                     "type": "lis.order_updated",
-                    "action": "created" if created else "updated",
+                    "action": "updated",
                     "order_id": str(instance.id),
                     "status": instance.status,
                 }
             )
+
+            # Khi có kết quả (COMPLETED / VERIFIED), thông báo cho trang Clinical
+            # để AI re-analyse dựa trên kết quả xét nghiệm mới.
+            if instance.status in [LabOrder.Status.COMPLETED, LabOrder.Status.VERIFIED]:
+                visit_id_str = str(instance.visit_id)
+
+                # Tổng hợp danh sách chỉ số bất thường để đính kèm vào WS message
+                try:
+                    abnormal_items = []
+                    for detail in instance.details.select_related('test', 'result').all():
+                        result = getattr(detail, 'result', None)
+                        if result and result.is_abnormal:
+                            flag = result.abnormal_flag or ('H' if result.value_numeric and detail.test.max_limit and result.value_numeric > detail.test.max_limit else 'L')
+                            abnormal_items.append({
+                                'name': detail.test.name,
+                                'value': result.value_string or str(result.value_numeric),
+                                'unit': detail.test.unit or '',
+                                'flag': flag,
+                                'is_critical': result.is_critical,
+                            })
+                except Exception as e:
+                    logger.warning(f"Could not build abnormal summary for LabOrder {instance.id}: {e}")
+                    abnormal_items = []
+
+                async_to_sync(channel_layer.group_send)(
+                    f"clinical_visit_{visit_id_str}",
+                    {
+                        "type": "clinical.cls_updated",
+                        "service_type": "lis",
+                        "order_id": str(instance.id),
+                        "status": instance.status,
+                        "abnormal_items": abnormal_items,
+                    }
+                )
+                logger.info(f"Pushed clinical.cls_updated (lis) for visit {visit_id_str}, abnormal={len(abnormal_items)}")
         else:
             logger.error("CHANNEL_LAYER is NONE, no ws message sent.")
-            
-    # Always call this on commit so that if it's within an atomic block, 
+
+    # Always call this on commit so that if it's within an atomic block,
     # the frontend only gets notified after the DB row is actually visible!
     transaction.on_commit(send_ws_update)
+
