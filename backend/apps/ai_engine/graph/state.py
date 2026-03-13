@@ -140,7 +140,7 @@ def create_initial_state(
     Example:
         state = create_initial_state(
             session_id="sess-123",
-            patient_context={"patient_id": "P001", "patient_name": "Nguyen Van A"},
+            patient_context={"patient_id": "P001", "patient_name": "Ẩn thông tin"},
             initial_message="Tôi bị đau đầu",
             user_context={"user_id": "U001", "staff_role": "DOCTOR", "department": "Cardiology", "is_authenticated": True}
         )

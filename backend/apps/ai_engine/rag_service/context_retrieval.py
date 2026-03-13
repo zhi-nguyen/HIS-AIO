@@ -109,14 +109,14 @@ async def _get_patient_demographics(patient_id: str) -> Dict[str, Any]:
             
             return {
                 'patient_code': patient.patient_code,
-                'full_name': patient.full_name,
+                'full_name': 'Ẩn thông tin',
                 'age': age,
                 'date_of_birth': patient.date_of_birth.isoformat() if patient.date_of_birth else None,
                 'gender': patient.get_gender_display(),
                 'gender_code': patient.gender,
-                'address': patient.full_address,
-                'contact_number': patient.contact_number,
-                'insurance_number': patient.insurance_number,
+                'address': 'Ẩn thông tin',
+                'contact_number': 'Ẩn thông tin',
+                'insurance_number': 'Ẩn thông tin',
             }
             
         except Patient.DoesNotExist:
@@ -305,10 +305,8 @@ def format_context_for_llm(context: Dict[str, Any], include_pii: bool = True) ->
     formatted = f"""
 THÔNG TIN BỆNH NHÂN:
 - Mã bệnh nhân: {demographics.get('patient_code', 'N/A')}
-- Họ tên: {demographics.get('full_name', 'N/A')}
 - Tuổi: {age_text}
 - Giới tính: {gender_text}
-- Địa chỉ: {demographics.get('address', 'Không có thông tin')}
 
 LỊCH SỬ KHÁM BỆNH ({len(clinical_history)} lần khám gần nhất):
 """

@@ -51,6 +51,23 @@ def extract_diagnosis(text: str) -> List[str]:
     return diagnoses if diagnoses else []
 
 
+def extract_tests(text: str) -> str:
+    """Extract recommended tests (Bước 5) from text."""
+    pattern = r'\*\*Bước 5[^\*]*\*\*:?\s*(.*?)(?=\*\*Kết luận|\*\*Bước|$)'
+    match = re.search(pattern, text, re.DOTALL | re.IGNORECASE)
+    if match:
+        tests_text = match.group(1).strip()
+        if tests_text:
+            return tests_text
+            
+    # Fallback
+    pattern2 = r'(?:Đề xuất xét nghiệm|Cận lâm sàng đề xuất):?\s*(.*?)(?=\*\*|$)'
+    match2 = re.search(pattern2, text, re.DOTALL | re.IGNORECASE)
+    if match2:
+        return match2.group(1).strip()
+        
+    return ""
+
 def extract_icd_codes(text: str) -> List[Dict[str, Any]]:
     """
     Extract ICD-10 codes từ text response.
@@ -399,6 +416,7 @@ def clinical_node(state: AgentState) -> Dict[str, Any]:
         requires_urgent = extract_urgency(text_analysis)
         diagnoses = extract_diagnosis(text_analysis)
         icd_codes = extract_icd_codes(text_analysis)
+        tests_proposed = extract_tests(text_analysis)
         
         # Validate ICD codes against hospital database
         if icd_codes:
@@ -408,6 +426,7 @@ def clinical_node(state: AgentState) -> Dict[str, Any]:
         print(f"[CLINICAL] Urgent care: {requires_urgent}")
         print(f"[CLINICAL] Diagnoses found: {len(diagnoses)}")
         print(f"[CLINICAL] ICD codes found: {len(icd_codes)}")
+        print(f"[CLINICAL] Tests extracted: {bool(tests_proposed)}")
         
         # Check if any ICD code is not in system
         has_external_codes = any(
@@ -432,6 +451,8 @@ def clinical_node(state: AgentState) -> Dict[str, Any]:
             "differential_diagnosis": diagnoses,
             "requires_urgent_care": requires_urgent,
             "icd_codes": icd_codes if icd_codes else None,
+            "icds": icd_codes if icd_codes else [],
+            "tests": tests_proposed,
             "icd_source_warning": icd_source_warning,
         }
         

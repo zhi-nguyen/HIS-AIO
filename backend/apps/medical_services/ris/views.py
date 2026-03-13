@@ -42,7 +42,7 @@ class ImagingOrderViewSet(viewsets.ModelViewSet):
     serializer_class = ImagingOrderSerializer
     filter_backends = [filters.SearchFilter, DjangoFilterBackend]
     search_fields = ['visit__visit_code', 'patient__patient_code', 'accession_number']
-    filterset_fields = ['status', 'doctor', 'procedure__modality', 'priority']
+    filterset_fields = ['status', 'doctor', 'procedure__modality', 'priority', 'visit']
     pagination_class = None
 
     # ------------------------------------------------------------------

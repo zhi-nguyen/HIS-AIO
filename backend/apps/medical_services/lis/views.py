@@ -25,7 +25,7 @@ class LabOrderViewSet(viewsets.ModelViewSet):
     serializer_class = LabOrderSerializer
     filter_backends = [filters.SearchFilter, DjangoFilterBackend]
     search_fields = ['visit__visit_code', 'patient__patient_code']
-    filterset_fields = ['status', 'doctor']
+    filterset_fields = ['status', 'doctor', 'visit']
     pagination_class = None
 
     @action(detail=True, methods=['post'])

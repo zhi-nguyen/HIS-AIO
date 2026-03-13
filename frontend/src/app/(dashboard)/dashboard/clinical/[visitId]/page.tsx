@@ -102,14 +102,22 @@ function KetQuaTab({
     visitId,
     onGoToDiagnosis,
     onNewResult,
+    onDataLoaded,
 }: {
     visitId: string;
     onGoToDiagnosis: () => void;
     /** Callback khi có kết quả mới từ LIS/RIS — gửi prompt tới AI agent */
     onNewResult?: (prompt: string) => void;
+    /** Callback đẩy dữ liệu lên cha */
+    onDataLoaded?: (lab: LabResultRow[], img: ImagingResult[]) => void;
 }) {
     const [labRows, setLabRows] = React.useState<LabResultRow[]>([]);
     const [imaging, setImaging] = React.useState<ImagingResult[]>([]);
+
+    React.useEffect(() => {
+        if (onDataLoaded) onDataLoaded(labRows, imaging);
+    }, [labRows, imaging, onDataLoaded]);
+
     const [loadingLis, setLoadingLis] = React.useState(true);
     const [loadingRis, setLoadingRis] = React.useState(true);
     const [aiSummary, setAiSummary] = React.useState<string>('');
@@ -642,6 +650,11 @@ function ClinicalExamContent({ visitId }: { visitId: string }) {
     const [aiLabTests, setAiLabTests] = useState<string>('');
     const [icdSourceWarning, setIcdSourceWarning] = useState<string | null>(null);
 
+    // States lifted from KetQuaTab for AI Context
+    const [lisData, setLisData] = useState<LabResultRow[]>([]);
+    const [risData, setRisData] = useState<ImagingResult[]>([]);
+    const [pendingAiPrompt, setPendingAiPrompt] = useState<string | null>(null);
+
     // Lắng nghe sự kiện cập nhật lab tests và ICD từ AIChat
     useEffect(() => {
         const handleUpdate = (e: any) => {
@@ -802,7 +815,7 @@ function ClinicalExamContent({ visitId }: { visitId: string }) {
     };
 
     // ── Build AI context tổng hợp ──────────────────────
-    const buildAIContext = useCallback((extraPrompt?: string) => {
+    const buildAIContext = useCallback(() => {
         const p = typeof visit?.patient === 'object' ? visit.patient as Patient : null;
         const name = p?.full_name || `${p?.last_name || ''} ${p?.first_name || ''}`.trim() || 'BN';
         const age = p?.date_of_birth ? dayjs().diff(dayjs(p.date_of_birth), 'year') : 'N/A';
@@ -810,8 +823,27 @@ function ClinicalExamContent({ visitId }: { visitId: string }) {
         const vals = form.getFieldsValue();
         const deptName = visit?.confirmed_department_detail?.name || 'Không rõ';
 
+        let lisRisText = '';
+        if (lisData.length > 0 || risData.length > 0) {
+            lisRisText = '\n══ KẾT QUẢ CẬN LÂM SÀNG ══\n';
+            if (lisData.length > 0) {
+                lisRisText += 'Xét nghiệm (LIS):\n';
+                lisData.forEach(r => {
+                    const flag = r.is_abnormal ? ` [BẤT THƯỜNG: ${r.abnormal_flag}]` : '';
+                    lisRisText += `- ${r.name}: ${r.value} ${r.unit}${flag}\n`;
+                });
+                lisRisText += '\n';
+            }
+            if (risData.length > 0) {
+                lisRisText += 'CĐHA (RIS):\n';
+                risData.forEach(r => {
+                    lisRisText += `- ${r.procedure_name}:\n  Mô tả: ${r.findings}\n  Kết luận: ${r.conclusion}\n`;
+                });
+            }
+        }
+
         const context = `[CLINICAL_ANALYSIS] Tôi là bác sĩ đang trực tiếp khám bệnh nhân tại ${deptName}.
-QUY TẬ TRẢ LỚI:
+QUY TẮC TRẢ LỜI:
 - Bệnh nhân ĐÃ Ở ${deptName} rồi, KHÔNG nói "cần theo dõi tại ${deptName}" hay "cần chuyển đến ${deptName}".
 - Chỉ tập trung vào chẩn đoán, xử trí cụ thể tại khoa này.
 - KHÔNG dùng mã code dạng [URGENT_MODERATE] trong câu trả lời.
@@ -840,10 +872,7 @@ ${visit?.pre_triage_summary?.substring(0, 600) || 'Không có'}
 Mã: ${visit?.triage_code || 'N/A'} → Khoa: ${deptName}
 Độ tin cậy: ${visit?.triage_confidence ?? 'N/A'}%
 Ý kiến AI: ${visit?.triage_ai_response?.substring(0, 300) || 'Không có'}
-${extraPrompt ? `
-══ CẬP NHẬT MỚI ══
-${extraPrompt}` : ''}
-
+${lisRisText}
 ══ YÊU CẦU ══
 1. Đưa ra 3-5 chẩn đoán phân biệt xếp theo khả năng (%).
 2. Với MỔI chẩn đoán, đưa ra mã ICD-10 chính + phụ kèm tỷ lệ chính xác (%).
@@ -851,15 +880,20 @@ ${extraPrompt}` : ''}
 4. Hướng xử trí ban đầu.
 5. Cảnh báo nếu có dấu hiệu nguy hiểm.`;
         return context;
-    }, [visit, form]);
+    }, [visit, form, lisData, risData]);
 
-    // Mở AI Drawer (và build context mới nếu cần)
+    useEffect(() => {
+        setAiContext(buildAIContext());
+    }, [buildAIContext]);
+
+    // Mở AI Drawer (có thể dính kèm prompt xử lý sự kiện kết quả mới)
     const openAIDrawer = useCallback((extraPrompt?: string) => {
-        const ctx = buildAIContext(extraPrompt);
-        setAiContext(ctx);
+        if (extraPrompt) {
+            setPendingAiPrompt(extraPrompt);
+        }
         setAiDrawerOpen(true);
         setAiUnreadCount(0);
-    }, [buildAIContext]);
+    }, []);
 
     // Scroll to bottom kư có tin nhắn mới (phòng khi drawer chưa mở)
     // (maintained by AIChat.tsx internally)
@@ -1237,12 +1271,15 @@ ${extraPrompt}` : ''}
                     visitId={visitId}
                     initialContext={aiContext}
                     autoAnalyze={true}
+                    pendingPrompt={pendingAiPrompt}
+                    onPromptProcessed={() => setPendingAiPrompt(null)}
                 />
             </Drawer>
 
             {/* ── Floating AI toggle button ───────────────────────── */}
             <Tooltip title="Mở Trợ Lý AI" placement="left">
                 <button
+                    type="button"
                     onClick={() => openAIDrawer()}
                     style={{
                         position: 'fixed',
@@ -1354,7 +1391,12 @@ ${extraPrompt}` : ''}
                             {
                                 key: '3',
                                 label: <div className="px-4 py-1 text-gray-500 flex items-center gap-2"><FileTextOutlined /> 3. Kết quả</div>,
-                                children: <KetQuaTab visitId={visitId} onGoToDiagnosis={() => { setActiveTab('4'); try { localStorage.setItem(`${DRAFT_KEY}-tab`, '4'); } catch { /* ignore */ } }} onNewResult={(prompt) => openAIDrawer(prompt)} />,
+                                children: <KetQuaTab 
+                                    visitId={visitId} 
+                                    onGoToDiagnosis={() => { setActiveTab('4'); try { localStorage.setItem(`${DRAFT_KEY}-tab`, '4'); } catch { /* ignore */ } }} 
+                                    onNewResult={(prompt) => openAIDrawer(prompt)}
+                                    onDataLoaded={(lab, img) => { setLisData(lab); setRisData(img); }} 
+                                />,
                             },
                             {
                                 key: '4',
