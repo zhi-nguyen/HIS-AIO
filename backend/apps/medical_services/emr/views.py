@@ -11,7 +11,7 @@ class ClinicalRecordViewSet(viewsets.ModelViewSet):
     serializer_class = ClinicalRecordSerializer
     filter_backends = [filters.SearchFilter, DjangoFilterBackend]
     search_fields = ['visit__visit_code', 'visit__patient__patient_code']
-    filterset_fields = ['doctor', 'is_finalized']
+    filterset_fields = ['doctor', 'is_finalized', 'visit']
 
     def perform_create(self, serializer):
         # Gắn bác sĩ đang đăng nhập nếu có staff_profile
