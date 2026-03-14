@@ -21,11 +21,11 @@ class PatientContextBuilder:
         context = {
             "patient": {
                 "id": str(patient.id),
-                "name": patient.full_name,
+                "name": "Ẩn thông tin",
                 "dob": str(patient.date_of_birth),
                 "gender": patient.gender,
-                "phone": patient.contact_number,
-                "address": patient.address_detail,
+                "phone": "Ẩn thông tin",
+                "address": "Ẩn thông tin",
             },
             "current_visit": {
                 "visit_code": current_visit.visit_code,

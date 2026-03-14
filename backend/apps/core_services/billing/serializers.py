@@ -48,6 +48,9 @@ class InvoiceSerializer(serializers.ModelSerializer):
     # nested visit với insurance snapshot
     visit_detail = VisitInsuranceSerializer(source='visit', read_only=True)
 
+    from apps.core_services.patients.serializers import PatientSerializer
+    patient      = PatientSerializer(read_only=True)
+
     class Meta:
         model = Invoice
         fields = [
