@@ -373,7 +373,7 @@ async def run_agent_async(
             graph,
             message="Tôi bị đau bụng",
             session_id="sess-123",
-            patient_context={"patient_name": "Nguyen Van A"}
+            patient_context={"patient_name": "Ẩn thông tin"}
         )
         print(result["messages"][-1]["content"])
     """

@@ -113,10 +113,27 @@ export interface AIChatProps {
     /** Nếu true và chưa có lịch sử chat: tự gửi initialContext khi mở */
     autoAnalyze?: boolean;
     patientContext?: string;
+    /** Prompt để trigger chat từ parent (vd: khi có kết quả mới) */
+    pendingPrompt?: string | null;
+    /** Callback báo parent đã nhận prompt */
+    onPromptProcessed?: () => void;
 }
 
-export default function AIChat({ visitId, initialContext, autoAnalyze, patientContext }: AIChatProps) {
+export default function AIChat({ visitId, initialContext, autoAnalyze, patientContext, pendingPrompt, onPromptProcessed }: AIChatProps) {
     const storageKey = `${CHAT_STORAGE_PREFIX}${visitId}`;
+    const sessionStorageKey = `${storageKey}_session`;
+
+    const [chatSessionId, setChatSessionId] = useState<string>(() => {
+        if (typeof window !== 'undefined') {
+            const stored = localStorage.getItem(sessionStorageKey);
+            if (stored) return stored;
+        }
+        const newSession = `${visitId}_${Date.now()}`;
+        if (typeof window !== 'undefined') {
+            localStorage.setItem(sessionStorageKey, newSession);
+        }
+        return newSession;
+    });
 
     const [messages, setMessages] = useState<Message[]>(() => {
         const stored = loadChatFromStorage(storageKey);
@@ -141,6 +158,24 @@ export default function AIChat({ visitId, initialContext, autoAnalyze, patientCo
             saveChatToStorage(storageKey, messages);
         }
     }, [messages, storageKey]);
+
+    // Helper: Xóa các bước suy nghĩ (Bước 1, Bước 2...) khỏi phần text trả về
+    // Trong trường hợp backend không parse / filter sạch sẽ
+    const cleanMessageContent = (content: string) => {
+        if (!content) return "";
+        let cleaned = content;
+        
+        // 1. Thử lấy nội dung sau các marker chính trước (Kết luận, Phản hồi)
+        const markerMatch = cleaned.match(/(?:\*\*|)(?:Kết luận|Phản hồi cho khách hàng|Kết quả|Tóm tắt|Đề xuất điều trị)(?:\*\*|):\s*([\s\S]*)/i);
+        if (markerMatch && markerMatch[1]) {
+            return markerMatch[1].trim();
+        }
+        
+        // 2. Nếu không có marker, match pattern "Bước N..." và xóa nó
+        cleaned = cleaned.replace(/(?:\*\*|)?(?:Bước\s*\d+|Thinking\s*\d+)[\s\S]*?(?=(?:\*\*|)?(?:Bước\s*\d+|Thinking\s*\d+|Kết luận|Phản hồi|Nội dung|Bản Tóm Tắt)|$)/gi, '');
+        
+        return cleaned.trim();
+    };
 
     // Core send function
     const sendMessage = useCallback(async (text: string) => {
@@ -173,9 +208,9 @@ export default function AIChat({ visitId, initialContext, autoAnalyze, patientCo
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                 body: JSON.stringify({
-                    visit_id: visitId,
+                    session_id: chatSessionId,
                     message: text,
-                    context: patientContext || initialContext,
+                    patient_context: patientContext || initialContext,
                 }),
                 signal: abortControllerRef.current.signal,
             });
@@ -203,7 +238,7 @@ export default function AIChat({ visitId, initialContext, autoAnalyze, patientCo
                                 if (data.type === 'result_json' && data.content) {
                                     const t = data.content.message || data.content.final_response || '';
                                     if (t) {
-                                        fullContent = t;
+                                        fullContent = cleanMessageContent(t);
                                         setMessages(prev => prev.map(m => m.id === assistantId
                                             ? { ...m, content: fullContent } : m));
                                     }
@@ -257,6 +292,14 @@ export default function AIChat({ visitId, initialContext, autoAnalyze, patientCo
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [autoAnalyze, initialContext]);
 
+    // Handle pending prompt từ bên ngoài (e.g WebSocket kết quả mới)
+    useEffect(() => {
+        if (pendingPrompt && !loading) {
+            sendMessage(pendingPrompt);
+            if (onPromptProcessed) onPromptProcessed();
+        }
+    }, [pendingPrompt, loading, sendMessage, onPromptProcessed]);
+
     const handleSend = () => {
         sendMessage(input);
         setInput('');
@@ -277,6 +320,12 @@ export default function AIChat({ visitId, initialContext, autoAnalyze, patientCo
         if (loading) handleStop();
         setMessages([]);
         localStorage.removeItem(storageKey);
+        
+        // Generate new session ID to clear backend memory thread
+        const newSession = `${visitId}_${Date.now()}`;
+        setChatSessionId(newSession);
+        localStorage.setItem(sessionStorageKey, newSession);
+        
         autoAnalyzeSentRef.current = false;
     };
 
