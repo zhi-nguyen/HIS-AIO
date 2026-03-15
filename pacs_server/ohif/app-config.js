@@ -12,9 +12,9 @@ window.config = {
         friendlyName: 'Orthanc PACS Server',
         name: 'orthanc',
         // Dùng absolute URL localhost:3001 để browser có thể call qua nginx proxy
-        wadoUriRoot: 'http://localhost:3001/wado',
-        qidoRoot: 'http://localhost:3001/dicom-web',
-        wadoRoot: 'http://localhost:3001/dicom-web',
+        wadoUriRoot: window.location.origin + '/wado',
+        qidoRoot: window.location.origin + '/dicom-web',
+        wadoRoot: window.location.origin + '/dicom-web',
         qidoSupportsIncludeField: false,
         imageRendering: 'wadors',
         thumbnailRendering: 'wadors',
