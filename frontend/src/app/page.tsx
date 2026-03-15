@@ -31,11 +31,11 @@ export default function HomePage() {
             </div>
           </div>
           <nav className="hidden md:flex items-center gap-6">
-            <Link href="/" className="text-gray-700 hover:text-blue-600">Trang chủ</Link>
-            <Link href="#services" className="text-gray-700 hover:text-blue-600">Dịch vụ</Link>
-            <Link href="#doctors" className="text-gray-700 hover:text-blue-600">Bác sĩ</Link>
-            <Link href="#contact" className="text-gray-700 hover:text-blue-600">Liên hệ</Link>
-            <Link href="/login" className="bg-blue-600 text-white px-4 py-2 rounded-full hover:bg-blue-700 transition">
+            <Link href="/" className="!text-gray-700 hover:!text-blue-600 transition">Trang chủ</Link>
+            <Link href="#services" className="!text-gray-700 hover:!text-blue-600 transition">Dịch vụ</Link>
+            <Link href="#doctors" className="!text-gray-700 hover:!text-blue-600 transition">Bác sĩ</Link>
+            <Link href="#contact" className="!text-gray-700 hover:!text-blue-600 transition">Liên hệ</Link>
+            <Link href="/login" className="!bg-blue-600 !text-white px-4 py-2 rounded-full hover:!bg-blue-700 hover:!text-white transition inline-block">
               Đăng nhập
             </Link>
           </nav>
@@ -55,11 +55,11 @@ export default function HomePage() {
               phục vụ 24/7 để mang đến dịch vụ y tế chất lượng cao nhất cho bạn và gia đình.
             </p>
             <div className="flex gap-4">
-              <Link href="#booking" className="bg-white text-blue-600 px-8 py-3 rounded-full font-semibold hover:bg-blue-50 transition shadow-lg">
+              <Link href="#booking" className="!bg-white !text-blue-600 px-8 py-3 rounded-full font-semibold hover:!bg-blue-50 transition shadow-lg inline-flex items-center justify-center">
                 <CalendarOutlined className="mr-2" />
                 Đặt lịch khám
               </Link>
-              <Link href="tel:19001234" className="border-2 border-white text-white px-8 py-3 rounded-full font-semibold hover:bg-white/10 transition">
+              <Link href="tel:19001234" className="border-2 !border-white !text-white px-8 py-3 rounded-full font-semibold hover:!bg-white/20 hover:!text-white transition inline-flex items-center justify-center">
                 <PhoneOutlined className="mr-2" />
                 1900 1234
               </Link>
