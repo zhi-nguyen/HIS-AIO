@@ -10,6 +10,7 @@ import {
     WarningOutlined, ExperimentOutlined, UserOutlined, ArrowRightOutlined,
     RobotOutlined, SaveOutlined, CheckCircleOutlined, ArrowLeftOutlined,
     FundViewOutlined, BarcodeOutlined, EyeOutlined, PrinterOutlined, FileImageOutlined,
+    HistoryOutlined
 } from '@ant-design/icons';
 import { visitApi, emrApi, patientApi, lisApi, risApi } from '@/lib/services';
 import type { Visit, Patient } from '@/types';
@@ -49,6 +50,9 @@ interface ClinicalRecord {
     triage_agent_summary?: Record<string, unknown>;
     clinical_agent_summary?: Record<string, unknown>;
     is_finalized: boolean;
+    visit_detail?: any;
+    doctor_name?: string;
+    main_icd_name?: string;
 }
 
 interface ICDCodeItem {
@@ -554,7 +558,7 @@ function KetQuaTab({
                                             />
                                         ) : detailModalImg.dicom_study_uid ? (
                                             <iframe
-                                                src={`http://localhost:3001/viewer?StudyInstanceUIDs=${detailModalImg.dicom_study_uid}`}
+                                                src={`http://${typeof window !== 'undefined' ? window.location.hostname : 'localhost'}:3001/viewer?StudyInstanceUIDs=${detailModalImg.dicom_study_uid}`}
                                                 style={{ width: '100%', height: 350, border: 'none' }}
                                                 title="OHIF Viewer"
                                                 allow="clipboard-read; clipboard-write; fullscreen"
@@ -645,6 +649,7 @@ function ClinicalExamContent({ visitId }: { visitId: string }) {
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [triageDrawerOpen, setTriageDrawerOpen] = useState(false);
+    const [historyDrawerOpen, setHistoryDrawerOpen] = useState(false);
     const [icdDrawerOpen, setIcdDrawerOpen] = useState(false);
     const [icdCodes, setIcdCodes] = useState<ICDCodeItem[]>([]);
     const [aiLabTests, setAiLabTests] = useState<string>('');
@@ -979,6 +984,16 @@ ${lisRisText}
                             </Button>
                         </Tooltip>
                     )}
+
+                    <Tooltip title="Xem lịch sử khám bệnh">
+                        <Button
+                            icon={<HistoryOutlined />}
+                            onClick={() => setHistoryDrawerOpen(true)}
+                            className="h-10 border-purple-200 text-purple-600 hover:bg-purple-50 font-medium"
+                        >
+                            Lịch sử khám
+                        </Button>
+                    </Tooltip>
                 </div>
             </div>
         );
@@ -1088,6 +1103,69 @@ ${lisRisText}
             )}
         </Drawer>
     );
+
+    /* ── History Drawer ──────────────────────────────── */
+    const HistoryDrawer = () => {
+        const [historyRecords, setHistoryRecords] = useState<ClinicalRecord[]>([]);
+        const [historyLoading, setHistoryLoading] = useState(false);
+
+        useEffect(() => {
+            if (historyDrawerOpen && patient?.id) {
+                setHistoryLoading(true);
+                emrApi.getAll({ visit__patient: patient.id })
+                    .then((res: any) => {
+                        const records = res.results || res || [];
+                        setHistoryRecords(records);
+                    })
+                    .catch((err: any) => {
+                        console.error(err);
+                        message.error('Lỗi khi tải lịch sử khám bệnh');
+                    })
+                    .finally(() => setHistoryLoading(false));
+            }
+        }, [historyDrawerOpen, patient?.id]);
+
+        return (
+            <Drawer
+                title={<div className="flex items-center gap-2 font-bold"><HistoryOutlined className="text-purple-500" /> Lịch sử khám bệnh</div>}
+                placement="right"
+                width={600}
+                open={historyDrawerOpen}
+                onClose={() => setHistoryDrawerOpen(false)}
+            >
+                {historyLoading ? (
+                    <div className="flex justify-center p-8"><Spin /></div>
+                ) : historyRecords.length === 0 ? (
+                    <div className="text-center p-8 text-gray-500">Người bệnh chưa có lịch sử khám nào.</div>
+                ) : (
+                    <div className="space-y-4">
+                        {historyRecords.map(rec => (
+                            <Card key={rec.id} size="small" className="shadow-sm border-gray-200">
+                                <div className="flex justify-between mb-2">
+                                    <span className="font-semibold text-blue-600">
+                                        Ngày khám: {rec.visit_detail?.created_at ? dayjs(rec.visit_detail.created_at).format('DD/MM/YYYY HH:mm') : '--'}
+                                    </span>
+                                    <Tag color="blue">{rec.doctor_name || 'BS'}</Tag>
+                                </div>
+                                <div className="text-sm space-y-2">
+                                    <div><span className="font-semibold text-gray-600">Khoa:</span> {rec.visit_detail?.confirmed_department_detail?.name || '--'}</div>
+                                    <div><span className="font-semibold text-gray-600">Lý do khám:</span> {rec.chief_complaint || '--'}</div>
+                                    {rec.final_diagnosis ? (
+                                        <div><span className="font-semibold text-gray-600">Chẩn đoán:</span> {rec.final_diagnosis}</div>
+                                    ) : rec.main_icd_name ? (
+                                        <div><span className="font-semibold text-gray-600">CĐ chính:</span> {rec.main_icd_name}</div>
+                                    ) : null}
+                                    {rec.treatment_plan && (
+                                        <div><span className="font-semibold text-gray-600">Hướng xử trí:</span> {rec.treatment_plan}</div>
+                                    )}
+                                </div>
+                            </Card>
+                        ))}
+                    </div>
+                )}
+            </Drawer>
+        );
+    };
 
     /* ── Suggestions (ICD & Lab Tests) Drawer ──────────────────────────────────── */
     const SuggestionsDrawer = () => {
@@ -1250,6 +1328,7 @@ ${lisRisText}
         <Form form={form} layout="vertical" onFinish={handleSave} className="h-full flex flex-col overflow-hidden min-h-0">
             <PatientHeader />
             <TriageDrawer />
+            <HistoryDrawer />
             <SuggestionsDrawer />
 
             {/* ── AI Drawer ──────────────────────────────────── */}

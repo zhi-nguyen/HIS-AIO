@@ -65,7 +65,10 @@ interface ImagingOrder {
    CONFIG
    ══════════════════════════════════════════════════════════════════════ */
 
-const OHIF_BASE = 'http://localhost:3001';
+const getOhifBase = () => {
+    if (typeof window === 'undefined') return 'http://localhost:3001';
+    return `http://${window.location.hostname}:3001`;
+};
 const SOUND_KEY = 'his_ris_sound';
 
 const modalityColors: Record<string, string> = {
@@ -245,7 +248,7 @@ export default function RISWorkspacePage() {
 
     const studyUid = selectedOrder?.execution?.dicom_study_uid;
     const ohifUrl = studyUid
-        ? `${OHIF_BASE}/viewer?StudyInstanceUIDs=${studyUid}`
+        ? `${getOhifBase()}/viewer?StudyInstanceUIDs=${studyUid}`
         : null;
 
     /* ── Select Order ──────────────────────────────────────── */

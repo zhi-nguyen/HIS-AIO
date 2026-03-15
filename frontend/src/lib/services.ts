@@ -502,6 +502,7 @@ export const emrApi = {
     getAll: async (params?: {
         page?: number;
         visit?: string;
+        visit__patient?: string;
     }) => {
         const response = await api.get('/emr/records/', { params });
         return response.data;
