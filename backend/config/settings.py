@@ -152,6 +152,15 @@ CHANNEL_LAYERS = {
 
 # RAG Service Configuration
 import os
+
+# ── Vertex AI — force langchain_google_genai to use Vertex AI backend ──
+os.environ.setdefault('GOOGLE_GENAI_USE_VERTEXAI', 'true')
+
+# Resolve GOOGLE_APPLICATION_CREDENTIALS to absolute path
+_gac = config('GOOGLE_APPLICATION_CREDENTIALS', default='')
+if _gac and not os.path.isabs(_gac):
+    _gac_abs = str(BASE_DIR / _gac)
+    os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = _gac_abs
 # AI Model Configuration
 # Đổi model trong .env là toàn bộ hệ thống dùng model mới không cần sửa code
 AGENT_COMPLEX_MODEL = config('AGENT_COMPLEX_MODEL', default='gemini-2.0-flash')
@@ -168,8 +177,9 @@ RAG_EMBEDDING_DIMENSION = config('RAG_EMBEDDING_DIMENSION', default=768, cast=in
 RAG_TOP_K_RESULTS = config('RAG_TOP_K_RESULTS', default=5, cast=int)
 RAG_SIMILARITY_THRESHOLD = config('RAG_SIMILARITY_THRESHOLD', default=0.5, cast=float)
 
-# Google AI Configuration (if using Google embeddings)
-GOOGLE_API_KEY = config('GOOGLE_API_KEY', default='')
+# Vertex AI Configuration
+VERTEX_AI_PROJECT = config('VERTEX_AI_PROJECT', default='xiaoyue-api')
+VERTEX_AI_LOCATION = config('VERTEX_AI_LOCATION', default='us-central1')
 
 # SSE Streaming Configuration
 SSE_KEEPALIVE_INTERVAL = config('SSE_KEEPALIVE_INTERVAL', default=15, cast=int)  # seconds
