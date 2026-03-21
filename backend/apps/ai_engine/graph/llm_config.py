@@ -1,6 +1,7 @@
 # apps/ai_engine/graph/llm_config.py
 
 from langchain_google_genai import ChatGoogleGenerativeAI
+from google.oauth2 import service_account
 from apps.ai_engine.agents.consultant_agent.tools import (
     check_appointment_slots,
     open_booking_form,
@@ -29,6 +30,7 @@ from apps.ai_engine.agents.paraclinical_agent.tools import (
 # Chỉ cần sửa .env là toàn bộ agents dùng model mới
 # ==============================================================================
 from django.conf import settings as django_settings
+import os
 
 MODEL_CONFIG = {
     "complex": getattr(django_settings, 'AGENT_COMPLEX_MODEL', 'gemini-2.0-flash'),
@@ -41,7 +43,21 @@ TEMPERATURE_CONFIG = {
 }
 
 # ==============================================================================
-# MODELS
+# VERTEX AI CREDENTIALS
+# ==============================================================================
+_creds_path = os.environ.get('GOOGLE_APPLICATION_CREDENTIALS', '')
+_vertex_project = getattr(django_settings, 'VERTEX_AI_PROJECT', 'xiaoyue-api')
+_vertex_location = getattr(django_settings, 'VERTEX_AI_LOCATION', 'us-central1')
+
+_credentials = None
+if _creds_path and os.path.exists(_creds_path):
+    _credentials = service_account.Credentials.from_service_account_file(
+        _creds_path,
+        scopes=['https://www.googleapis.com/auth/cloud-platform'],
+    )
+
+# ==============================================================================
+# MODELS  (Vertex AI backend)
 # ==============================================================================
 
 # Model for Complex Reasoning (Clinical, Triage, Supervisor)
@@ -49,7 +65,10 @@ llm_pro = ChatGoogleGenerativeAI(
     model=MODEL_CONFIG["complex"],
     temperature=TEMPERATURE_CONFIG["precise"],
     convert_system_message_to_human=True,
-    streaming=True  # Enable token-by-token streaming
+    streaming=True,
+    project=_vertex_project,
+    location=_vertex_location,
+    credentials=_credentials,
 )
 
 # Model for Fast Tasks (Consultant, Marketing, Summarize)
@@ -57,7 +76,10 @@ llm_flash = ChatGoogleGenerativeAI(
     model=MODEL_CONFIG["fast"],
     temperature=TEMPERATURE_CONFIG["creative"],
     convert_system_message_to_human=True,
-    streaming=True  # Enable token-by-token streaming
+    streaming=True,
+    project=_vertex_project,
+    location=_vertex_location,
+    credentials=_credentials,
 )
 
 # ==============================================================================
