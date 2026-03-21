@@ -101,10 +101,10 @@ class EmbeddingService:
             
         except Exception as e:
             logger.error(f"Failed to initialize embedding model: {e}")
-            raise RuntimeError("Failed to initialize Google GenAI embeddings. Ensure GOOGLE_API_KEY is set.")
+            raise RuntimeError("Failed to initialize Google GenAI embeddings via Vertex AI. Ensure GOOGLE_APPLICATION_CREDENTIALS is set.")
     
     def _init_google_embeddings(self):
-        """Initialize Google GenAI embeddings."""
+        """Initialize Google GenAI embeddings via Vertex AI."""
         try:
             from google import genai
             from django.conf import settings
@@ -124,14 +124,6 @@ class EmbeddingService:
             # 2. Fallback to settings or default
             if not self.model_name:
                 self.model_name = getattr(settings, 'RAG_EMBEDDING_MODEL', 'gemini-embedding-001')
-                
-            api_key = getattr(settings, 'GOOGLE_API_KEY', None)
-            if not api_key:
-                import os
-                api_key = os.environ.get('GOOGLE_API_KEY')
-                
-            if not api_key:
-                raise ValueError("GOOGLE_API_KEY not found in settings or environment")
 
             if self.model_name and self.model_name.startswith('models/'):
                 self.model_name = self.model_name.replace('models/', '')
@@ -139,7 +131,15 @@ class EmbeddingService:
             # Nếu lỡ model name trống thì set default
             self.model_name = self.model_name or 'gemini-embedding-001'
 
-            client = genai.Client(api_key=api_key)
+            # Use Vertex AI backend with service account credentials
+            project = getattr(settings, 'VERTEX_AI_PROJECT', 'xiaoyue-api')
+            location = getattr(settings, 'VERTEX_AI_LOCATION', 'us-central1')
+
+            client = genai.Client(
+                vertexai=True,
+                project=project,
+                location=location,
+            )
             self._embedding_model = client
             
         except ImportError:
