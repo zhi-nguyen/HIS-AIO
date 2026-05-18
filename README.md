@@ -1,35 +1,46 @@
-# HIS-AIO (Hospital Information System - All-In-One)
-## HIS-AIO là hệ thống quản lý thông tin bệnh viện toàn diện, hiện đại, được thiết kế với kiến trúc All-In-One nhằm đồng bộ hóa toàn bộ quy trình vận hành y tế. Hệ thống tích hợp sâu Động cơ Trí tuệ Nhân tạo (AI Engine), hệ thống lưu trữ và truyền tải hình ảnh (PACS), cùng các chuẩn liên thông y tế quốc tế, giúp tối ưu hóa công tác quản lý và nâng cao chất lượng khám chữa bệnh.
-# Công Nghệ Sử Dụng
-## Backend
- - Ngôn ngữ & Framework: Python, Django, Django REST Framework (DRF)
- - Xử lý bất đồng bộ: Celery & Redis
- - WebSockets: Django Channels (cho QMS, Reception, LIS realtime)
-## Frontend
- - Ngôn ngữ & Framework: TypeScript, Next.js (App Router), React
-## Styling: Tailwind CSS / CSS Modules
-## State & Realtime: Hooks tùy biến tích hợp WebSockets (useQmsSocket, useClinicalSocket, useReceptionSocket)
-## AI Engine & Interoperability
- - AI Framework: LangChain / LangGraph (Quản lý luồng xử lý đa Agent)
- - PACS Server: Orthanc tích hợp OHIF Viewer (thông qua Nginx)
- - Tiêu chuẩn y tế: HL7 FHIR (Mappers/Parsers), DICOM (WADO, Worklist)
-# Kiến Trúc Phân Hệ (Modules)
- - Mã nguồn Backend được tổ chức theo kiến trúc Modular, chia thành các nhóm dịch vụ cốt lõi:
-## 1. Dịch Vụ Cốt Lõi (Core Services)
- - Authentication: Quản lý xác thực, phân quyền nhân viên y tế, quản trị người dùng.
- - Reception & Appointments: Tiếp đón bệnh nhân, đặt lịch khám, đánh giá phân luồng (Triage) với Triage Hints từ AI.
- - QMS (Queue Management System): Quản lý hàng đợi thông minh, tích hợp dịch vụ Text-to-Speech (TTS) gọi loa.
- - Billing: Quản lý viện phí, danh mục hóa đơn, thanh toán.
- - Patients & Departments: Quản lý hồ sơ bệnh nhân, danh mục phòng ban.
- - Kiosk & Scanner: Hỗ trợ phần cứng self-service và thiết bị quét mã vạch/CCCD.
-## 2. Dịch Vụ Chuyên Môn (Medical Services)
- - EMR (Electronic Medical Record): Quản lý bệnh án điện tử, tích hợp gợi ý lâm sàng từ AI.
- - LIS (Laboratory Information System): Quản lý chỉ định, kết nối máy xét nghiệm, trả kết quả.
- - RIS (Radiology Information System): Quản lý chỉ định chẩn đoán hình ảnh, tích hợp Orthanc PACS.
- - Pharmacy: Quản lý nhà thuốc bệnh viện, kê đơn, tích hợp CDSS (Hệ thống hỗ trợ quyết định lâm sàng) và kiểm tra tương tác thuốc.
- - Inpatients: Quản lý quy trình nội trú.
-## 3. AI Engine 
-Được thiết kế dưới dạng hệ thống Multi-Agent Workflow:
- - Các Agents chuyên biệt: Triage Agent, Clinical Agent, Pharmacist Agent, Paraclinical Agent, Consultant Agent.
- - RAG Service: Hỗ trợ truy xuất thông tin, ngữ cảnh y khoa, kết hợp kỹ thuật PII Masking để bảo vệ dữ liệu bệnh nhân.
- - Streaming WebSockets giúp phản hồi trực tiếp nội dung từ AI lên Frontend theo thời gian thực.
+# HIS-AIO (Hospital Information System All-in-One)
+
+## Introduction
+
+HIS-AIO is a comprehensive Hospital Information System designed to streamline healthcare management, medical services, and administrative operations. The system integrates various advanced modules to provide a robust, scalable, and intelligent platform for modern hospitals, bridging the gap between clinical efficiency and advanced technology.
+
+## Features
+
+- **Core Services**: Centralized management of hospital data, staff administration, and patient records.
+- **Medical Services**:
+  - **LIS (Laboratory Information System)**: Efficiently manages laboratory tests, tracking, results, and medical reporting.
+  - **PACS (Picture Archiving and Communication System)**: A dedicated server to store, retrieve, and distribute medical imaging (e.g., X-rays, MRIs, CT scans).
+- **AI Integration**: Features intelligent AI engines, including specialized agents (such as a Pharmacist Agent), to assist medical professionals in accurate decision-making and optimal patient care.
+- **Modern Infrastructure**: Fully containerized using Docker, allowing for easy deployment, horizontal scaling, and environment consistency across development and production.
+
+## Project Structure
+
+- `/backend`: The core backend API (powered by Python and Django), handling complex business logic, database ORM operations, AI agent orchestrations, and RESTful/GraphQL endpoints.
+- `/frontend`: The interactive user interface designed for hospital staff, system administrators, and doctors to interact with the system efficiently.
+- `/pacs_server`: A dedicated subsystem handling medical image processing, archiving, and communication protocols.
+- `docker-compose.yml`: The central orchestration configuration for seamless multi-container deployment using Docker.
+
+## Getting Started
+
+### Prerequisites
+
+- [Docker](https://www.docker.com/)
+- [Docker Compose](https://docs.docker.com/compose/)
+
+### Installation & Setup
+
+1. **Clone the repository**:
+   ```bash
+   git clone https://github.com/zhi-nguyen/HIS-AIO.git
+   cd QuanLyBenhVienHIS
+   ```
+
+2. **Start the services**:
+   Use Docker Compose to build and spin up the entire stack in detached mode:
+   ```bash
+   docker-compose up --build -d
+   ```
+
+3. **Access the application**:
+   - The frontend, backend APIs, and PACS services will be exposed on their respectively configured ports (refer to the `docker-compose.yml` for exact port mappings).
+
