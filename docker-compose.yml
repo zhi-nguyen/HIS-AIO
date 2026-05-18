@@ -10,9 +10,12 @@ services:
       - POSTGRES_DB=his_database
     volumes:
       - his_postgres_data:/var/lib/postgresql/data
+    hostname: db
     ports:
       - "5432:5432"
     restart: always
+    networks:
+      - his_network
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
@@ -22,9 +25,12 @@ services:
   redis:
     image: redis:7-alpine
     container_name: his_redis
+    hostname: redis
     ports:
       - "6379:6379"
     restart: always
+    networks:
+      - his_network
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -59,6 +65,8 @@ services:
              python manage.py migrate --noinput &&
              daphne -b 0.0.0.0 -p 8000 config.asgi:application"
     restart: always
+    networks:
+      - his_network
 
   celery_worker:
     build:
@@ -81,6 +89,8 @@ services:
         condition: service_healthy
     command: celery -A config worker -l info --concurrency=2
     restart: always
+    networks:
+      - his_network
 
   celery_beat:
     build:
@@ -99,6 +109,8 @@ services:
       - celery_worker
     command: celery -A config beat -l info
     restart: always
+    networks:
+      - his_network
 
   frontend:
     build:
@@ -121,6 +133,8 @@ services:
     depends_on:
       - backend
     restart: always
+    networks:
+      - his_network
 
   # ==========================================================================
   # PACS SERVER (Orthanc) — Lưu trữ và phân phối ảnh DICOM
@@ -139,7 +153,8 @@ services:
       test: ["CMD-SHELL", "pg_isready -U orthanc"]
       interval: 5s
       timeout: 5s
-      retries: 5
+    networks:
+      - his_network
 
   orthanc:
     image: orthancteam/orthanc:latest
@@ -157,6 +172,8 @@ services:
       backend:
         condition: service_started
     restart: always
+    networks:
+      - his_network
 
   # ==========================================================================
   # OHIF Viewer — Xem ảnh DICOM qua DICOMweb (nhúng iframe vào Next.js)
@@ -172,10 +189,16 @@ services:
     depends_on:
       - orthanc
     restart: always
+    networks:
+      - his_network
 
 volumes:
   his_postgres_data:
   tts_audio:
   orthanc_postgres_data:
   orthanc_storage:
+
+networks:
+  his_network:
+    driver: bridge
 
