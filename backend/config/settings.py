@@ -22,7 +22,7 @@ from decouple import config, Csv
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = config('SECRET_KEY', default='django-insecure-local-dev-key')
+SECRET_KEY = config('SECRET_KEY', default='django-insecure-dev-key')
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = config('DEBUG', default=True, cast=bool)
@@ -193,7 +193,7 @@ INTEROP_MOCK_MODE = config('INTEROP_MOCK_MODE', default=True, cast=bool)
 # Orthanc PACS Server — dùng bởi Celery task process_dicom_study
 ORTHANC_URL = config('ORTHANC_URL', default='http://orthanc:8042')
 ORTHANC_USER = config('ORTHANC_USER', default='his_backend')
-ORTHANC_PASSWORD = config('ORTHANC_PASSWORD', default='backend_local_secret')
+ORTHANC_PASSWORD = config('ORTHANC_PASSWORD', default='backend-dev-secret')
 
 # Channels / WebSocket Configuration
 ASGI_APPLICATION = 'config.asgi.application'

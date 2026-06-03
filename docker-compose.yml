@@ -5,9 +5,9 @@ services:
     image: pgvector/pgvector:pg16
     container_name: his_db
     environment:
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=postgres
-      - POSTGRES_DB=${POSTGRES_DB:-his}
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+      - POSTGRES_DB=${POSTGRES_DB:-his-db}
     volumes:
       - his_postgres_data:/var/lib/postgresql/data
     hostname: db
@@ -144,7 +144,7 @@ services:
     container_name: his_orthanc_db
     environment:
       - POSTGRES_USER=${ORTHANC_DB_USER:-orthanc}
-      - POSTGRES_PASSWORD=${ORTHANC_DB_PASSWORD:-orthanc_dev}
+      - POSTGRES_PASSWORD=${ORTHANC_DB_PASSWORD:-orthanc-db}
       - POSTGRES_DB=${ORTHANC_DB_NAME:-orthanc}
     volumes:
       - orthanc_postgres_data:/var/lib/postgresql/data

@@ -11,8 +11,8 @@
   "RemoteAccessAllowed": true,
   "AuthenticationEnabled": false,
   "RegisteredUsers": {
-    "admin": "admin_local_dev",
-    "his_backend": "backend_local_secret"
+    "admin": "admin-dev-pass",
+    "his_backend": "backend-dev-secret"
   },
 
   "HttpCorsEnabled": true,
@@ -61,7 +61,7 @@
     "Port": 5432,
     "Database": "orthanc",
     "Username": "orthanc",
-    "Password": "orthanc_password",
+    "Password": "orthanc-db",
     "Lock": false
   },
 
