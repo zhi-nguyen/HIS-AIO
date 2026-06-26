@@ -1,35 +1,81 @@
-# HIS-AIO (Hospital Information System - All-In-One)
-## HIS-AIO là hệ thống quản lý thông tin bệnh viện toàn diện, hiện đại, được thiết kế với kiến trúc All-In-One nhằm đồng bộ hóa toàn bộ quy trình vận hành y tế. Hệ thống tích hợp sâu Động cơ Trí tuệ Nhân tạo (AI Engine), hệ thống lưu trữ và truyền tải hình ảnh (PACS), cùng các chuẩn liên thông y tế quốc tế, giúp tối ưu hóa công tác quản lý và nâng cao chất lượng khám chữa bệnh.
-# Công Nghệ Sử Dụng
-## Backend
- - Ngôn ngữ & Framework: Python, Django, Django REST Framework (DRF)
- - Xử lý bất đồng bộ: Celery & Redis
- - WebSockets: Django Channels (cho QMS, Reception, LIS realtime)
-## Frontend
- - Ngôn ngữ & Framework: TypeScript, Next.js (App Router), React
-## Styling: Tailwind CSS / CSS Modules
-## State & Realtime: Hooks tùy biến tích hợp WebSockets (useQmsSocket, useClinicalSocket, useReceptionSocket)
-## AI Engine & Interoperability
- - AI Framework: LangChain / LangGraph (Quản lý luồng xử lý đa Agent)
- - PACS Server: Orthanc tích hợp OHIF Viewer (thông qua Nginx)
- - Tiêu chuẩn y tế: HL7 FHIR (Mappers/Parsers), DICOM (WADO, Worklist)
-# Kiến Trúc Phân Hệ (Modules)
- - Mã nguồn Backend được tổ chức theo kiến trúc Modular, chia thành các nhóm dịch vụ cốt lõi:
-## 1. Dịch Vụ Cốt Lõi (Core Services)
- - Authentication: Quản lý xác thực, phân quyền nhân viên y tế, quản trị người dùng.
- - Reception & Appointments: Tiếp đón bệnh nhân, đặt lịch khám, đánh giá phân luồng (Triage) với Triage Hints từ AI.
- - QMS (Queue Management System): Quản lý hàng đợi thông minh, tích hợp dịch vụ Text-to-Speech (TTS) gọi loa.
- - Billing: Quản lý viện phí, danh mục hóa đơn, thanh toán.
- - Patients & Departments: Quản lý hồ sơ bệnh nhân, danh mục phòng ban.
- - Kiosk & Scanner: Hỗ trợ phần cứng self-service và thiết bị quét mã vạch/CCCD.
-## 2. Dịch Vụ Chuyên Môn (Medical Services)
- - EMR (Electronic Medical Record): Quản lý bệnh án điện tử, tích hợp gợi ý lâm sàng từ AI.
- - LIS (Laboratory Information System): Quản lý chỉ định, kết nối máy xét nghiệm, trả kết quả.
- - RIS (Radiology Information System): Quản lý chỉ định chẩn đoán hình ảnh, tích hợp Orthanc PACS.
- - Pharmacy: Quản lý nhà thuốc bệnh viện, kê đơn, tích hợp CDSS (Hệ thống hỗ trợ quyết định lâm sàng) và kiểm tra tương tác thuốc.
- - Inpatients: Quản lý quy trình nội trú.
-## 3. AI Engine 
-Được thiết kế dưới dạng hệ thống Multi-Agent Workflow:
- - Các Agents chuyên biệt: Triage Agent, Clinical Agent, Pharmacist Agent, Paraclinical Agent, Consultant Agent.
- - RAG Service: Hỗ trợ truy xuất thông tin, ngữ cảnh y khoa, kết hợp kỹ thuật PII Masking để bảo vệ dữ liệu bệnh nhân.
- - Streaming WebSockets giúp phản hồi trực tiếp nội dung từ AI lên Frontend theo thời gian thực.
+# HIS-AIO (Hospital Information System - All In One)
+
+## The Problem (Pain Points)
+
+Modern healthcare facilities often struggle with **fragmented information systems**. Medical staff face several critical pain points daily:
+
+- **Data Silos**: Patient records, laboratory results (LIS), radiology images (RIS), and pharmacy inventories operate on disconnected platforms.
+
+- **Administrative Burnout**: Doctors and nurses spend an excessive amount of time on manual data entry, writing clinical summaries, and checking drug interactions instead of focusing on patient care.
+
+- **Inefficient Triage & Queuing**: Traditional queue management and reception processes are manual, leading to bottlenecks and inaccurate priority assignments for urgent cases.
+
+---
+
+## The Solution
+
+**HIS-AIO** is an AI-powered, unified hospital management system designed to centralize and automate clinical workflows. We solve the fragmentation problem by integrating core hospital modules into a single ecosystem powered by an advanced AI Engine.
+
+Key features include:
+
+- **Centralized Modules**: A unified architecture combining EMR (Electronic Medical Records), LIS (Laboratory Information System), RIS (Radiology Information System), Pharmacy, and Billing.
+
+- **Multi-Agent AI Ecosystem**: Utilizing specialized AI agents (**Triage Agent**, **Clinical Agent**, **Pharmacist Agent**, and **Paraclinical Agent**) built on LangGraph to assist medical staff in real-time.
+
+- **RAG-Powered Clinical Decision Support (CDSS)**: An integrated Retrieval-Augmented Generation service that cross-references medical guidelines and patient history to suggest diagnoses and flag potential drug interactions.
+
+- **Smart Triage & Queuing**: Automated triage workflows at reception, combined with real-time WebSocket-based queue management (QMS).
+
+---
+
+## The Results
+
+By deploying HIS-AIO, healthcare facilities achieve:
+
+- **Streamlined Workflows**: A seamless journey for the patient from reception and triage to diagnosis, lab testing, and pharmacy dispensation.
+
+- **Enhanced Decision-Making**: Doctors receive instant, AI-backed clinical suggestions and automated summaries, significantly reducing cognitive load and the risk of medical errors.
+
+- **Operational Efficiency**: Reduced waiting times through optimized smart queuing and automated interoperability (FHIR/DICOM) between medical devices and the core system.
+
+---
+
+## Tech Stack Overview
+
+| Layer | Technologies |
+|---|---|
+| **Frontend** | Next.js, React, TailwindCSS, WebSocket (Socket.io-client) |
+| **Backend** | Python, Django, Django REST Framework, Celery, Redis (Caching & Task queues) |
+| **AI Engine** | LangChain/LangGraph, RAG Service, Vector Store embeddings |
+| **Interoperability** | Orthanc (PACS server/DICOM), FHIR parsers |
+| **Infrastructure** | Docker, Docker Compose |
+
+---
+
+## Getting Started
+
+### 1. Prerequisites
+
+Ensure you have **Docker** and **Docker Compose** installed on your local machine.
+
+- [Docker](https://www.docker.com/)
+- [Docker Compose](https://docs.docker.com/compose/)
+
+### 2. Installation
+
+Clone the repository and start the services using Docker Compose:
+
+```bash
+git clone <repository_url>
+cd HIS-AIO
+docker-compose up -d --build
+```
+
+### 3. Initializing the Database
+
+Run the core seed commands to populate the database with initial ICD-10 codes, hospital structures, and standard clinical data:
+
+```bash
+docker-compose exec backend python manage.py migrate
+docker-compose exec backend python manage.py seed_all
+```
